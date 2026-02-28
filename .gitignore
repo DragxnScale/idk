@@ -10,3 +10,4 @@ npm-debug.log*
 *.db-journal
 drizzle/
 uploads/
+data/

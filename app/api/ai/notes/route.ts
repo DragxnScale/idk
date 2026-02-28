@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
-import { db } from "@/lib/db";
-import { aiNotes } from "@/lib/db/schema";
+import { store } from "@/lib/store";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -26,7 +25,10 @@ export async function POST(request: Request) {
   };
 
   if (!sessionId || !pageText) {
-    return NextResponse.json({ error: "sessionId and pageText are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "sessionId and pageText are required" },
+      { status: 400 }
+    );
   }
 
   const { text: notes } = await generateText({
@@ -36,12 +38,12 @@ export async function POST(request: Request) {
   });
 
   const id = crypto.randomUUID();
-  await db.insert(aiNotes).values({
+  store.createNote({
     id,
     sessionId,
     pageNumber,
     content: notes,
-    createdAt: new Date(),
+    createdAt: new Date().toISOString(),
   });
 
   return NextResponse.json({ id, pageNumber, content: notes });
@@ -57,13 +59,13 @@ export async function GET(request: Request) {
   const sessionId = searchParams.get("sessionId");
 
   if (!sessionId) {
-    return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "sessionId is required" },
+      { status: 400 }
+    );
   }
 
-  const notes = await db.query.aiNotes.findMany({
-    where: (n, { eq }) => eq(n.sessionId, sessionId),
-  });
-
+  const notes = store.getNotesBySession(sessionId);
   notes.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0));
 
   return NextResponse.json(notes);

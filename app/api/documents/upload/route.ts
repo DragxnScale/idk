@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { documents } from "@/lib/db/schema";
+import { store } from "@/lib/store";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -16,7 +15,10 @@ export async function POST(request: Request) {
   const title = (formData.get("title") as string) || "Untitled";
 
   if (!file || file.type !== "application/pdf") {
-    return NextResponse.json({ error: "A PDF file is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "A PDF file is required" },
+      { status: 400 }
+    );
   }
 
   const id = crypto.randomUUID();
@@ -28,8 +30,8 @@ export async function POST(request: Request) {
   const bytes = await file.arrayBuffer();
   await writeFile(filePath, Buffer.from(bytes));
 
-  const now = new Date();
-  await db.insert(documents).values({
+  const now = new Date().toISOString();
+  store.createDocument({
     id,
     userId: session.user.id,
     title,

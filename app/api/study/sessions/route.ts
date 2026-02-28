@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { studySessions } from "@/lib/db/schema";
-
-// ── GET: list the current user's study sessions ──────────────────────
+import { store } from "@/lib/store";
 
 export async function GET() {
   const session = await auth();
@@ -12,18 +8,15 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = await db.query.studySessions.findMany({
-    where: (s, { eq: e }) => e(s.userId, session.user.id),
-  });
+  const rows = store.getSessionsByUser(session.user.id);
 
   rows.sort(
-    (a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0)
+    (a, b) =>
+      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   );
 
   return NextResponse.json(rows.slice(0, 50));
 }
-
-// ── POST: start a new study session ──────────────────────────────────
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -43,21 +36,22 @@ export async function POST(request: Request) {
   }
 
   const id = crypto.randomUUID();
-  const now = new Date();
+  const now = new Date().toISOString();
 
-  await db.insert(studySessions).values({
+  store.createSession({
     id,
     userId: session.user.id,
     goalType,
     targetValue,
     startedAt: now,
+    endedAt: null,
+    totalFocusedMinutes: null,
+    lastPageIndex: null,
     createdAt: now,
   });
 
-  return NextResponse.json({ id, goalType, targetValue, startedAt: now.toISOString() });
+  return NextResponse.json({ id, goalType, targetValue, startedAt: now });
 }
-
-// ── PATCH: update a study session (progress or end) ──────────────────
 
 export async function PATCH(request: Request) {
   const session = await auth();
@@ -68,20 +62,19 @@ export async function PATCH(request: Request) {
   const body = await request.json();
   const sessionId = body.sessionId as string;
   if (!sessionId) {
-    return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "sessionId is required" },
+      { status: 400 }
+    );
   }
 
-  const existing = await db.query.studySessions.findFirst({
-    where: (s, { eq: e, and }) =>
-      and(e(s.id, sessionId), e(s.userId, session.user.id)),
-  });
-
+  const existing = store.getSession(sessionId, session.user.id);
   if (!existing) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
   const updates: Record<string, unknown> = {};
-  if (body.endedAt != null) updates.endedAt = new Date(body.endedAt);
+  if (body.endedAt != null) updates.endedAt = new Date(body.endedAt).toISOString();
   if (typeof body.totalFocusedMinutes === "number")
     updates.totalFocusedMinutes = body.totalFocusedMinutes;
   if (typeof body.lastPageIndex === "number")
@@ -91,10 +84,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json(existing);
   }
 
-  await db
-    .update(studySessions)
-    .set(updates)
-    .where(eq(studySessions.id, sessionId));
+  store.updateSession(sessionId, updates);
 
   return NextResponse.json({ ok: true, ...updates });
 }

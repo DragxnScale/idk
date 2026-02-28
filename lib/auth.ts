@@ -1,8 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getServerSession } from "next-auth";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { store } from "@/lib/store";
 import { verifyPassword } from "@/lib/password";
 
 export const authOptions: NextAuthOptions = {
@@ -19,10 +18,7 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) return null;
         const email = credentials.email.toLowerCase().trim();
 
-        const user = await db.query.users.findFirst({
-          where: (u, { eq }) => eq(u.email, email),
-        });
-
+        const user = store.getUser(email);
         if (!user || !user.passwordHash) return null;
 
         const valid = await verifyPassword(credentials.password, user.passwordHash);

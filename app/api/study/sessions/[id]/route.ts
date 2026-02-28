@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { store } from "@/lib/store";
 
 export async function GET(
   _request: Request,
@@ -11,10 +11,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const row = await db.query.studySessions.findFirst({
-    where: (s, { eq, and }) =>
-      and(eq(s.id, params.id), eq(s.userId, session.user.id)),
-  });
+  const row = store.getSession(params.id, session.user.id);
 
   if (!row) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
