@@ -30,7 +30,9 @@ export const accounts = sqliteTable(
     id_token: text("id_token"),
     session_state: text("session_state"),
   },
-  (t) => [primaryKey({ columns: [t.provider, t.providerAccountId] })]
+  (t) => ({
+    pk: primaryKey({ columns: [t.provider, t.providerAccountId] }),
+  })
 );
 
 export const authSessions = sqliteTable("auth_sessions", {
@@ -48,7 +50,9 @@ export const verificationTokens = sqliteTable(
     token: text("token").notNull(),
     expires: integer("expires", { mode: "timestamp" }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.identifier, t.token] })]
+  (t) => ({
+    pk: primaryKey({ columns: [t.identifier, t.token] }),
+  })
 );
 
 // ── Study app tables ─────────────────────────────────────────────────
