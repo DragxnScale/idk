@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { store } from "@/lib/store";
+import { db } from "@/lib/db";
+import { users } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/password";
 
 export async function POST(request: Request) {
@@ -22,7 +23,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const existing = store.getUser(email);
+  const existing = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.email, email),
+  });
 
   if (existing) {
     return NextResponse.json(
@@ -32,24 +35,17 @@ export async function POST(request: Request) {
   }
 
   const id = crypto.randomUUID();
-  const now = new Date().toISOString();
+  const now = new Date();
   const passwordHash = await hashPassword(password);
 
-  try {
-    store.createUser({
-      id,
-      email,
-      name: name || email.split("@")[0],
-      passwordHash,
-      createdAt: now,
-      updatedAt: now,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to create user" },
-      { status: 409 }
-    );
-  }
+  await db.insert(users).values({
+    id,
+    email,
+    name: name || email.split("@")[0],
+    passwordHash,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   return NextResponse.json({ ok: true });
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 const ALLOWED_HOSTS = [
   "dn790008.ca.archive.org",

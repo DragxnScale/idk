@@ -3,7 +3,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
-import { store } from "@/lib/store";
+import { db } from "@/lib/db";
+import { quizzes, aiNotes } from "@/lib/db/schema";
 
 const quizSchema = z.object({
   questions: z.array(
@@ -52,7 +53,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const existingNotes = store.getNotesBySession(sessionId);
+  const existingNotes = await db.query.aiNotes.findMany({
+    where: (n, { eq }) => eq(n.sessionId, sessionId),
+  });
   const notesContext = existingNotes.map((n) => n.content).join("\n\n");
 
   const { object } = await generateObject({
@@ -73,14 +76,13 @@ Given the reading text and any notes, generate:
   });
 
   const id = crypto.randomUUID();
-  store.createQuiz({
+  await db.insert(quizzes).values({
     id,
     sessionId,
     questionsJson: JSON.stringify(object.questions),
     reviewJson: JSON.stringify(object.review),
     totalQuestions: object.questions.length,
-    score: null,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   });
 
   return NextResponse.json({ id, ...object });
@@ -96,19 +98,15 @@ export async function GET(request: Request) {
   const sessionId = searchParams.get("sessionId");
 
   if (!sessionId) {
-    return NextResponse.json(
-      { error: "sessionId is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
   }
 
-  const quiz = store.getQuizBySession(sessionId);
+  const quiz = await db.query.quizzes.findFirst({
+    where: (q, { eq }) => eq(q.sessionId, sessionId),
+  });
 
   if (!quiz) {
-    return NextResponse.json(
-      { error: "No quiz found for this session" },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "No quiz found for this session" }, { status: 404 });
   }
 
   return NextResponse.json({

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { store } from "@/lib/store";
+import { db } from "@/lib/db";
 
 export async function GET() {
   const session = await auth();
@@ -8,7 +8,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = store.getSessionsByUser(session.user.id);
+  const rows = await db.query.studySessions.findMany({
+    where: (s, { eq }) => eq(s.userId, session.user.id),
+  });
 
   const completed = rows.filter((r) => r.endedAt);
   const totalMinutes = completed.reduce(
@@ -29,7 +31,7 @@ export async function GET() {
 
     const daySessions = completed.filter((r) => {
       if (!r.startedAt) return false;
-      return new Date(r.startedAt).toISOString().slice(0, 10) === dayStr;
+      return r.startedAt.toISOString().slice(0, 10) === dayStr;
     });
 
     weekDays.push({
@@ -46,7 +48,7 @@ export async function GET() {
   const daySet = new Set(
     completed
       .filter((r) => r.startedAt)
-      .map((r) => new Date(r.startedAt).toISOString().slice(0, 10))
+      .map((r) => r.startedAt!.toISOString().slice(0, 10))
   );
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
@@ -61,22 +63,18 @@ export async function GET() {
   return NextResponse.json({
     totalSessions: completed.length,
     totalMinutes,
-    averageMinutes:
-      completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0,
+    averageMinutes: completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0,
     streak,
     weekDays,
     recentSessions: rows
-      .sort(
-        (a, b) =>
-          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-      )
+      .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
       .slice(0, 5)
       .map((r) => ({
         id: r.id,
         goalType: r.goalType,
         targetValue: r.targetValue,
-        startedAt: r.startedAt,
-        endedAt: r.endedAt,
+        startedAt: r.startedAt?.toISOString() ?? null,
+        endedAt: r.endedAt?.toISOString() ?? null,
         totalFocusedMinutes: r.totalFocusedMinutes,
       })),
   });

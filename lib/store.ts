@@ -70,7 +70,23 @@ interface StoreData {
 }
 
 const MAX_USERS = 25;
-const STORE_PATH = path.join(process.cwd(), "data", "store.json");
+
+const BASE_DIR = process.env.VERCEL || !isWritable(process.cwd())
+  ? "/tmp"
+  : process.cwd();
+const STORE_PATH = path.join(BASE_DIR, "data", "store.json");
+
+function isWritable(dir: string): boolean {
+  try {
+    const testPath = path.join(dir, ".write-test-" + Date.now());
+    writeFileSync(testPath, "");
+    const { unlinkSync } = require("fs");
+    unlinkSync(testPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function empty(): StoreData {
   return {

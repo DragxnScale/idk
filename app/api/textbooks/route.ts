@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { store } from "@/lib/store";
+import { db } from "@/lib/db";
+import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks } from "@/lib/db/seed-textbooks";
 
-function ensureSeeded() {
-  const existing = store.getTextbooks();
-  if (existing.length === 0) {
-    const now = new Date().toISOString();
+async function ensureSeeded() {
+  const count = await db.query.textbookCatalog.findFirst();
+  if (!count) {
+    const now = new Date();
     for (const book of seedTextbooks) {
-      store.upsertTextbook({ ...book, createdAt: now });
+      await db
+        .insert(textbookCatalog)
+        .values({ ...book, createdAt: now })
+        .onConflictDoNothing();
     }
   }
 }
@@ -19,12 +24,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  ensureSeeded();
+  await ensureSeeded();
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.toLowerCase() ?? "";
 
-  const all = store.getTextbooks();
+  const all = await db.query.textbookCatalog.findMany();
 
   const results = q
     ? all.filter(
@@ -60,12 +65,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Force re-seed by updating existing entries from seed data
   for (const book of seedTextbooks) {
-    store.updateTextbook(book.id, {
-      sourceType: book.sourceType,
-      sourceUrl: book.sourceUrl,
-      chapterPageRanges: book.chapterPageRanges,
-    });
+    await db
+      .update(textbookCatalog)
+      .set({
+        sourceType: book.sourceType,
+        sourceUrl: book.sourceUrl,
+        chapterPageRanges: book.chapterPageRanges,
+      })
+      .where(eq(textbookCatalog.id, book.id));
   }
 
   return NextResponse.json({ ok: true });

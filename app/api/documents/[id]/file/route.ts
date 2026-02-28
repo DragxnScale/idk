@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
 import { auth } from "@/lib/auth";
-import { store } from "@/lib/store";
+import { db } from "@/lib/db";
 
 export async function GET(
   _request: Request,
@@ -13,7 +13,10 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const doc = store.getDocument(params.id, session.user.id);
+  const doc = await db.query.documents.findFirst({
+    where: (d, { eq, and }) =>
+      and(eq(d.id, params.id), eq(d.userId, session.user.id)),
+  });
 
   if (!doc) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
@@ -30,9 +33,6 @@ export async function GET(
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: "File not found on disk" },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
   }
 }
