@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.DS_Store
+*.pem
+.env
+.env*.local
+npm-debug.log*
+*.db
+*.db-journal
+drizzle/
+uploads/
