@@ -8,6 +8,8 @@ const ALLOWED_HOSTS = [
   "ia800107.us.archive.org",
   "openstax.org",
   "assets.openstax.org",
+  "vercel-storage.com",
+  "blob.vercel-storage.com",
 ];
 
 export async function GET(request: NextRequest) {

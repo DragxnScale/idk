@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -305,8 +306,9 @@ type FileStatus = "pending" | "uploading" | "done" | "error";
 interface FileItem {
   file: File;
   status: FileStatus;
+  progress?: number;
   error?: string;
-  result?: { id: string; title: string };
+  result?: { id: string; title: string; fileUrl: string };
 }
 
 function UploadPanel({
@@ -348,22 +350,38 @@ function UploadPanel({
     setRunning(true);
     for (let i = 0; i < items.length; i++) {
       if (items[i].status !== "pending") continue;
+      const file = items[i].file;
+      const title = file.name.replace(/\.pdf$/i, "");
       setItems((prev) =>
-        prev.map((it, idx) => (idx === i ? { ...it, status: "uploading" } : it))
+        prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
       );
-      const form = new FormData();
-      form.append("file", items[i].file);
-      form.append("title", items[i].file.name.replace(/\.pdf$/i, ""));
       try {
-        const res = await fetch("/api/documents/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Upload failed");
-        }
-        const data = await res.json();
+        // Upload directly from the browser to Vercel Blob — no server size limit
+        const blob = await upload(
+          `${encodeURIComponent(title)}.pdf`,
+          file,
+          {
+            access: "public",
+            handleUploadUrl: "/api/blob/upload",
+            onUploadProgress: ({ percentage }) => {
+              setItems((prev) =>
+                prev.map((it, idx) => (idx === i ? { ...it, progress: percentage } : it))
+              );
+            },
+          }
+        );
+        // Register the document in the DB via a lightweight POST
+        const reg = await fetch("/api/documents/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, fileUrl: blob.url }),
+        });
+        const data = await reg.json();
         setItems((prev) =>
           prev.map((it, idx) =>
-            idx === i ? { ...it, status: "done", result: { id: data.id, title: data.title } } : it
+            idx === i
+              ? { ...it, status: "done", progress: 100, result: { id: data.id, title, fileUrl: blob.url } }
+              : it
           )
         );
       } catch (e) {
@@ -449,7 +467,9 @@ function UploadPanel({
                 <span className="text-xs text-gray-400">Pending</span>
               )}
               {it.status === "uploading" && (
-                <span className="text-xs text-blue-500 animate-pulse">Uploading…</span>
+                <span className="text-xs text-blue-500 shrink-0">
+                  {it.progress !== undefined && it.progress > 0 ? `${it.progress}%` : "Uploading…"}
+                </span>
               )}
               {it.status === "done" && (
                 <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>
@@ -492,13 +512,14 @@ function UploadPanel({
           <ul className="space-y-1.5">
             {uploaded.map((it, i) => (
               <li key={i}>
-                <button
+                  <button
                   type="button"
                   onClick={() =>
                     onSelect({
                       type: "upload",
                       documentId: it.result!.id,
                       title: it.result!.title,
+                      sourceUrl: it.result!.fileUrl,
                     })
                   }
                   className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-left text-sm font-medium transition hover:border-black hover:shadow-sm dark:border-gray-600 dark:hover:border-white"

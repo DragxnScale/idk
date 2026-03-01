@@ -159,6 +159,8 @@ export default function StudySessionPage() {
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;
     if (selectedDoc.type === "upload") {
+      // Prefer direct Blob URL if available (no redirect, no size limit)
+      if (selectedDoc.sourceUrl) return selectedDoc.sourceUrl;
       return `/api/documents/${selectedDoc.documentId}/file`;
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
