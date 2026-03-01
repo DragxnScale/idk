@@ -6,14 +6,18 @@ import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks } from "@/lib/db/seed-textbooks";
 
 async function ensureSeeded() {
-  // If catalog is empty, seed everything. Otherwise only insert any new seed
-  // entries that are missing (onConflictDoNothing so we never overwrite existing).
   const now = new Date();
   for (const book of seedTextbooks) {
     await db
       .insert(textbookCatalog)
       .values({ ...book, createdAt: now })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: textbookCatalog.id,
+        set: {
+          chapterPageRanges: book.chapterPageRanges,
+          sourceUrl: book.sourceUrl,
+        },
+      });
   }
 }
 

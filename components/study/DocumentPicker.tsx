@@ -628,98 +628,151 @@ function TextbookPanel({
             </div>
           ) : (
             <>
-              <p className="mt-3 text-sm font-medium">
-                Select a chapter:
-                {extracting && <span className="ml-2 text-xs text-gray-400 animate-pulse">Reading TOC…</span>}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {activeChapters.map((ch) => (
-                  <button
-                    key={ch}
-                    type="button"
-                    disabled={extracting}
-                    onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
-                    className={`rounded-md border px-3 py-1.5 text-sm transition ${
-                      extracting
-                        ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
-                        : selectedChapter === ch
-                          ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                          : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                    }`}
-                  >
-                    Ch. {ch}
-                  </button>
-                ))}
-              </div>
-              {selectedChapter && (() => {
-                const range = activeRanges[selectedChapter];
-                const chStart = range ? range[0] : 1;
-                const chEnd = range ? range[1] : 1;
-                const startPage = customStart ?? chStart;
-                const endPage = customEnd ?? chEnd;
-
-                return (
-                  <div className="mt-4 space-y-3">
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-                        Page range (Ch. {selectedChapter}: p. {chStart}–{chEnd})
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={chStart}
-                          max={endPage}
-                          value={startPage}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            setCustomStart(v >= chStart && v <= chEnd ? v : chStart);
-                          }}
-                          className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
-                        />
-                        <span className="text-xs text-gray-400">to</span>
-                        <input
-                          type="number"
-                          min={startPage}
-                          max={chEnd}
-                          value={endPage}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            setCustomEnd(v >= chStart && v <= chEnd ? v : chEnd);
-                          }}
-                          className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
-                        />
-                        {(customStart !== null || customEnd !== null) && (
-                          <button
-                            type="button"
-                            onClick={() => { setCustomStart(null); setCustomEnd(null); }}
-                            className="text-xs text-gray-500 underline underline-offset-2"
-                          >
-                            Reset
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelect({
-                          type: "textbook",
-                          documentId: selectedBook.id,
-                          title: `${selectedBook.title} — Ch. ${selectedChapter} (p. ${startPage}–${endPage})`,
-                          startPage,
-                          sourceUrl: selectedBook.sourceUrl ?? undefined,
-                          availableChapters: activeChapters,
-                          chapterPageRanges: activeRanges,
-                        });
-                      }}
-                      className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
-                    >
-                      Read p. {startPage}–{endPage}
-                    </button>
+              {activeChapters.length > 0 ? (
+                <>
+                  <p className="mt-3 text-sm font-medium">
+                    Select a chapter:
+                    {extracting && <span className="ml-2 text-xs text-gray-400 animate-pulse">Reading TOC…</span>}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {activeChapters.map((ch) => (
+                      <button
+                        key={ch}
+                        type="button"
+                        disabled={extracting}
+                        onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
+                        className={`rounded-md border px-3 py-1.5 text-sm transition ${
+                          extracting
+                            ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
+                            : selectedChapter === ch
+                              ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                              : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                        }`}
+                      >
+                        Ch. {ch}
+                      </button>
+                    ))}
                   </div>
-                );
-              })()}
+                  {selectedChapter && (() => {
+                    const range = activeRanges[selectedChapter];
+                    const chStart = range ? range[0] : 1;
+                    const chEnd = range ? range[1] : 1;
+                    const startPage = customStart ?? chStart;
+                    const endPage = customEnd ?? chEnd;
+
+                    return (
+                      <div className="mt-4 space-y-3">
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                            Page range (Ch. {selectedChapter}: p. {chStart}–{chEnd})
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={chStart}
+                              max={endPage}
+                              value={startPage}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setCustomStart(v >= chStart && v <= chEnd ? v : chStart);
+                              }}
+                              className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                            />
+                            <span className="text-xs text-gray-400">to</span>
+                            <input
+                              type="number"
+                              min={startPage}
+                              max={chEnd}
+                              value={endPage}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setCustomEnd(v >= chStart && v <= chEnd ? v : chEnd);
+                              }}
+                              className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                            />
+                            {(customStart !== null || customEnd !== null) && (
+                              <button
+                                type="button"
+                                onClick={() => { setCustomStart(null); setCustomEnd(null); }}
+                                className="text-xs text-gray-500 underline underline-offset-2"
+                              >
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSelect({
+                              type: "textbook",
+                              documentId: selectedBook.id,
+                              title: `${selectedBook.title} — Ch. ${selectedChapter} (p. ${startPage}–${endPage})`,
+                              startPage,
+                              sourceUrl: selectedBook.sourceUrl ?? undefined,
+                              availableChapters: activeChapters,
+                              chapterPageRanges: activeRanges,
+                            });
+                          }}
+                          className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                        >
+                          Read p. {startPage}–{endPage}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {extracting ? (
+                    <p className="text-sm text-gray-400 animate-pulse">Reading table of contents…</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-500">No chapter index available. Enter a page range to start reading:</p>
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Custom page range</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            value={customStart ?? 1}
+                            onChange={(e) => setCustomStart(Math.max(1, Number(e.target.value)))}
+                            placeholder="Start"
+                            className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                          />
+                          <span className="text-xs text-gray-400">to</span>
+                          <input
+                            type="number"
+                            min={customStart ?? 1}
+                            value={customEnd ?? 50}
+                            onChange={(e) => setCustomEnd(Math.max(customStart ?? 1, Number(e.target.value)))}
+                            placeholder="End"
+                            className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const startPage = customStart ?? 1;
+                          const endPage = customEnd ?? 50;
+                          onSelect({
+                            type: "textbook",
+                            documentId: selectedBook.id,
+                            title: `${selectedBook.title} (p. ${startPage}–${endPage})`,
+                            startPage,
+                            sourceUrl: selectedBook.sourceUrl ?? undefined,
+                          });
+                        }}
+                        className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                      >
+                        Read p. {customStart ?? 1}–{customEnd ?? 50}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
