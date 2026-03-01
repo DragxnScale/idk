@@ -47,22 +47,27 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
   }, []);
 
   const visitedPagesRef = useRef<Set<number>>(new Set([initialPage]));
+  const pageNumberRef = useRef(initialPage);
 
   const goToPage = useCallback(
     (page: number) => {
       const clamped = Math.max(1, Math.min(page, numPages));
       visitedPagesRef.current.add(clamped);
+      pageNumberRef.current = clamped;
       setPageNumber(clamped);
       onPageChange?.(clamped);
     },
     [numPages, onPageChange]
   );
 
+  // Only re-run when jumpToPage changes, not on every page turn.
+  // Use the ref so we always have the latest pageNumber without it being a dep.
   useEffect(() => {
-    if (jumpToPage != null && jumpToPage !== pageNumber && numPages > 0) {
+    if (jumpToPage != null && jumpToPage !== pageNumberRef.current && numPages > 0) {
       goToPage(jumpToPage);
     }
-  }, [jumpToPage, numPages, goToPage, pageNumber]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpToPage, numPages]);
 
   useEffect(() => {
     if (!url || !onPageText) return;

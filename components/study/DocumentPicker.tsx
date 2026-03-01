@@ -54,10 +54,9 @@ async function extractChapterRanges(
       chapters.push({ num: match[1], page: pageIndex + 1 });
     }
 
+    const totalPages = doc.numPages;
     await doc.destroy();
     if (chapters.length === 0) return null;
-
-    const totalPages = doc.numPages;
     const ranges: Record<string, [number, number]> = {};
     for (let i = 0; i < chapters.length; i++) {
       const start = chapters[i].page;

@@ -107,16 +107,7 @@ export default function StudySessionPage() {
   }, [sessionId]);
 
   const goalTriggeredRef = useRef(false);
-
-  function getCurrentChapterEndPage(): number | null {
-    if (goalType !== "chapter" || selectedChapters.length === 0) return null;
-    const ranges = selectedDoc?.chapterPageRanges;
-    if (!ranges) return null;
-    const ch = selectedChapters[currentChapterIdx];
-    if (!ch) return null;
-    const range = ranges[ch];
-    return range ? range[1] : null;
-  }
+  const currentChapterIdxRef = useRef(0);
 
   const handlePageChange = useCallback((page: number) => {
     if (!visitedPagesRef.current.has(page)) {
@@ -129,29 +120,29 @@ export default function StudySessionPage() {
     const ranges = selectedDoc?.chapterPageRanges;
     if (!ranges) return;
 
-    setCurrentChapterIdx((idx) => {
-      const ch = selectedChapters[idx];
-      if (!ch) return idx;
-      const range = ranges[ch];
-      if (!range) return idx;
+    const idx = currentChapterIdxRef.current;
+    const ch = selectedChapters[idx];
+    if (!ch) return;
+    const range = ranges[ch];
+    if (!range) return;
 
-      if (page >= range[1]) {
-        const nextIdx = idx + 1;
-        if (nextIdx < selectedChapters.length) {
-          const nextCh = selectedChapters[nextIdx];
-          const nextRange = ranges[nextCh];
-          if (nextRange) {
-            setJumpTarget(nextRange[0]);
-          }
-          return nextIdx;
-        } else {
-          goalTriggeredRef.current = true;
-          handleEnd();
-          return idx;
+    // Trigger when the user navigates PAST the last page (> not >=), so they
+    // can still read the final page of the chapter before the swap.
+    if (page > range[1]) {
+      const nextIdx = idx + 1;
+      if (nextIdx < selectedChapters.length) {
+        const nextCh = selectedChapters[nextIdx];
+        const nextRange = ranges[nextCh];
+        currentChapterIdxRef.current = nextIdx;
+        setCurrentChapterIdx(nextIdx);
+        if (nextRange) {
+          setJumpTarget(nextRange[0]);
         }
+      } else {
+        goalTriggeredRef.current = true;
+        handleEnd();
       }
-      return idx;
-    });
+    }
   }, [goalType, selectedChapters, selectedDoc?.chapterPageRanges, handleEnd]);
 
   function getPdfUrl(): string | null {
