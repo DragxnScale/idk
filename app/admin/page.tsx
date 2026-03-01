@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { upload } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -248,7 +247,7 @@ function UsersTab() {
 
 function UploadTab() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [edition, setEdition] = useState("");
@@ -291,30 +290,50 @@ function UploadTab() {
     const filename = file.name.replace(/\s+/g, "_");
     const blobPathname = `admin-staging/${identifier}/${filename}`;
 
-    // Step 1: Upload PDF directly from browser to Vercel Blob CDN.
-    // upload() is the only browser-CORS-compatible method. The file never
-    // passes through any Vercel function, so there is no size limit.
-    // The /api/admin/blob-token endpoint always returns 200 for completion
-    // callbacks so there is no retry loop.
+    // Step 1: Upload the PDF to Vercel Blob through our Edge Function.
+    // Uses XHR for upload progress. The Edge Function streams the body
+    // to Vercel Blob's multipart API — no client SDK, no callbacks.
     setStatusLabel("Uploading to storage…");
     let blobUrl: string;
     try {
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const blob = await upload(blobPathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/admin/blob-token",
-        multipart: true,
-        abortSignal: controller.signal,
-        onUploadProgress: ({ percentage }) => {
-          // Math.max prevents visual regression if any chunk is retried.
-          setProgress((prev) => Math.max(prev, Math.round(percentage * 0.7)));
-        },
+      blobUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhrRef.current = xhr;
+        xhr.open(
+          "POST",
+          `/api/admin/blob-stream?pathname=${encodeURIComponent(blobPathname)}`
+        );
+        xhr.setRequestHeader("Content-Type", "application/pdf");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setProgress(Math.round((e.loaded / e.total) * 70));
+          }
+        };
+        xhr.onload = () => {
+          xhrRef.current = null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText).url);
+            } catch {
+              reject(new Error("Invalid JSON response from server"));
+            }
+          } else {
+            let msg = `Upload failed (${xhr.status})`;
+            try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+            reject(new Error(msg));
+          }
+        };
+        xhr.onerror = () => {
+          xhrRef.current = null;
+          reject(new Error("Network error during upload"));
+        };
+        xhr.onabort = () => {
+          xhrRef.current = null;
+          reject(new Error("Upload cancelled"));
+        };
+        xhr.send(file);
       });
-      abortRef.current = null;
-      blobUrl = blob.url;
     } catch (e) {
-      abortRef.current = null;
       setError(e instanceof Error ? e.message : "Upload to storage failed");
       setStatus("error");
       return;
@@ -366,7 +385,7 @@ function UploadTab() {
   }
 
   function reset() {
-    abortRef.current?.abort();
+    xhrRef.current?.abort();
     setFile(null);
     setTitle("");
     setEdition("");

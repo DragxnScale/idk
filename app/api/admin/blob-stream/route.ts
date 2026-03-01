@@ -2,7 +2,6 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { requireAdminEdge } from "@/lib/admin-edge";
 
-// Edge runtime: no 4.5 MB body limit, handles large streaming uploads
 export const runtime = "edge";
 export const maxDuration = 300;
 
@@ -22,10 +21,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No file body" }, { status: 400 });
   }
 
-  const blob = await put(pathname, request.body, {
-    access: "public",
-    contentType: "application/pdf",
-  });
-
-  return NextResponse.json({ url: blob.url });
+  try {
+    const blob = await put(pathname, request.body, {
+      access: "public",
+      contentType: "application/pdf",
+      multipart: true,
+    });
+    return NextResponse.json({ url: blob.url });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }
