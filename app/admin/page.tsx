@@ -247,6 +247,7 @@ function UsersTab() {
 
 function UploadTab() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [edition, setEdition] = useState("");
@@ -259,7 +260,6 @@ function UploadTab() {
   const [progress, setProgress] = useState(0);
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [credsError, setCredsError] = useState<string | null>(null);
 
   // Auto-generate identifier from title
   useEffect(() => {
@@ -272,7 +272,6 @@ function UploadTab() {
       return;
     }
 
-    // Parse chapter ranges if adding to catalog
     let parsedChapters: Record<string, [number, number]> | null = null;
     if (addToCatalog) {
       try {
@@ -287,41 +286,44 @@ function UploadTab() {
     setError(null);
     setProgress(0);
 
-    // Fetch archive.org credentials from secure server endpoint
-    const tokenRes = await fetch("/api/admin/archive-token");
-    if (!tokenRes.ok) {
-      const d = await tokenRes.json().catch(() => ({}));
-      setCredsError(d.error ?? "Could not fetch archive.org credentials.");
-      setStatus("error");
-      return;
-    }
-    const { accessKey, secretKey } = await tokenRes.json();
-
     const filename = encodeURIComponent(file.name.replace(/\s+/g, "_"));
-    const uploadUrl = `https://s3.us.archive.org/${identifier}/${filename}`;
 
-    // Direct browser upload to archive.org S3 API (avoids Vercel 4.5 MB body limit)
+    // Build URL with metadata as query params; body is the raw PDF binary.
+    // Uploads go through our own API route which streams to archive.org server-side,
+    // avoiding both CORS restrictions and Vercel body-size limits.
+    const params = new URLSearchParams({
+      identifier,
+      filename,
+      title,
+      ...(edition && { edition }),
+      ...(isbn && { isbn }),
+    });
+    const uploadUrl = `/api/admin/archive-upload?${params}`;
+
+    // Use XHR so we get upload progress events
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("PUT", uploadUrl);
-      xhr.setRequestHeader("Authorization", `LOW ${accessKey}:${secretKey}`);
-      xhr.setRequestHeader("x-archive-auto-make-bucket", "1");
-      xhr.setRequestHeader("x-archive-meta-title", title);
-      xhr.setRequestHeader("x-archive-meta-mediatype", "texts");
-      xhr.setRequestHeader("x-archive-meta-subject", "textbook;education;studyfocus");
-      if (edition) xhr.setRequestHeader("x-archive-meta-edition", edition);
-      if (isbn) xhr.setRequestHeader("x-archive-meta-identifier-isbn", isbn);
+      xhrRef.current = xhr;
+      xhr.open("POST", uploadUrl);
       xhr.setRequestHeader("Content-Type", "application/pdf");
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
       };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`Archive.org returned ${xhr.status}: ${xhr.responseText}`));
+        xhrRef.current = null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          const msg = (() => {
+            try { return JSON.parse(xhr.responseText).error; } catch { return null; }
+          })();
+          reject(new Error(msg ?? `Server returned ${xhr.status}`));
+        }
       };
-      xhr.onerror = () => reject(new Error("Network error uploading to archive.org"));
+      xhr.onerror = () => { xhrRef.current = null; reject(new Error("Network error during upload")); };
+      xhr.onabort = () => { xhrRef.current = null; reject(new Error("Upload cancelled")); };
       xhr.send(file);
-    }).catch((e) => {
+    }).catch((e: Error) => {
       setError(e.message);
       setStatus("error");
       throw e;
@@ -330,7 +332,6 @@ function UploadTab() {
     const publicUrl = `https://archive.org/download/${identifier}/${filename}`;
     setArchiveUrl(publicUrl);
 
-    // Add to textbook catalog if requested
     if (addToCatalog && parsedChapters) {
       const catalogRes = await fetch("/api/admin/catalog", {
         method: "POST",
@@ -357,6 +358,7 @@ function UploadTab() {
   }
 
   function reset() {
+    xhrRef.current?.abort();
     setFile(null);
     setTitle("");
     setEdition("");
@@ -372,16 +374,9 @@ function UploadTab() {
   return (
     <div className="max-w-2xl">
       <p className="text-sm text-gray-400 mb-6">
-        Upload a PDF directly to your Archive.org account and optionally add it to the public textbook catalog. Files are uploaded from your browser — no server size limits.
+        Upload a PDF to your Archive.org account and optionally add it to the public textbook catalog.
+        Files are streamed through the server — no size limits, no CORS issues.
       </p>
-
-      {credsError && (
-        <div className="rounded-lg border border-yellow-700 bg-yellow-900/20 p-4 mb-5 text-sm text-yellow-300">
-          <p className="font-medium mb-1">Archive.org credentials not configured</p>
-          <p className="text-yellow-400/80">{credsError}</p>
-          <p className="mt-2 text-yellow-400/70">Add <code className="bg-yellow-900/40 px-1 rounded">ARCHIVE_ACCESS_KEY</code> and <code className="bg-yellow-900/40 px-1 rounded">ARCHIVE_SECRET_KEY</code> to your environment variables. Get them at <a href="https://archive.org/account/s3.php" target="_blank" rel="noopener noreferrer" className="underline">archive.org/account/s3</a>.</p>
-        </div>
-      )}
 
       {status === "done" ? (
         <div className="rounded-xl border border-green-700 bg-green-900/20 p-6 space-y-3">
@@ -408,7 +403,7 @@ function UploadTab() {
               ) : (
                 <div>
                   <p className="text-sm text-gray-400">Click to select a PDF file</p>
-                  <p className="text-xs text-gray-600 mt-1">Any size — uploaded directly from your browser</p>
+                  <p className="text-xs text-gray-600 mt-1">Any size — streamed through the server</p>
                 </div>
               )}
             </div>
