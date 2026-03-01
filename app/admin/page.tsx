@@ -304,9 +304,11 @@ function UploadTab() {
       const blob = await upload(blobPathname, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-token",
+        multipart: true,
         abortSignal: controller.signal,
         onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage * 0.7));
+          // Math.max prevents visual regression if any chunk is retried.
+          setProgress((prev) => Math.max(prev, Math.round(percentage * 0.7)));
         },
       });
       abortRef.current = null;
