@@ -72,6 +72,8 @@ export async function GET() {
   );
   const todayMinutes = todaySessions.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0);
 
+  const activeSession = rows.find((r) => !r.endedAt);
+
   return NextResponse.json({
     isAdmin: isAdminEmail(session.user.email ?? ""),
     totalSessions: completed.length,
@@ -83,6 +85,17 @@ export async function GET() {
     todaySessions: todaySessions.length,
     dailyMinutesGoal: user?.dailyMinutesGoal ?? null,
     dailySessionsGoal: user?.dailySessionsGoal ?? null,
+    activeSession: activeSession
+      ? {
+          id: activeSession.id,
+          goalType: activeSession.goalType,
+          targetValue: activeSession.targetValue,
+          startedAt: activeSession.startedAt?.toISOString() ?? null,
+          totalFocusedMinutes: activeSession.totalFocusedMinutes ?? 0,
+          lastPageIndex: activeSession.lastPageIndex ?? null,
+          documentJson: activeSession.documentJson ?? null,
+        }
+      : null,
     recentSessions: rows
       .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
       .slice(0, 5)

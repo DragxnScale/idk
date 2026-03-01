@@ -72,6 +72,7 @@ export const studySessions = sqliteTable("study_sessions", {
   totalFocusedMinutes: integer("total_focused_minutes"),
   lastPageIndex: integer("last_page_index"),
   videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
+  documentJson: text("document_json"), // JSON: serialized SelectedDocument for resume
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 

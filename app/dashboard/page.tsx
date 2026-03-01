@@ -18,6 +18,16 @@ interface RecentSession {
   totalFocusedMinutes: number | null;
 }
 
+interface ActiveSession {
+  id: string;
+  goalType: string;
+  targetValue: number;
+  startedAt: string | null;
+  totalFocusedMinutes: number;
+  lastPageIndex: number | null;
+  documentJson: string | null;
+}
+
 interface StatsData {
   isAdmin?: boolean;
   totalSessions: number;
@@ -30,11 +40,13 @@ interface StatsData {
   todaySessions: number;
   dailyMinutesGoal: number | null;
   dailySessionsGoal: number | null;
+  activeSession: ActiveSession | null;
 }
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [abandoning, setAbandoning] = useState(false);
 
   useEffect(() => {
     fetch("/api/study/stats")
@@ -42,6 +54,17 @@ export default function DashboardPage() {
       .then(setStats)
       .finally(() => setLoading(false));
   }, []);
+
+  async function abandonSession(sessionId: string) {
+    setAbandoning(true);
+    await fetch("/api/study/sessions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, endedAt: new Date().toISOString(), totalFocusedMinutes: stats?.activeSession?.totalFocusedMinutes ?? 0 }),
+    });
+    setStats((prev) => prev ? { ...prev, activeSession: null } : prev);
+    setAbandoning(false);
+  }
 
   if (loading) {
     return (
@@ -109,17 +132,55 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Stat cards */}
+        {/* Active session banner */}
+        {stats.activeSession && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 mb-8 dark:border-amber-700 dark:bg-amber-900/20">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  You have an unfinished session
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                  {stats.activeSession.goalType === "time"
+                    ? `${stats.activeSession.targetValue} min goal`
+                    : `${stats.activeSession.targetValue} chapter${stats.activeSession.targetValue !== 1 ? "s" : ""}`}
+                  {" · "}
+                  {stats.activeSession.totalFocusedMinutes}m studied
+                  {stats.activeSession.startedAt && (
+                    <> · Started {new Date(stats.activeSession.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Link
+                  href={`/study/session?resume=${stats.activeSession.id}`}
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 transition"
+                >
+                  Resume
+                </Link>
+                <button
+                  onClick={() => abandonSession(stats.activeSession!.id)}
+                  disabled={abandoning}
+                  className="rounded-lg border border-amber-400 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30 transition disabled:opacity-50"
+                >
+                  {abandoning ? "Ending…" : "End it"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Today's stats */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-8">
-          <StatCard label="Total Sessions" value={String(stats.totalSessions)} />
           <StatCard
-            label="Total Time"
+            label="Today"
             value={
-              stats.totalMinutes >= 60
-                ? `${Math.floor(stats.totalMinutes / 60)}h ${stats.totalMinutes % 60}m`
-                : `${stats.totalMinutes}m`
+              stats.todayMinutes >= 60
+                ? `${Math.floor(stats.todayMinutes / 60)}h ${stats.todayMinutes % 60}m`
+                : `${stats.todayMinutes}m`
             }
           />
+          <StatCard label="Today's Sessions" value={String(stats.todaySessions)} />
           <StatCard label="Avg / Session" value={`${stats.averageMinutes}m`} />
           <StatCard
             label="Streak"

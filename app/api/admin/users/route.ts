@@ -14,6 +14,7 @@ export async function GET() {
   const users = allUsers.map((u) => {
     const userSessions = allSessions.filter((s) => s.userId === u.id);
     const completed = userSessions.filter((s) => s.endedAt);
+    const active = userSessions.find((s) => !s.endedAt);
     const lastSession = userSessions
       .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))[0];
 
@@ -25,10 +26,10 @@ export async function GET() {
       sessionCount: completed.length,
       totalMinutes: completed.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0),
       lastActiveAt: lastSession?.startedAt?.toISOString() ?? null,
+      hasActiveSession: !!active,
     };
   });
 
-  // Sort: newest accounts first
   users.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 
   return NextResponse.json(users);

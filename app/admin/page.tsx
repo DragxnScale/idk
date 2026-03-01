@@ -13,6 +13,17 @@ interface UserRow {
   sessionCount: number;
   totalMinutes: number;
   lastActiveAt: string | null;
+  hasActiveSession?: boolean;
+}
+
+interface UserSession {
+  id: string;
+  goalType: string;
+  targetValue: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  totalFocusedMinutes: number;
+  lastPageIndex: number | null;
 }
 
 interface CatalogEntry {
@@ -129,6 +140,11 @@ function UsersTab() {
   const [search, setSearch] = useState("");
   const [banning, setBanning] = useState<string | null>(null);
   const [confirmBan, setConfirmBan] = useState<UserRow | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
+  const [userSessions, setUserSessions] = useState<UserSession[] | null>(null);
+  const [deletingSession, setDeletingSession] = useState<string | null>(null);
+  const [confirmWipeAll, setConfirmWipeAll] = useState(false);
+  const [wipingAll, setWipingAll] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -142,12 +158,46 @@ function UsersTab() {
     const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
     if (res.ok) {
       setUsers((prev) => prev?.filter((u) => u.id !== user.id) ?? null);
+      if (selectedUser?.id === user.id) { setSelectedUser(null); setUserSessions(null); }
     } else {
       const data = await res.json().catch(() => ({}));
       alert(data.error ?? "Failed to ban user");
     }
     setBanning(null);
     setConfirmBan(null);
+  }
+
+  async function openUserDetail(user: UserRow) {
+    setSelectedUser(user);
+    setUserSessions(null);
+    const res = await fetch(`/api/admin/users/${user.id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setUserSessions(data.sessions);
+    }
+  }
+
+  async function deleteSession(sessionId: string) {
+    if (!selectedUser) return;
+    setDeletingSession(sessionId);
+    const res = await fetch(`/api/admin/users/${selectedUser.id}?sessionId=${sessionId}`, { method: "DELETE" });
+    if (res.ok) {
+      setUserSessions((prev) => prev?.filter((s) => s.id !== sessionId) ?? null);
+      setUsers((prev) => prev?.map((u) => u.id === selectedUser.id ? { ...u, sessionCount: Math.max(0, u.sessionCount - 1) } : u) ?? null);
+    }
+    setDeletingSession(null);
+  }
+
+  async function wipeAllSessions() {
+    if (!selectedUser) return;
+    setWipingAll(true);
+    const res = await fetch(`/api/admin/users/${selectedUser.id}?action=wipe-all-sessions`);
+    if (res.ok) {
+      setUserSessions([]);
+      setUsers((prev) => prev?.map((u) => u.id === selectedUser.id ? { ...u, sessionCount: 0, totalMinutes: 0 } : u) ?? null);
+    }
+    setWipingAll(false);
+    setConfirmWipeAll(false);
   }
 
   const filtered = (users ?? []).filter(
@@ -158,6 +208,119 @@ function UsersTab() {
 
   const totalSessions = users?.reduce((s, u) => s + u.sessionCount, 0) ?? 0;
   const totalMins = users?.reduce((s, u) => s + u.totalMinutes, 0) ?? 0;
+
+  // User detail view
+  if (selectedUser) {
+    return (
+      <>
+        <button onClick={() => { setSelectedUser(null); setUserSessions(null); }} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
+          ← Back to all users
+        </button>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-semibold text-lg">{selectedUser.name ?? <span className="text-gray-500 italic">No name</span>}</p>
+              <p className="text-sm text-gray-400">{selectedUser.email}</p>
+              <div className="flex gap-4 mt-2 text-xs text-gray-500">
+                <span>{selectedUser.sessionCount} sessions</span>
+                <span>{fmtMinutes(selectedUser.totalMinutes)} total</span>
+                <span>Joined {selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}</span>
+                {selectedUser.hasActiveSession && <span className="text-amber-400 font-medium">Active session</span>}
+              </div>
+            </div>
+            <button
+              onClick={() => setConfirmBan(selectedUser)}
+              className="rounded-md border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30 transition"
+            >
+              Ban user
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold">Study Sessions</h3>
+          {userSessions && userSessions.length > 0 && (
+            <button
+              onClick={() => setConfirmWipeAll(true)}
+              className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition"
+            >
+              Wipe all sessions
+            </button>
+          )}
+        </div>
+
+        {!userSessions ? (
+          <p className="text-sm text-gray-500 animate-pulse">Loading sessions…</p>
+        ) : userSessions.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-6">No sessions found.</p>
+        ) : (
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+            {userSessions.map((s) => (
+              <div key={s.id} className="rounded-lg border border-gray-800 bg-gray-950 p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium">
+                      {s.goalType === "time" ? `${s.targetValue} min goal` : `${s.targetValue} chapter${s.targetValue !== 1 ? "s" : ""}`}
+                    </p>
+                    {!s.endedAt && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-medium">Active</span>}
+                  </div>
+                  <div className="flex gap-3 text-xs text-gray-500 mt-0.5">
+                    <span>{s.totalFocusedMinutes}m studied</span>
+                    <span>{s.startedAt ? new Date(s.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                    {s.endedAt ? (
+                      <span className="text-green-500">Completed</span>
+                    ) : (
+                      <span className="text-amber-400">In progress</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => deleteSession(s.id)}
+                  disabled={deletingSession === s.id}
+                  className="flex-shrink-0 rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                >
+                  {deletingSession === s.id ? "…" : "Delete"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {confirmWipeAll && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
+              <h2 className="text-base font-semibold mb-1">Wipe all sessions?</h2>
+              <p className="text-sm text-gray-400 mb-1">User: <span className="text-white font-medium">{selectedUser.email}</span></p>
+              <p className="text-sm text-gray-500 mb-5">This will permanently delete all {userSessions?.length ?? 0} study sessions for this user. Cannot be undone.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmWipeAll(false)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
+                <button onClick={wipeAllSessions} disabled={wipingAll} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
+                  {wipingAll ? "Wiping…" : "Yes, wipe all"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {confirmBan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
+              <h2 className="text-base font-semibold mb-1">Ban this user?</h2>
+              <p className="text-sm text-gray-400 mb-1"><span className="text-white font-medium">{confirmBan.email}</span></p>
+              <p className="text-sm text-gray-500 mb-5">This will permanently delete their account, sessions, notes, and quiz data. Cannot be undone.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmBan(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
+                <button onClick={() => banUser(confirmBan)} disabled={banning === confirmBan.id} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
+                  {banning === confirmBan.id ? "Banning…" : "Yes, ban them"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -199,8 +362,13 @@ function UsersTab() {
             {filtered.map((user) => (
               <tr key={user.id} className="bg-gray-950 hover:bg-gray-900 transition">
                 <td className="px-4 py-3">
-                  <p className="font-medium">{user.name ?? <span className="text-gray-500 italic">No name</span>}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{user.email}</p>
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="font-medium">{user.name ?? <span className="text-gray-500 italic">No name</span>}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{user.email}</p>
+                    </div>
+                    {user.hasActiveSession && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-medium">Active</span>}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-gray-400">
                   {user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
@@ -211,13 +379,21 @@ function UsersTab() {
                   {user.lastActiveAt ? new Date(user.lastActiveAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Never"}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => setConfirmBan(user)}
-                    disabled={banning === user.id}
-                    className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
-                  >
-                    Ban
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => openUserDetail(user)}
+                      className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition"
+                    >
+                      Manage
+                    </button>
+                    <button
+                      onClick={() => setConfirmBan(user)}
+                      disabled={banning === user.id}
+                      className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                    >
+                      Ban
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const goalType = body.goalType as string;
   const targetValue = body.targetValue as number;
+  const documentJson = body.documentJson ?? null;
 
   if (!goalType || targetValue == null) {
     return NextResponse.json(
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
     userId: session.user.id,
     goalType,
     targetValue,
+    documentJson: documentJson ? JSON.stringify(documentJson) : null,
     startedAt: now,
     createdAt: now,
   });

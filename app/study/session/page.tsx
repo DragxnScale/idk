@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Timer, type GoalType } from "@/components/study/Timer";
 import { VisibilityGuard } from "@/components/focus/VisibilityGuard";
 import { OverrideFlow } from "@/components/focus/OverrideFlow";
@@ -20,6 +21,17 @@ const DocumentPicker = dynamic(
 );
 
 export default function StudySessionPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white" /></div>}>
+      <StudySessionInner />
+    </Suspense>
+  );
+}
+
+function StudySessionInner() {
+  const searchParams = useSearchParams();
+  const resumeId = searchParams.get("resume");
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [goalType, setGoalType] = useState<GoalType>("time");
   const [targetValue, setTargetValue] = useState(25);
@@ -32,14 +44,48 @@ export default function StudySessionPage() {
   const [visitedPageCount, setVisitedPageCount] = useState(0);
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<number | null>(null);
+  const [activeSession, setActiveSession] = useState<{ id: string; goalType: string; targetValue: number; totalFocusedMinutes: number } | null>(null);
+  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
+  const [checkingActive, setCheckingActive] = useState(true);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
   const accumulatedTextRef = useRef("");
   const visitedPagesRef = useRef<Set<number>>(new Set());
-  // Set to true just before any programmatic session end so the fullscreen
-  // lock doesn't re-open the password modal when the page navigates away.
   const sessionEndingRef = useRef(false);
+  const resumeHandled = useRef(false);
+
+  // Check for active session / handle resume
+  useEffect(() => {
+    if (resumeHandled.current) return;
+    resumeHandled.current = true;
+
+    fetch("/api/study/stats")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data?.activeSession) { setCheckingActive(false); return; }
+        const active = data.activeSession;
+
+        if (resumeId && active.id === resumeId) {
+          // Resume this session
+          setSessionId(active.id);
+          setGoalType(active.goalType as GoalType);
+          setTargetValue(active.targetValue);
+          focusedMinutesRef.current = active.totalFocusedMinutes ?? 0;
+          lastSavedRef.current = active.totalFocusedMinutes ?? 0;
+          if (active.documentJson) {
+            try { setSelectedDoc(JSON.parse(active.documentJson)); } catch {}
+          }
+          document.documentElement.requestFullscreen().catch(() => {});
+          setCheckingActive(false);
+        } else {
+          // There's an active session but user didn't click resume
+          setActiveSession(active);
+          setCheckingActive(false);
+        }
+      })
+      .catch(() => setCheckingActive(false));
+  }, [resumeId]);
 
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
@@ -57,7 +103,7 @@ export default function StudySessionPage() {
       const res = await fetch("/api/study/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalType, targetValue }),
+        body: JSON.stringify({ goalType, targetValue, documentJson: selectedDoc }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -68,7 +114,9 @@ export default function StudySessionPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     }
-  }, [goalType, targetValue]);
+  }, [goalType, targetValue, selectedDoc]);
+
+  const currentPageRef = useRef(1);
 
   const saveProgress = useCallback(
     async (minutes: number) => {
@@ -78,7 +126,7 @@ export default function StudySessionPage() {
         await fetch("/api/study/sessions", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, totalFocusedMinutes: minutes }),
+          body: JSON.stringify({ sessionId, totalFocusedMinutes: minutes, lastPageIndex: currentPageRef.current }),
         });
       } catch {
         // will retry on next tick
@@ -121,6 +169,7 @@ export default function StudySessionPage() {
   const currentChapterIdxRef = useRef(0);
 
   const handlePageChange = useCallback((page: number) => {
+    currentPageRef.current = page;
     if (!visitedPagesRef.current.has(page)) {
       visitedPagesRef.current.add(page);
       setVisitedPageCount(visitedPagesRef.current.size);
@@ -187,6 +236,81 @@ export default function StudySessionPage() {
   }
 
   const hasChapterData = selectedDoc?.availableChapters && selectedDoc.availableChapters.length > 0;
+
+  async function abandonActive() {
+    if (!activeSession) return;
+    await fetch("/api/study/sessions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: activeSession.id, endedAt: new Date().toISOString(), totalFocusedMinutes: activeSession.totalFocusedMinutes ?? 0 }),
+    });
+    setActiveSession(null);
+    setShowAbandonConfirm(false);
+  }
+
+  /* ── Loading check ───────────────────────────────────────────── */
+  if (checkingActive) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white" />
+      </main>
+    );
+  }
+
+  /* ── Active session gate ─────────────────────────────────────── */
+  if (activeSession && !sessionId) {
+    return (
+      <main className="min-h-screen px-6 py-10 md:px-10 max-w-lg mx-auto flex flex-col items-center justify-center">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-6 w-full dark:border-amber-700 dark:bg-amber-900/20">
+          <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+            You have an unfinished session
+          </h2>
+          <p className="text-sm text-amber-700 dark:text-amber-400 mb-1">
+            {activeSession.goalType === "time"
+              ? `${activeSession.targetValue} min goal`
+              : `${activeSession.targetValue} chapter${activeSession.targetValue !== 1 ? "s" : ""}`}
+            {" · "}{activeSession.totalFocusedMinutes}m studied so far
+          </p>
+          <p className="text-sm text-amber-600 dark:text-amber-500 mb-5">
+            You need to resume or end it before starting a new session.
+          </p>
+          <div className="flex gap-3">
+            <Link
+              href={`/study/session?resume=${activeSession.id}`}
+              className="flex-1 text-center rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 transition"
+            >
+              Resume session
+            </Link>
+            <button
+              onClick={() => setShowAbandonConfirm(true)}
+              className="flex-1 rounded-lg border border-amber-400 px-4 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30 transition"
+            >
+              End & start new
+            </button>
+          </div>
+        </div>
+
+        {showAbandonConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-gray-900 dark:border-gray-700">
+              <h3 className="text-base font-semibold mb-2">End unfinished session?</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+                This will save {activeSession.totalFocusedMinutes}m of progress and end the session. You can then start a new one.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setShowAbandonConfirm(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
+                <button onClick={abandonActive} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition">Yes, end it</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <Link href="/dashboard" className="mt-6 text-sm underline underline-offset-4 text-gray-500">
+          Back to dashboard
+        </Link>
+      </main>
+    );
+  }
 
   /* ── Setup screen ──────────────────────────────────────────────── */
   if (!sessionId) {

@@ -8,6 +8,20 @@ import { verifyPassword } from "@/lib/password";
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/auth/signin" },
+  useSecureCookies: process.env.NEXTAUTH_URL?.startsWith("https://"),
+  cookies: {
+    sessionToken: {
+      name: process.env.NEXTAUTH_URL?.startsWith("https://")
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NEXTAUTH_URL?.startsWith("https://"),
+      },
+    },
+  },
   providers: [
     CredentialsProvider({
       name: "credentials",
