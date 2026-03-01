@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { upload } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -247,7 +248,6 @@ function UsersTab() {
 
 function UploadTab() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [edition, setEdition] = useState("");
@@ -261,6 +261,8 @@ function UploadTab() {
   const [statusLabel, setStatusLabel] = useState("");
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const addLog = (msg: string) => setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
 
   // Auto-generate identifier from title
   useEffect(() => {
@@ -286,55 +288,37 @@ function UploadTab() {
     setStatus("uploading");
     setError(null);
     setProgress(0);
+    setDebugLog([]);
 
     const filename = file.name.replace(/\s+/g, "_");
     const blobPathname = `admin-staging/${identifier}/${filename}`;
 
-    // Step 1: Upload the PDF to Vercel Blob through our Edge Function.
-    // Uses XHR for upload progress. The Edge Function streams the body
-    // to Vercel Blob's multipart API — no client SDK, no callbacks.
+    // Step 1: Upload PDF directly from browser to Vercel Blob CDN.
+    // The upload() SDK sends the file browser→CDN, bypassing all functions.
+    // Our /api/admin/blob-token endpoint generates the token and short-circuits
+    // the completion callback with an immediate 200.
     setStatusLabel("Uploading to storage…");
+    addLog(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+    addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      blobUrl = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhrRef.current = xhr;
-        xhr.open(
-          "POST",
-          `/api/admin/blob-stream?pathname=${encodeURIComponent(blobPathname)}`
-        );
-        xhr.setRequestHeader("Content-Type", "application/pdf");
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setProgress(Math.round((e.loaded / e.total) * 70));
-          }
-        };
-        xhr.onload = () => {
-          xhrRef.current = null;
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText).url);
-            } catch {
-              reject(new Error("Invalid JSON response from server"));
-            }
-          } else {
-            let msg = `Upload failed (${xhr.status})`;
-            try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
-            reject(new Error(msg));
-          }
-        };
-        xhr.onerror = () => {
-          xhrRef.current = null;
-          reject(new Error("Network error during upload"));
-        };
-        xhr.onabort = () => {
-          xhrRef.current = null;
-          reject(new Error("Upload cancelled"));
-        };
-        xhr.send(file);
+      addLog("Requesting client token from /api/admin/blob-token…");
+      const blob = await upload(blobPathname, file, {
+        access: "public",
+        handleUploadUrl: "/api/admin/blob-token",
+        multipart: true,
+        onUploadProgress: ({ loaded, total, percentage }) => {
+          setProgress((prev) => Math.max(prev, Math.round(percentage * 0.7)));
+          addLog(`Progress: ${percentage.toFixed(1)}% (${(loaded / 1024 / 1024).toFixed(1)}/${(total / 1024 / 1024).toFixed(1)} MB)`);
+        },
       });
+      blobUrl = blob.url;
+      addLog(`Upload complete! Blob URL: ${blobUrl}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload to storage failed");
+      const msg = e instanceof Error ? e.message : "Upload to storage failed";
+      addLog(`UPLOAD ERROR: ${msg}`);
+      if (e instanceof Error && e.stack) addLog(`Stack: ${e.stack.split("\n").slice(0, 3).join(" | ")}`);
+      setError(msg);
       setStatus("error");
       return;
     }
@@ -385,7 +369,6 @@ function UploadTab() {
   }
 
   function reset() {
-    xhrRef.current?.abort();
     setFile(null);
     setTitle("");
     setEdition("");
@@ -542,6 +525,15 @@ function UploadTab() {
 
           {error && (
             <p className="text-sm text-red-400 rounded-lg border border-red-800 bg-red-900/20 px-4 py-3">{error}</p>
+          )}
+
+          {debugLog.length > 0 && (
+            <details open className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3">
+              <summary className="text-xs text-gray-500 cursor-pointer select-none">Debug log ({debugLog.length} entries)</summary>
+              <pre className="mt-2 text-xs text-gray-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                {debugLog.join("\n")}
+              </pre>
+            </details>
           )}
 
           <button
