@@ -6,21 +6,22 @@ import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/password";
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/auth/signin" },
   useSecureCookies: false,
   cookies: {
     sessionToken: {
       name: "sf.session-token",
-      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true },
     },
     callbackUrl: {
       name: "sf.callback-url",
-      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true },
     },
     csrfToken: {
       name: "sf.csrf-token",
-      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true },
     },
   },
   providers: [
