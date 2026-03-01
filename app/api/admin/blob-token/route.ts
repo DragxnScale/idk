@@ -17,6 +17,10 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // Derive the callback URL from the live request URL so it's always correct
+  // regardless of which Vercel environment variable is set.
+  const callbackUrl = new URL("/api/admin/blob-token", request.url).toString();
+
   try {
     const jsonResponse = await handleUpload({
       body,
@@ -24,14 +28,22 @@ export async function POST(request: Request): Promise<Response> {
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: ["application/pdf"],
         maximumSizeInBytes: 500 * 1024 * 1024,
+        callbackUrl,
       }),
       onUploadCompleted: async () => {
-        // No-op — admin staging blobs are deleted after archive.org transfer
+        // No-op — admin staging blobs are transferred to archive.org then deleted.
       },
     });
 
     return NextResponse.json(jsonResponse);
   } catch (err) {
+    // For completion callbacks: the upload already succeeded on Vercel's CDN,
+    // so always return 200 to prevent the 5-retry loop even if verification
+    // or the no-op handler throws for any reason.
+    if (body.type === "blob.upload-completed") {
+      console.error("blob-token completion error (ignored):", (err as Error).message);
+      return NextResponse.json({ ok: true });
+    }
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 }

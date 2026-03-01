@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { put } from "@vercel/blob/client";
+import { upload } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -291,37 +291,19 @@ function UploadTab() {
     const filename = file.name.replace(/\s+/g, "_");
     const blobPathname = `admin-staging/${identifier}/${filename}`;
 
-    // Step 1: Fetch a pre-signed client token from the server.
-    // The token embeds no callback URL, so upload() resolves the instant
-    // the file reaches Vercel's CDN — no retry loop, no hanging.
-    setStatusLabel("Preparing upload…");
-    let clientToken: string;
-    try {
-      const tokenRes = await fetch(
-        `/api/admin/blob-client-token?pathname=${encodeURIComponent(blobPathname)}`
-      );
-      if (!tokenRes.ok) {
-        const d = await tokenRes.json().catch(() => ({}));
-        throw new Error(d.error ?? `Token request failed (${tokenRes.status})`);
-      }
-      clientToken = (await tokenRes.json()).clientToken;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to prepare upload");
-      setStatus("error");
-      return;
-    }
-
-    // Step 2: Upload directly from browser to Vercel Blob CDN using the token.
-    // No server function involved, so there is no size limit at all.
+    // Step 1: Upload PDF directly from browser to Vercel Blob CDN.
+    // upload() is the only browser-CORS-compatible method. The file never
+    // passes through any Vercel function, so there is no size limit.
+    // The /api/admin/blob-token endpoint always returns 200 for completion
+    // callbacks so there is no retry loop.
     setStatusLabel("Uploading to storage…");
     let blobUrl: string;
     try {
       const controller = new AbortController();
       abortRef.current = controller;
-      const blob = await put(blobPathname, file, {
+      const blob = await upload(blobPathname, file, {
         access: "public",
-        token: clientToken,
-        multipart: true,
+        handleUploadUrl: "/api/admin/blob-token",
         abortSignal: controller.signal,
         onUploadProgress: ({ percentage }) => {
           setProgress(Math.round(percentage * 0.7));
