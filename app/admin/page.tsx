@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { upload } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -247,7 +248,7 @@ function UsersTab() {
 
 function UploadTab() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [edition, setEdition] = useState("");
@@ -287,40 +288,31 @@ function UploadTab() {
     setError(null);
     setProgress(0);
 
-    const filename = encodeURIComponent(file.name.replace(/\s+/g, "_"));
+    const filename = file.name.replace(/\s+/g, "_");
 
-    // Step 1: Stream PDF to Vercel Blob via an Edge Function route
-    // Edge runtime has no body size limit, so any size PDF works.
+    // Step 1: Upload PDF directly from browser to Vercel Blob CDN.
+    // The file never passes through any Vercel function, so there is no size limit.
     setStatusLabel("Uploading to storage…");
     let blobUrl: string;
     try {
-      blobUrl = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhrRef.current = xhr;
-        xhr.open("POST", `/api/admin/blob-stream?pathname=admin-staging/${identifier}/${filename}`);
-        xhr.setRequestHeader("Content-Type", "application/pdf");
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setProgress(prev => Math.max(prev, Math.round((e.loaded / e.total) * 70)));
-        };
-        xhr.onload = () => {
-          xhrRef.current = null;
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const result = JSON.parse(xhr.responseText);
-              resolve(result.url);
-            } catch {
-              reject(new Error("Invalid response from storage"));
-            }
-          } else {
-            const msg = (() => { try { return JSON.parse(xhr.responseText).error; } catch { return null; } })();
-            reject(new Error(msg ?? `Storage returned ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => { xhrRef.current = null; reject(new Error("Network error during upload")); };
-        xhr.onabort = () => { xhrRef.current = null; reject(new Error("Upload cancelled")); };
-        xhr.send(file);
-      });
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const blob = await upload(
+        `admin-staging/${identifier}/${filename}`,
+        file,
+        {
+          access: "public",
+          handleUploadUrl: "/api/admin/blob-token",
+          abortSignal: controller.signal,
+          onUploadProgress: ({ percentage }) => {
+            setProgress(Math.round(percentage * 0.7));
+          },
+        }
+      );
+      abortRef.current = null;
+      blobUrl = blob.url;
     } catch (e) {
+      abortRef.current = null;
       setError(e instanceof Error ? e.message : "Upload to storage failed");
       setStatus("error");
       return;
@@ -372,7 +364,7 @@ function UploadTab() {
   }
 
   function reset() {
-    xhrRef.current?.abort();
+    abortRef.current?.abort();
     setFile(null);
     setTitle("");
     setEdition("");
@@ -389,7 +381,7 @@ function UploadTab() {
     <div className="max-w-2xl">
       <p className="text-sm text-gray-400 mb-6">
         Upload a PDF to your Archive.org account and optionally add it to the public textbook catalog.
-        Files are streamed through the server — no size limits, no CORS issues.
+        Upload a PDF directly to cloud storage, then transfer to Archive.org. No size limits.
       </p>
 
       {status === "done" ? (
@@ -417,7 +409,7 @@ function UploadTab() {
               ) : (
                 <div>
                   <p className="text-sm text-gray-400">Click to select a PDF file</p>
-                  <p className="text-xs text-gray-600 mt-1">Any size — streamed through the server</p>
+                  <p className="text-xs text-gray-600 mt-1">Any size — uploaded directly to cloud storage</p>
                 </div>
               )}
             </div>
