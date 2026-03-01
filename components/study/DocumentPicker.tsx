@@ -758,8 +758,8 @@ function TextbookPanel({
                 )}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {book.sourceType === "oer" ? "Open Access" : "Requires your PDF"} · {book.chapters.length}{" "}
-                chapters
+                {book.sourceType === "oer" ? "Open Access" : "Requires your PDF"}
+                {book.chapters.length > 0 ? ` · ${book.chapters.length} chapters` : " · No chapter index"}
               </p>
             </button>
           </li>
