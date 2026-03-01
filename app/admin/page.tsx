@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { upload } from "@vercel/blob/client";
+import { put } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -302,29 +302,41 @@ function UploadTab() {
     addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      // Pre-flight: check the token endpoint is alive and env vars are set.
-      addLog("Checking /api/admin/blob-token health…");
-      try {
-        const healthRes = await fetch("/api/admin/blob-token");
-        const health = await healthRes.json();
-        addLog(`Health: ${JSON.stringify(health)}`);
-        if (!health.ok) {
-          throw new Error(`Missing env vars: ${JSON.stringify(health)}`);
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        addLog(`Health check failed: ${msg}`);
-        throw new Error(`Token endpoint not ready: ${msg}`);
-      }
-
+      // Step 1a: Request a client token from our server manually.
       addLog("Requesting client token…");
-      const blob = await upload(blobPathname, file, {
+      const tokenRes = await fetch("/api/admin/blob-token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "blob.generate-client-token",
+          payload: { pathname: blobPathname, clientPayload: null, multipart: true },
+        }),
+      });
+      addLog(`Token response: ${tokenRes.status} ${tokenRes.statusText}`);
+      if (!tokenRes.ok) {
+        const errBody = await tokenRes.text();
+        addLog(`Token error body: ${errBody}`);
+        throw new Error(`Token request failed (${tokenRes.status}): ${errBody}`);
+      }
+      const tokenData = await tokenRes.json();
+      if (!tokenData.clientToken) {
+        addLog(`Token response body: ${JSON.stringify(tokenData)}`);
+        throw new Error("No clientToken in response");
+      }
+      addLog(`Got client token (${tokenData.clientToken.length} chars)`);
+
+      // Step 1b: Upload directly from browser to Vercel Blob CDN using put().
+      // put() with a client token sends file browser→CDN with no callback needed.
+      addLog("Starting direct upload to Vercel Blob CDN…");
+      const blob = await put(blobPathname, file, {
         access: "public",
-        handleUploadUrl: "/api/admin/blob-token",
+        token: tokenData.clientToken,
         multipart: true,
         onUploadProgress: ({ loaded, total, percentage }) => {
           setProgress((prev) => Math.max(prev, Math.round(percentage * 0.7)));
-          addLog(`Progress: ${percentage.toFixed(1)}% (${(loaded / 1024 / 1024).toFixed(1)}/${(total / 1024 / 1024).toFixed(1)} MB)`);
+          if (Math.round(percentage) % 10 === 0) {
+            addLog(`Progress: ${percentage.toFixed(1)}% (${(loaded / 1024 / 1024).toFixed(1)}/${(total / 1024 / 1024).toFixed(1)} MB)`);
+          }
         },
       });
       blobUrl = blob.url;
