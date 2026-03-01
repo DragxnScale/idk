@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -290,16 +289,47 @@ function UploadTab() {
 
     const filename = encodeURIComponent(file.name.replace(/\s+/g, "_"));
 
-    // Step 1: Upload directly from browser to Vercel Blob (no server body limit)
+    // Step 1: Upload directly from browser to Vercel Blob REST API (no callback hang)
     setStatusLabel("Uploading to storage…");
     let blobUrl: string;
     try {
-      const blob = await upload(`admin-staging/${identifier}/${filename}`, file, {
-        access: "public",
-        handleUploadUrl: "/api/admin/blob-token",
-        onUploadProgress: ({ percentage }) => setProgress(prev => Math.max(prev, Math.round(percentage * 0.7))),
+      // Fetch the write token from our secure admin-only endpoint
+      const tokenRes = await fetch("/api/admin/blob-write-token");
+      if (!tokenRes.ok) {
+        const d = await tokenRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Could not get upload token");
+      }
+      const { token } = await tokenRes.json();
+
+      // PUT directly to Vercel Blob REST API — resolves as soon as upload finishes,
+      // no server callback round-trip required
+      blobUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhrRef.current = xhr;
+        xhr.open("PUT", `https://blob.vercel-storage.com/admin-staging/${identifier}/${filename}`);
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.setRequestHeader("x-vercel-blob-access", "public");
+        xhr.setRequestHeader("Content-Type", "application/pdf");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setProgress(prev => Math.max(prev, Math.round((e.loaded / e.total) * 70)));
+        };
+        xhr.onload = () => {
+          xhrRef.current = null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const result = JSON.parse(xhr.responseText);
+              resolve(result.url);
+            } catch {
+              reject(new Error("Invalid response from blob storage"));
+            }
+          } else {
+            reject(new Error(`Blob storage returned ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => { xhrRef.current = null; reject(new Error("Network error during upload")); };
+        xhr.onabort = () => { xhrRef.current = null; reject(new Error("Upload cancelled")); };
+        xhr.send(file);
       });
-      blobUrl = blob.url;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload to storage failed");
       setStatus("error");
