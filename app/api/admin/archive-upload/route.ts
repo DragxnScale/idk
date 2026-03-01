@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
+import { del } from "@vercel/blob";
 import { requireAdmin } from "@/lib/admin";
 
-// Allow up to 5 minutes for large PDF uploads
 export const maxDuration = 300;
-
-// Disable Next.js body parsing so we can stream the raw body to archive.org
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
@@ -23,16 +21,18 @@ export async function POST(request: Request) {
     );
   }
 
-  // Metadata comes in as query params; the raw body is the PDF binary
-  const { searchParams } = new URL(request.url);
-  const identifier = searchParams.get("identifier");
-  const filename = searchParams.get("filename");
-  const title = searchParams.get("title") ?? "";
-  const edition = searchParams.get("edition") ?? "";
-  const isbn = searchParams.get("isbn") ?? "";
+  // File is already in Vercel Blob — receive just the metadata as JSON (tiny body)
+  const { blobUrl, identifier, filename, title, edition, isbn } = await request.json();
 
-  if (!identifier || !filename) {
-    return NextResponse.json({ error: "identifier and filename are required" }, { status: 400 });
+  if (!blobUrl || !identifier || !filename) {
+    return NextResponse.json({ error: "blobUrl, identifier and filename are required" }, { status: 400 });
+  }
+
+  // Fetch the PDF from Vercel Blob and stream it to archive.org server-to-server
+  // No CORS issues, no client body size limit
+  const blobRes = await fetch(blobUrl);
+  if (!blobRes.ok) {
+    return NextResponse.json({ error: "Could not read file from Blob storage." }, { status: 502 });
   }
 
   const uploadUrl = `https://s3.us.archive.org/${identifier}/${filename}`;
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const headers: Record<string, string> = {
     Authorization: `LOW ${accessKey}:${secretKey}`,
     "x-archive-auto-make-bucket": "1",
-    "x-archive-meta-title": title,
+    "x-archive-meta-title": title ?? "",
     "x-archive-meta-mediatype": "texts",
     "x-archive-meta-subject": "textbook;education;studyfocus",
     "Content-Type": "application/pdf",
@@ -49,17 +49,19 @@ export async function POST(request: Request) {
   if (edition) headers["x-archive-meta-edition"] = edition;
   if (isbn) headers["x-archive-meta-identifier-isbn"] = isbn;
 
-  const contentLength = request.headers.get("content-length");
+  const contentLength = blobRes.headers.get("content-length");
   if (contentLength) headers["Content-Length"] = contentLength;
 
-  // Stream the request body directly to archive.org — no buffering
   const archiveRes = await fetch(uploadUrl, {
     method: "PUT",
     headers,
-    body: request.body,
+    body: blobRes.body,
     // @ts-expect-error — Node.js fetch requires this for streaming request bodies
     duplex: "half",
   });
+
+  // Clean up the temporary blob regardless of outcome
+  await del(blobUrl).catch(() => {});
 
   if (!archiveRes.ok) {
     const text = await archiveRes.text().catch(() => "");

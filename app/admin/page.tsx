@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -258,6 +259,7 @@ function UploadTab() {
 
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [progress, setProgress] = useState(0);
+  const [statusLabel, setStatusLabel] = useState("");
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,47 +290,39 @@ function UploadTab() {
 
     const filename = encodeURIComponent(file.name.replace(/\s+/g, "_"));
 
-    // Build URL with metadata as query params; body is the raw PDF binary.
-    // Uploads go through our own API route which streams to archive.org server-side,
-    // avoiding both CORS restrictions and Vercel body-size limits.
-    const params = new URLSearchParams({
-      identifier,
-      filename,
-      title,
-      ...(edition && { edition }),
-      ...(isbn && { isbn }),
-    });
-    const uploadUrl = `/api/admin/archive-upload?${params}`;
-
-    // Use XHR so we get upload progress events
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhrRef.current = xhr;
-      xhr.open("POST", uploadUrl);
-      xhr.setRequestHeader("Content-Type", "application/pdf");
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
-      };
-      xhr.onload = () => {
-        xhrRef.current = null;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-        } else {
-          const msg = (() => {
-            try { return JSON.parse(xhr.responseText).error; } catch { return null; }
-          })();
-          reject(new Error(msg ?? `Server returned ${xhr.status}`));
-        }
-      };
-      xhr.onerror = () => { xhrRef.current = null; reject(new Error("Network error during upload")); };
-      xhr.onabort = () => { xhrRef.current = null; reject(new Error("Upload cancelled")); };
-      xhr.send(file);
-    }).catch((e: Error) => {
-      setError(e.message);
+    // Step 1: Upload directly from browser to Vercel Blob (no server body limit)
+    setStatusLabel("Uploading to storage…");
+    let blobUrl: string;
+    try {
+      const blob = await upload(`admin-staging/${identifier}/${filename}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/blob/upload",
+        onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage * 0.7)),
+      });
+      blobUrl = blob.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload to storage failed");
       setStatus("error");
-      throw e;
+      return;
+    }
+
+    // Step 2: Server fetches from Vercel Blob and streams to archive.org (server-to-server)
+    setStatusLabel("Transferring to Archive.org…");
+    setProgress(75);
+    const archiveRes = await fetch("/api/admin/archive-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blobUrl, identifier, filename, title, edition, isbn }),
     });
 
+    if (!archiveRes.ok) {
+      const data = await archiveRes.json().catch(() => ({}));
+      setError(data.error ?? `Archive.org transfer failed (${archiveRes.status})`);
+      setStatus("error");
+      return;
+    }
+
+    setProgress(95);
     const publicUrl = `https://archive.org/download/${identifier}/${filename}`;
     setArchiveUrl(publicUrl);
 
@@ -501,7 +495,7 @@ function UploadTab() {
           {status === "uploading" && (
             <div>
               <div className="flex justify-between text-xs text-gray-400 mb-1">
-                <span>Uploading to Archive.org…</span>
+                <span>{statusLabel || "Uploading…"}</span>
                 <span>{progress}%</span>
               </div>
               <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
@@ -522,7 +516,7 @@ function UploadTab() {
             disabled={status === "uploading" || !file || !title || !identifier}
             className="w-full rounded-lg bg-white text-black py-2.5 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {status === "uploading" ? `Uploading… ${progress}%` : "Upload to Archive.org"}
+            {status === "uploading" ? `${statusLabel || "Uploading…"} ${progress}%` : "Upload to Archive.org"}
           </button>
         </div>
       )}
