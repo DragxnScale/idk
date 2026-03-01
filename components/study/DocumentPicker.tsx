@@ -556,6 +556,8 @@ function TextbookPanel({
 
   useEffect(() => {
     if (!selectedBook?.sourceUrl || selectedBook.sourceType === "user_upload") return;
+    // Skip expensive PDF extraction if we already have chapter ranges from the catalog
+    if (selectedBook.chapters.length > 0) return;
     let cancelled = false;
     setExtracting(true);
     setExtractedRanges(null);
@@ -569,7 +571,7 @@ function TextbookPanel({
     });
 
     return () => { cancelled = true; };
-  }, [selectedBook?.id, selectedBook?.sourceUrl, selectedBook?.sourceType]);
+  }, [selectedBook?.id, selectedBook?.sourceUrl, selectedBook?.sourceType, selectedBook?.chapters.length]);
 
   const activeRanges = extractedRanges ?? selectedBook?.chapterPageRanges ?? {};
   const activeChapters = extractedRanges
