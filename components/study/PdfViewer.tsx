@@ -10,11 +10,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 interface PdfViewerProps {
   url: string;
   initialPage?: number;
+  jumpToPage?: number | null;
   onPageChange?: (page: number) => void;
   onPageText?: (page: number, text: string) => void;
 }
 
-export function PdfViewer({ url, initialPage = 1, onPageChange, onPageText }: PdfViewerProps) {
+export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPageText }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,12 @@ export function PdfViewer({ url, initialPage = 1, onPageChange, onPageText }: Pd
     },
     [numPages, onPageChange]
   );
+
+  useEffect(() => {
+    if (jumpToPage != null && jumpToPage !== pageNumber && numPages > 0) {
+      goToPage(jumpToPage);
+    }
+  }, [jumpToPage, numPages, goToPage, pageNumber]);
 
   useEffect(() => {
     if (!url || !onPageText) return;

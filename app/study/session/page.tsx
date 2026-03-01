@@ -26,18 +26,13 @@ export default function StudySessionPage() {
   const [showNotes, setShowNotes] = useState(false);
   const [pageTexts, setPageTexts] = useState<Map<number, string>>(new Map());
   const [visitedPageCount, setVisitedPageCount] = useState(0);
+  const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
+  const [jumpTarget, setJumpTarget] = useState<number | null>(null);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
   const accumulatedTextRef = useRef("");
   const visitedPagesRef = useRef<Set<number>>(new Set());
-
-  const handlePageChange = useCallback((page: number) => {
-    if (!visitedPagesRef.current.has(page)) {
-      visitedPagesRef.current.add(page);
-      setVisitedPageCount(visitedPagesRef.current.size);
-    }
-  }, []);
 
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
@@ -110,6 +105,54 @@ export default function StudySessionPage() {
       window.location.href = `/study/session/${sessionId}/summary`;
     }
   }, [sessionId]);
+
+  const goalTriggeredRef = useRef(false);
+
+  function getCurrentChapterEndPage(): number | null {
+    if (goalType !== "chapter" || selectedChapters.length === 0) return null;
+    const ranges = selectedDoc?.chapterPageRanges;
+    if (!ranges) return null;
+    const ch = selectedChapters[currentChapterIdx];
+    if (!ch) return null;
+    const range = ranges[ch];
+    return range ? range[1] : null;
+  }
+
+  const handlePageChange = useCallback((page: number) => {
+    if (!visitedPagesRef.current.has(page)) {
+      visitedPagesRef.current.add(page);
+      setVisitedPageCount(visitedPagesRef.current.size);
+    }
+
+    if (goalType !== "chapter" || selectedChapters.length === 0 || goalTriggeredRef.current) return;
+
+    const ranges = selectedDoc?.chapterPageRanges;
+    if (!ranges) return;
+
+    setCurrentChapterIdx((idx) => {
+      const ch = selectedChapters[idx];
+      if (!ch) return idx;
+      const range = ranges[ch];
+      if (!range) return idx;
+
+      if (page >= range[1]) {
+        const nextIdx = idx + 1;
+        if (nextIdx < selectedChapters.length) {
+          const nextCh = selectedChapters[nextIdx];
+          const nextRange = ranges[nextCh];
+          if (nextRange) {
+            setJumpTarget(nextRange[0]);
+          }
+          return nextIdx;
+        } else {
+          goalTriggeredRef.current = true;
+          handleEnd();
+          return idx;
+        }
+      }
+      return idx;
+    });
+  }, [goalType, selectedChapters, selectedDoc?.chapterPageRanges, handleEnd]);
 
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;
@@ -365,12 +408,15 @@ export default function StudySessionPage() {
               {goalType === "chapter" && selectedChapters.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Reading chapters:
+                    Chapters ({currentChapterIdx + 1}/{selectedChapters.length}):
                   </p>
-                  {selectedChapters.map((ch) => {
+                  {selectedChapters.map((ch, i) => {
                     const range = selectedDoc?.chapterPageRanges?.[ch];
+                    const isCurrent = i === currentChapterIdx;
+                    const isDone = i < currentChapterIdx;
                     return (
-                      <p key={ch}>
+                      <p key={ch} className={isCurrent ? "font-semibold text-black dark:text-white" : ""}>
+                        {isDone ? "✓ " : isCurrent ? "→ " : "  "}
                         Ch. {ch}
                         {range && <span className="opacity-60"> (p.{range[0]}–{range[1]})</span>}
                       </p>
@@ -388,6 +434,7 @@ export default function StudySessionPage() {
               <PdfViewer
                 url={pdfUrl}
                 initialPage={startPage}
+                jumpToPage={jumpTarget}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
               />

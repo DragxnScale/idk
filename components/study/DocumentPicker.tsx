@@ -1,6 +1,59 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { pdfjs } from "react-pdf";
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+type OutlineItem = { title: string; dest: string | unknown[] | null; items: OutlineItem[] };
+
+async function extractChapterRanges(
+  proxyUrl: string
+): Promise<Record<string, [number, number]> | null> {
+  try {
+    const doc = await pdfjs.getDocument(proxyUrl).promise;
+    const outline: OutlineItem[] | null = await doc.getOutline();
+    if (!outline || outline.length === 0) return null;
+
+    const chapters: { num: string; page: number }[] = [];
+
+    for (const item of outline) {
+      const match = item.title.match(/^(?:chapter\s+)?(\d+)/i);
+      if (!match) continue;
+
+      let pageIndex = 0;
+      try {
+        if (typeof item.dest === "string") {
+          const dest = await doc.getDestination(item.dest);
+          if (dest) pageIndex = await doc.getPageIndex(dest[0] as never);
+        } else if (Array.isArray(item.dest) && item.dest[0]) {
+          pageIndex = await doc.getPageIndex(item.dest[0] as never);
+        } else {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      chapters.push({ num: match[1], page: pageIndex + 1 });
+    }
+
+    if (chapters.length === 0) return null;
+
+    const totalPages = doc.numPages;
+    const ranges: Record<string, [number, number]> = {};
+    for (let i = 0; i < chapters.length; i++) {
+      const start = chapters[i].page;
+      const end = i + 1 < chapters.length ? chapters[i + 1].page - 1 : totalPages;
+      ranges[chapters[i].num] = [start, end];
+    }
+
+    return ranges;
+  } catch (e) {
+    console.warn("Failed to extract PDF outline:", e);
+    return null;
+  }
+}
 
 interface TextbookEntry {
   id: string;
@@ -155,6 +208,30 @@ function TextbookPanel({
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [customStart, setCustomStart] = useState<number | null>(null);
   const [customEnd, setCustomEnd] = useState<number | null>(null);
+  const [extractedRanges, setExtractedRanges] = useState<Record<string, [number, number]> | null>(null);
+  const [extracting, setExtracting] = useState(false);
+
+  useEffect(() => {
+    if (!selectedBook?.sourceUrl || selectedBook.sourceType === "user_upload") return;
+    let cancelled = false;
+    setExtracting(true);
+    setExtractedRanges(null);
+
+    const proxyUrl = `/api/proxy/pdf?url=${encodeURIComponent(selectedBook.sourceUrl)}`;
+    extractChapterRanges(proxyUrl).then((ranges) => {
+      if (!cancelled) {
+        setExtractedRanges(ranges);
+        setExtracting(false);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [selectedBook?.id, selectedBook?.sourceUrl, selectedBook?.sourceType]);
+
+  const activeRanges = extractedRanges ?? selectedBook?.chapterPageRanges ?? {};
+  const activeChapters = extractedRanges
+    ? Object.keys(extractedRanges).sort((a, b) => Number(a) - Number(b))
+    : selectedBook?.chapters ?? [];
 
   useEffect(() => {
     setLoading(true);
@@ -180,6 +257,7 @@ function TextbookPanel({
           onClick={() => {
             setSelectedBook(null);
             setSelectedChapter(null);
+            setExtractedRanges(null);
           }}
           className="text-sm underline underline-offset-4"
         >
@@ -207,9 +285,12 @@ function TextbookPanel({
             </div>
           ) : (
             <>
-              <p className="mt-3 text-sm font-medium">Select a chapter:</p>
+              <p className="mt-3 text-sm font-medium">
+                Select a chapter:
+                {extracting && <span className="ml-2 text-xs text-gray-400 animate-pulse">Reading TOC…</span>}
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {selectedBook.chapters.map((ch) => (
+                {activeChapters.map((ch) => (
                   <button
                     key={ch}
                     type="button"
@@ -225,7 +306,7 @@ function TextbookPanel({
                 ))}
               </div>
               {selectedChapter && (() => {
-                const range = selectedBook.chapterPageRanges[selectedChapter];
+                const range = activeRanges[selectedChapter];
                 const chStart = range ? range[0] : 1;
                 const chEnd = range ? range[1] : 1;
                 const startPage = customStart ?? chStart;
@@ -282,8 +363,8 @@ function TextbookPanel({
                           title: `${selectedBook.title} — Ch. ${selectedChapter} (p. ${startPage}–${endPage})`,
                           startPage,
                           sourceUrl: selectedBook.sourceUrl ?? undefined,
-                          availableChapters: selectedBook.chapters,
-                          chapterPageRanges: selectedBook.chapterPageRanges,
+                          availableChapters: activeChapters,
+                          chapterPageRanges: activeRanges,
                         });
                       }}
                       className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
