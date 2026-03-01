@@ -1,9 +1,12 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { getServerSession } from "next-auth";
+import { decode } from "next-auth/jwt";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/password";
+
+const SESSION_COOKIE = "sf.session-token";
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
@@ -12,12 +15,12 @@ export const authOptions: NextAuthOptions = {
   useSecureCookies: false,
   cookies: {
     sessionToken: {
-      name: "sf.session-token",
+      name: SESSION_COOKIE,
       options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true },
     },
     callbackUrl: {
       name: "sf.callback-url",
-      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true },
+      options: { sameSite: "lax" as const, path: "/", secure: true },
     },
     csrfToken: {
       name: "sf.csrf-token",
@@ -64,6 +67,31 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-export function auth() {
-  return getServerSession(authOptions);
+/**
+ * Decode the session JWT directly from cookies — bypasses getServerSession
+ * which can fail behind reverse proxies (Railway) due to NEXTAUTH_URL issues.
+ */
+export async function auth(): Promise<{ user: { id: string; email: string; name: string } } | null> {
+  const cookieStore = cookies();
+  const raw = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!raw) return null;
+
+  try {
+    const token = await decode({
+      token: raw,
+      secret: process.env.NEXTAUTH_SECRET!,
+      salt: SESSION_COOKIE,
+    });
+    if (!token?.id) return null;
+
+    return {
+      user: {
+        id: token.id as string,
+        email: (token.email as string) ?? "",
+        name: (token.name as string) ?? "",
+      },
+    };
+  } catch {
+    return null;
+  }
 }

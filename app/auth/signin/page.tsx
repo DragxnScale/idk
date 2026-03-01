@@ -22,10 +22,12 @@ export default function SignInPage() {
         redirect: false,
       });
 
-      if (result?.error) {
+      if (!result?.ok || result?.error) {
         throw new Error("Invalid email or password");
       }
 
+      // Small delay to let the browser store the cookie before navigating
+      await new Promise((r) => setTimeout(r, 200));
       window.location.href = "/dashboard";
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
