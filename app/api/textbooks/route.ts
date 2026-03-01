@@ -6,11 +6,8 @@ import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks } from "@/lib/db/seed-textbooks";
 
 async function ensureSeeded() {
-  // Only seed if the catalog is completely empty (first-ever run).
-  // This prevents deleted entries from reappearing on every request.
-  const existing = await db.query.textbookCatalog.findFirst();
-  if (existing) return;
-
+  // If catalog is empty, seed everything. Otherwise only insert any new seed
+  // entries that are missing (onConflictDoNothing so we never overwrite existing).
   const now = new Date();
   for (const book of seedTextbooks) {
     await db
@@ -32,15 +29,27 @@ export async function GET(request: Request) {
   const q = searchParams.get("q")?.toLowerCase() ?? "";
 
   const all = await db.query.textbookCatalog.findMany();
+  const userId = session.user.id;
+
+  // Hide from public: exclude hidden items unless current user is in visibleToUserIds
+  const visible = all.filter((b) => {
+    if (!b.hidden) return true;
+    try {
+      const ids: string[] = b.visibleToUserIds ? JSON.parse(b.visibleToUserIds) : [];
+      return ids.includes(userId);
+    } catch {
+      return false;
+    }
+  });
 
   const results = q
-    ? all.filter(
+    ? visible.filter(
         (b) =>
           b.title.toLowerCase().includes(q) ||
           (b.edition ?? "").toLowerCase().includes(q) ||
           (b.isbn ?? "").includes(q)
       )
-    : all;
+    : visible;
 
   return NextResponse.json(
     results.map((b) => {

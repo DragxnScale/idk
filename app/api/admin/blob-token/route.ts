@@ -79,6 +79,7 @@ export async function POST(request: Request): Promise<Response> {
       allowedContentTypes: ["application/pdf"],
       maximumSizeInBytes: 500 * 1024 * 1024,
       validUntil: Date.now() + 2 * 60 * 60 * 1000,
+      addRandomSuffix: false,
       onUploadCompleted: { callbackUrl },
     });
 

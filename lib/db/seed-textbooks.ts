@@ -95,4 +95,14 @@ export const seedTextbooks = [
       "6": [207, 250],
     }),
   },
+  {
+    id: "marshak-earth-portrait-2015",
+    title: "Earth: Portrait of a Planet",
+    edition: "2015",
+    isbn: null,
+    sourceType: "oer" as const,
+    sourceUrl:
+      "https://archive.org/download/stephen-marshak-earth-portrait-of-a-planet-w.-w.-norton-co-2015/stephen-marshak-earth-portrait-of-a-planet-w.-w.-norton-co-2015.pdf",
+    chapterPageRanges: null,
+  },
 ];

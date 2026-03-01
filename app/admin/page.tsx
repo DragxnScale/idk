@@ -23,6 +23,8 @@ interface CatalogEntry {
   sourceType: string;
   sourceUrl: string | null;
   chapterPageRanges: Record<string, [number, number]>;
+  hidden?: boolean;
+  visibleToUserIds?: string[];
   createdAt: string | null;
 }
 
@@ -337,7 +339,6 @@ function UploadTab() {
         xhr.setRequestHeader("x-api-version", "7");
         xhr.setRequestHeader("x-content-type", "application/pdf");
         xhr.setRequestHeader("x-vercel-blob-access", "public");
-        xhr.setRequestHeader("x-add-random-suffix", "0");
         xhr.setRequestHeader("x-api-blob-request-attempt", "0");
 
         let lastLoggedPct = -1;
@@ -646,6 +647,10 @@ function CatalogTab() {
   const [entries, setEntries] = useState<CatalogEntry[] | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CatalogEntry | null>(null);
+  const [confirmHide, setConfirmHide] = useState<CatalogEntry | null>(null);
+  const [hideUserIds, setHideUserIds] = useState<string[]>([]);
+  const [usersForHide, setUsersForHide] = useState<UserRow[]>([]);
+  const [patching, setPatching] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
@@ -662,6 +667,62 @@ function CatalogTab() {
     else alert("Failed to remove entry");
     setDeleting(null);
     setConfirmDelete(null);
+  }
+
+  async function openHideModal(entry: CatalogEntry) {
+    setConfirmHide(entry);
+    setHideUserIds(entry.visibleToUserIds ?? []);
+    const res = await fetch("/api/admin/users");
+    if (res.ok) setUsersForHide(await res.json());
+    else setUsersForHide([]);
+  }
+
+  async function applyHide() {
+    if (!confirmHide) return;
+    setPatching(confirmHide.id);
+    const res = await fetch("/api/admin/catalog", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: confirmHide.id,
+        hidden: true,
+        visibleToUserIds: hideUserIds,
+      }),
+    });
+    if (res.ok) {
+      setEntries((prev) =>
+        prev?.map((e) =>
+          e.id === confirmHide.id
+            ? { ...e, hidden: true, visibleToUserIds: hideUserIds }
+            : e
+        ) ?? null
+      );
+      setConfirmHide(null);
+    } else alert("Failed to update");
+    setPatching(null);
+  }
+
+  async function unhideEntry(entry: CatalogEntry) {
+    setPatching(entry.id);
+    const res = await fetch("/api/admin/catalog", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: entry.id, hidden: false, visibleToUserIds: [] }),
+    });
+    if (res.ok) {
+      setEntries((prev) =>
+        prev?.map((e) =>
+          e.id === entry.id ? { ...e, hidden: false, visibleToUserIds: [] } : e
+        ) ?? null
+      );
+    } else alert("Failed to unhide");
+    setPatching(null);
+  }
+
+  function toggleHideUser(userId: string) {
+    setHideUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
   }
 
   const filtered = (entries ?? []).filter(
@@ -697,6 +758,11 @@ function CatalogTab() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-medium text-sm">{entry.title}</p>
                   {entry.edition && <span className="text-xs text-gray-500">{entry.edition} ed.</span>}
+                  {entry.hidden && (
+                    <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-900/50 text-amber-400">
+                      Hidden
+                    </span>
+                  )}
                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${entry.sourceType === "oer" ? "bg-green-900/50 text-green-400" : "bg-gray-800 text-gray-400"}`}>
                     {entry.sourceType}
                   </span>
@@ -712,13 +778,32 @@ function CatalogTab() {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => setConfirmDelete(entry)}
-                disabled={deleting === entry.id}
-                className="flex-shrink-0 rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
-              >
-                Remove
-              </button>
+              <div className="flex flex-shrink-0 items-center gap-2">
+                {entry.hidden ? (
+                  <button
+                    onClick={() => unhideEntry(entry)}
+                    disabled={patching === entry.id}
+                    className="rounded-md border border-amber-700 px-3 py-1 text-xs text-amber-400 hover:bg-amber-900/30 transition disabled:opacity-40"
+                  >
+                    {patching === entry.id ? "…" : "Unhide"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => openHideModal(entry)}
+                    disabled={patching === entry.id}
+                    className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition disabled:opacity-40"
+                  >
+                    Hide
+                  </button>
+                )}
+                <button
+                  onClick={() => setConfirmDelete(entry)}
+                  disabled={deleting === entry.id}
+                  className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           );
         })}
@@ -734,6 +819,42 @@ function CatalogTab() {
               <button onClick={() => setConfirmDelete(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
               <button onClick={() => deleteEntry(confirmDelete)} disabled={deleting === confirmDelete.id} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
                 {deleting === confirmDelete.id ? "Removing…" : "Yes, remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmHide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl max-h-[85vh] flex flex-col">
+            <h2 className="text-base font-semibold mb-1">Hide from public catalog</h2>
+            <p className="text-sm text-gray-400 mb-2"><span className="text-white font-medium">{confirmHide.title}</span></p>
+            <p className="text-sm text-gray-500 mb-3">The book will not appear in the catalog for most users. Select who can still see it:</p>
+            <div className="flex-1 overflow-y-auto rounded-lg border border-gray-700 bg-gray-950 p-2 mb-4 min-h-0">
+              {usersForHide.length === 0 ? (
+                <p className="text-xs text-gray-500 py-2">Loading users…</p>
+              ) : (
+                <ul className="space-y-1">
+                  {usersForHide.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-gray-800/50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hideUserIds.includes(u.id)}
+                        onChange={() => toggleHideUser(u.id)}
+                        className="rounded border-gray-600"
+                      />
+                      <span className="text-sm text-gray-300">{u.email}</span>
+                      {u.name && <span className="text-xs text-gray-500">({u.name})</span>}
+                    </label>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setConfirmHide(null); setHideUserIds([]); }} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
+              <button onClick={applyHide} disabled={patching === confirmHide.id} className="flex-1 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium hover:bg-amber-700 transition disabled:opacity-50">
+                {patching === confirmHide.id ? "Saving…" : "Hide"}
               </button>
             </div>
           </div>

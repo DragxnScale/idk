@@ -21,6 +21,8 @@ export async function GET() {
       sourceType: b.sourceType,
       sourceUrl: b.sourceUrl ?? null,
       chapterPageRanges: b.chapterPageRanges ? JSON.parse(b.chapterPageRanges) : {},
+      hidden: b.hidden ?? false,
+      visibleToUserIds: b.visibleToUserIds ? JSON.parse(b.visibleToUserIds) : [],
       createdAt: b.createdAt?.toISOString() ?? null,
     }))
   );
@@ -60,6 +62,29 @@ export async function POST(request: Request) {
         chapterPageRanges: chapterPageRanges ? JSON.stringify(chapterPageRanges) : null,
       },
     });
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(request: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await request.json();
+  const { id, hidden, visibleToUserIds } = body;
+  if (!id || typeof hidden !== "boolean") {
+    return NextResponse.json({ error: "id and hidden (boolean) required" }, { status: 400 });
+  }
+
+  await db
+    .update(textbookCatalog)
+    .set({
+      hidden,
+      visibleToUserIds: Array.isArray(visibleToUserIds)
+        ? JSON.stringify(visibleToUserIds)
+        : "[]",
+    })
+    .where(eq(textbookCatalog.id, id));
 
   return NextResponse.json({ ok: true });
 }
