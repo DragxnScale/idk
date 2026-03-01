@@ -326,8 +326,9 @@ function UploadTab() {
 
       // Step 1b: Upload directly to Vercel Blob API via XHR.
       // No SDK — raw XHR for full control and visibility.
-      const apiUrl = `https://vercel.com/api/blob?pathname=${encodeURIComponent(blobPathname)}`;
-      addLog(`Uploading to ${apiUrl}`);
+      const params = new URLSearchParams({ pathname: blobPathname });
+      const apiUrl = `https://vercel.com/api/blob/?${params.toString()}`;
+      addLog(`Uploading to Vercel Blob…`);
 
       const uploadResult = await new Promise<string>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -335,6 +336,8 @@ function UploadTab() {
         xhr.setRequestHeader("authorization", `Bearer ${clientToken}`);
         xhr.setRequestHeader("x-api-version", "7");
         xhr.setRequestHeader("x-content-type", "application/pdf");
+        xhr.setRequestHeader("x-vercel-blob-access", "public");
+        xhr.setRequestHeader("x-add-random-suffix", "0");
         xhr.setRequestHeader("x-api-blob-request-attempt", "0");
 
         let lastLoggedPct = -1;
