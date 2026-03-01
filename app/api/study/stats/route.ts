@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isAdminEmail } from "@/lib/admin";
 
 export async function GET() {
   const session = await auth();
@@ -72,6 +73,7 @@ export async function GET() {
   const todayMinutes = todaySessions.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0);
 
   return NextResponse.json({
+    isAdmin: isAdminEmail(session.user.email ?? ""),
     totalSessions: completed.length,
     totalMinutes,
     averageMinutes: completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0,

@@ -143,6 +143,14 @@ export function DocumentPicker({ onSelect }: DocumentPickerProps) {
 
 /* ── Upload Panel ──────────────────────────────────────────────────── */
 
+type FileStatus = "pending" | "uploading" | "done" | "error";
+interface FileItem {
+  file: File;
+  status: FileStatus;
+  error?: string;
+  result?: { id: string; title: string };
+}
+
 function UploadPanel({
   onSelect,
   onBack,
@@ -150,60 +158,200 @@ function UploadPanel({
   onSelect: (doc: SelectedDocument) => void;
   onBack: () => void;
 }) {
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<FileItem[]>([]);
+  const [running, setRunning] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = useCallback(async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    setError(null);
-
-    const form = new FormData();
-    form.append("file", file);
-    form.append("title", file.name.replace(/\.pdf$/i, ""));
-
-    try {
-      const res = await fetch("/api/documents/upload", {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Upload failed");
-      }
-      const data = await res.json();
-      onSelect({
-        type: "upload",
-        documentId: data.id,
-        title: data.title,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setUploading(false);
+  // Attach webkitdirectory (not a standard React prop) via ref
+  useEffect(() => {
+    if (folderRef.current) {
+      folderRef.current.setAttribute("webkitdirectory", "");
     }
-  }, [onSelect]);
+  }, []);
+
+  function addFiles(fileList: FileList) {
+    const pdfs = Array.from(fileList).filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+    );
+    if (pdfs.length === 0) return;
+    setItems((prev) => [
+      ...prev,
+      ...pdfs.map((file) => ({ file, status: "pending" as FileStatus })),
+    ]);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
+  }
+
+  async function uploadAll() {
+    setRunning(true);
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].status !== "pending") continue;
+      setItems((prev) =>
+        prev.map((it, idx) => (idx === i ? { ...it, status: "uploading" } : it))
+      );
+      const form = new FormData();
+      form.append("file", items[i].file);
+      form.append("title", items[i].file.name.replace(/\.pdf$/i, ""));
+      try {
+        const res = await fetch("/api/documents/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Upload failed");
+        }
+        const data = await res.json();
+        setItems((prev) =>
+          prev.map((it, idx) =>
+            idx === i ? { ...it, status: "done", result: { id: data.id, title: data.title } } : it
+          )
+        );
+      } catch (e) {
+        setItems((prev) =>
+          prev.map((it, idx) =>
+            idx === i
+              ? { ...it, status: "error", error: e instanceof Error ? e.message : "Failed" }
+              : it
+          )
+        );
+      }
+    }
+    setRunning(false);
+  }
+
+  const uploaded = items.filter((it) => it.status === "done");
+  const pending = items.filter((it) => it.status === "pending");
+  const hasItems = items.length > 0;
+  const allDone = hasItems && pending.length === 0 && !running;
 
   return (
     <div className="space-y-4">
       <button type="button" onClick={onBack} className="text-sm underline underline-offset-4">
         ← Back
       </button>
-      <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
+
+      {/* Drop zone */}
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600"
+      >
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+          Drop PDFs here, or:
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+          >
+            Select files
+          </button>
+          <button
+            type="button"
+            onClick={() => folderRef.current?.click()}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+          >
+            Select folder
+          </button>
+        </div>
         <input
           ref={fileRef}
           type="file"
-          accept="application/pdf"
-          onChange={handleUpload}
-          disabled={uploading}
-          className="block mx-auto text-sm"
+          accept=".pdf,application/pdf"
+          multiple
+          className="hidden"
+          onChange={(e) => e.target.files && addFiles(e.target.files)}
         />
-        {uploading && <p className="mt-3 text-sm text-gray-500 animate-pulse">Uploading…</p>}
-        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {/* folder input — webkitdirectory applied via ref */}
+        <input
+          ref={folderRef}
+          type="file"
+          accept=".pdf,application/pdf"
+          multiple
+          className="hidden"
+          onChange={(e) => e.target.files && addFiles(e.target.files)}
+        />
       </div>
+
+      {/* File list */}
+      {hasItems && (
+        <ul className="space-y-1.5 max-h-56 overflow-y-auto">
+          {items.map((it, i) => (
+            <li
+              key={i}
+              className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2 text-sm dark:border-gray-800"
+            >
+              <span className="flex-1 truncate text-gray-700 dark:text-gray-300">
+                {it.file.name.replace(/\.pdf$/i, "")}
+              </span>
+              {it.status === "pending" && (
+                <span className="text-xs text-gray-400">Pending</span>
+              )}
+              {it.status === "uploading" && (
+                <span className="text-xs text-blue-500 animate-pulse">Uploading…</span>
+              )}
+              {it.status === "done" && (
+                <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>
+              )}
+              {it.status === "error" && (
+                <span className="text-xs text-red-500" title={it.error}>✗ Failed</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Upload button */}
+      {pending.length > 0 && !running && (
+        <button
+          type="button"
+          onClick={uploadAll}
+          className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+        >
+          Upload {pending.length} PDF{pending.length !== 1 ? "s" : ""}
+        </button>
+      )}
+
+      {running && (
+        <p className="text-center text-sm text-gray-500 animate-pulse">
+          Uploading {items.filter((it) => it.status === "uploading").length > 0
+            ? `"${items.find((it) => it.status === "uploading")?.file.name.replace(/\.pdf$/i, "")}"`
+            : "…"}
+        </p>
+      )}
+
+      {/* Pick one to study */}
+      {allDone && uploaded.length > 0 && (
+        <div>
+          <p className="text-sm font-medium mb-2">
+            {uploaded.length === 1
+              ? "Ready — start studying?"
+              : `${uploaded.length} files uploaded — pick one to study:`}
+          </p>
+          <ul className="space-y-1.5">
+            {uploaded.map((it, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSelect({
+                      type: "upload",
+                      documentId: it.result!.id,
+                      title: it.result!.title,
+                    })
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-left text-sm font-medium transition hover:border-black hover:shadow-sm dark:border-gray-600 dark:hover:border-white"
+                >
+                  {it.result!.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

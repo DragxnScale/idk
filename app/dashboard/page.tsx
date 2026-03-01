@@ -19,6 +19,7 @@ interface RecentSession {
 }
 
 interface StatsData {
+  isAdmin?: boolean;
   totalSessions: number;
   totalMinutes: number;
   averageMinutes: number;
@@ -85,6 +86,14 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {stats.isAdmin && (
+              <Link
+                href="/admin"
+                className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-900/40 transition"
+              >
+                Developer Mode
+              </Link>
+            )}
             <Link
               href="/settings"
               className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-600"
