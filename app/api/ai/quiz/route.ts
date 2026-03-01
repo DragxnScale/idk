@@ -69,7 +69,7 @@ Given the reading text and any notes, generate:
 2. Review material:
    - keyConcepts: 4-6 most important concepts from the reading
    - thingsToReview: 3-5 specific topics the student should review further
-   - videoSuggestions: 2-3 YouTube search queries that would find helpful explainer videos on the topics`,
+   - videoSuggestions: 2-3 specific YouTube search queries (include subject + concept + "explained" or "tutorial", e.g. "covalent bonds chemistry tutorial Khan Academy") covering different topics from the reading`,
     prompt: `Reading material:\n${accumulatedText.slice(0, 10000)}\n\n${
       notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
     }`,

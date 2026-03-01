@@ -71,6 +71,7 @@ export const studySessions = sqliteTable("study_sessions", {
   endedAt: integer("ended_at", { mode: "timestamp" }),
   totalFocusedMinutes: integer("total_focused_minutes"),
   lastPageIndex: integer("last_page_index"),
+  videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
