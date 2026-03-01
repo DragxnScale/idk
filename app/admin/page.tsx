@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { put } from "@vercel/blob/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -302,7 +301,7 @@ function UploadTab() {
     addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      // Step 1a: Request a client token from our server manually.
+      // Step 1a: Request a client token from our server.
       addLog("Requesting client token…");
       const tokenRes = await fetch("/api/admin/blob-token", {
         method: "POST",
@@ -312,35 +311,75 @@ function UploadTab() {
           payload: { pathname: blobPathname, clientPayload: null, multipart: true },
         }),
       });
-      addLog(`Token response: ${tokenRes.status} ${tokenRes.statusText}`);
+      addLog(`Token response: ${tokenRes.status}`);
       if (!tokenRes.ok) {
         const errBody = await tokenRes.text();
-        addLog(`Token error body: ${errBody}`);
-        throw new Error(`Token request failed (${tokenRes.status}): ${errBody}`);
+        addLog(`Token error: ${errBody}`);
+        throw new Error(`Token failed (${tokenRes.status}): ${errBody}`);
       }
       const tokenData = await tokenRes.json();
       if (!tokenData.clientToken) {
-        addLog(`Token response body: ${JSON.stringify(tokenData)}`);
         throw new Error("No clientToken in response");
       }
-      addLog(`Got client token (${tokenData.clientToken.length} chars)`);
+      const clientToken = tokenData.clientToken;
+      addLog(`Got token (${clientToken.length} chars)`);
 
-      // Step 1b: Upload directly from browser to Vercel Blob CDN using put().
-      // put() with a client token sends file browser→CDN with no callback needed.
-      addLog("Starting direct upload to Vercel Blob CDN…");
-      const blob = await put(blobPathname, file, {
-        access: "public",
-        token: tokenData.clientToken,
-        multipart: true,
-        onUploadProgress: ({ loaded, total, percentage }) => {
-          setProgress((prev) => Math.max(prev, Math.round(percentage * 0.7)));
-          if (Math.round(percentage) % 10 === 0) {
-            addLog(`Progress: ${percentage.toFixed(1)}% (${(loaded / 1024 / 1024).toFixed(1)}/${(total / 1024 / 1024).toFixed(1)} MB)`);
+      // Step 1b: Upload directly to Vercel Blob API via XHR.
+      // No SDK — raw XHR for full control and visibility.
+      const apiUrl = `https://vercel.com/api/blob?pathname=${encodeURIComponent(blobPathname)}`;
+      addLog(`Uploading to ${apiUrl}`);
+
+      const uploadResult = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", apiUrl);
+        xhr.setRequestHeader("authorization", `Bearer ${clientToken}`);
+        xhr.setRequestHeader("x-api-version", "7");
+        xhr.setRequestHeader("x-content-type", "application/pdf");
+        xhr.setRequestHeader("x-api-blob-request-attempt", "0");
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setProgress(Math.round(pct * 0.7));
+            if (pct % 10 === 0) {
+              addLog(`Upload progress: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)}/${(e.total / 1024 / 1024).toFixed(1)} MB)`);
+            }
           }
-        },
+        };
+
+        xhr.onload = () => {
+          addLog(`XHR response: ${xhr.status} ${xhr.statusText}`);
+          addLog(`XHR body: ${xhr.responseText.slice(0, 500)}`);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const res = JSON.parse(xhr.responseText);
+              resolve(res.url);
+            } catch {
+              reject(new Error(`Invalid JSON: ${xhr.responseText.slice(0, 200)}`));
+            }
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText.slice(0, 300)}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          addLog("XHR onerror fired — likely CORS block or network failure");
+          reject(new Error("Network error (CORS or connectivity)"));
+        };
+
+        xhr.onabort = () => reject(new Error("Upload cancelled"));
+
+        xhr.ontimeout = () => {
+          addLog("XHR timeout");
+          reject(new Error("Upload timed out"));
+        };
+
+        addLog("Sending file via XHR PUT…");
+        xhr.send(file);
       });
-      blobUrl = blob.url;
-      addLog(`Upload complete! Blob URL: ${blobUrl}`);
+
+      blobUrl = uploadResult;
+      addLog(`Upload complete! URL: ${blobUrl}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload to storage failed";
       addLog(`UPLOAD ERROR: ${msg}`);
