@@ -296,8 +296,8 @@ function UploadTab() {
     try {
       const blob = await upload(`admin-staging/${identifier}/${filename}`, file, {
         access: "public",
-        handleUploadUrl: "/api/blob/upload",
-        onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage * 0.7)),
+        handleUploadUrl: "/api/admin/blob-token",
+        onUploadProgress: ({ percentage }) => setProgress(prev => Math.max(prev, Math.round(percentage * 0.7))),
       });
       blobUrl = blob.url;
     } catch (e) {

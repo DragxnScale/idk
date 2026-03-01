@@ -6,19 +6,17 @@ import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks } from "@/lib/db/seed-textbooks";
 
 async function ensureSeeded() {
+  // Only seed if the catalog is completely empty (first-ever run).
+  // This prevents deleted entries from reappearing on every request.
+  const existing = await db.query.textbookCatalog.findFirst();
+  if (existing) return;
+
   const now = new Date();
   for (const book of seedTextbooks) {
     await db
       .insert(textbookCatalog)
       .values({ ...book, createdAt: now })
-      .onConflictDoUpdate({
-        target: textbookCatalog.id,
-        set: {
-          chapterPageRanges: book.chapterPageRanges,
-          sourceUrl: book.sourceUrl,
-          sourceType: book.sourceType,
-        },
-      });
+      .onConflictDoNothing();
   }
 }
 
