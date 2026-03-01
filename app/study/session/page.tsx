@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { Timer, type GoalType } from "@/components/study/Timer";
 import { VisibilityGuard } from "@/components/focus/VisibilityGuard";
-import { FullscreenTrigger } from "@/components/focus/FullscreenTrigger";
 import { OverrideFlow } from "@/components/focus/OverrideFlow";
 import dynamic from "next/dynamic";
 import type { SelectedDocument } from "@/components/study/DocumentPicker";
@@ -38,6 +37,9 @@ export default function StudySessionPage() {
   const lastSavedRef = useRef(0);
   const accumulatedTextRef = useRef("");
   const visitedPagesRef = useRef<Set<number>>(new Set());
+  // Set to true just before any programmatic session end so the fullscreen
+  // lock doesn't re-open the password modal when the page navigates away.
+  const sessionEndingRef = useRef(false);
 
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
@@ -87,6 +89,10 @@ export default function StudySessionPage() {
 
   const handleEnd = useCallback(async () => {
     if (!sessionId) return;
+    sessionEndingRef.current = true;
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch {}
+    }
 
     if (accumulatedTextRef.current.trim()) {
       try {
@@ -227,6 +233,8 @@ export default function StudySessionPage() {
                 setError(`Select exactly ${targetValue} chapter${targetValue !== 1 ? "s" : ""}`);
                 return;
               }
+              // Request fullscreen here — must be inside a user-gesture handler
+              document.documentElement.requestFullscreen().catch(() => {});
               handleStart();
             }}
             className="space-y-5"
@@ -380,8 +388,11 @@ export default function StudySessionPage() {
             >
               {showNotes ? "Hide Notes" : "AI Notes"}
             </button>
-            <FullscreenTrigger className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs dark:border-gray-600" />
-            <OverrideFlow onConfirmEnd={handleEnd} />
+            <OverrideFlow
+              onConfirmEnd={handleEnd}
+              locked
+              sessionEndingRef={sessionEndingRef}
+            />
           </div>
         </header>
 
