@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
@@ -20,13 +19,9 @@ export async function POST(request: Request) {
   }
 
   const id = crypto.randomUUID();
-  const filename = `${id}.pdf`;
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-  const filePath = path.join(uploadsDir, filename);
+  const filename = `${session.user.id}/${id}.pdf`;
 
-  const bytes = await file.arrayBuffer();
-  await writeFile(filePath, Buffer.from(bytes));
+  const blob = await put(filename, file, { access: "public" });
 
   const now = new Date();
   await db.insert(documents).values({
@@ -34,9 +29,10 @@ export async function POST(request: Request) {
     userId: session.user.id,
     title,
     sourceType: "upload",
+    fileUrl: blob.url,
     createdAt: now,
     updatedAt: now,
   });
 
-  return NextResponse.json({ id, title, filename });
+  return NextResponse.json({ id, title, fileUrl: blob.url });
 }

@@ -97,7 +97,7 @@ interface DocumentPickerProps {
 }
 
 export function DocumentPicker({ onSelect }: DocumentPickerProps) {
-  const [mode, setMode] = useState<"choose" | "upload" | "textbook">("choose");
+  const [mode, setMode] = useState<"choose" | "upload" | "textbook" | "drive">("choose");
 
   return (
     <div className="space-y-4">
@@ -108,6 +108,19 @@ export function DocumentPicker({ onSelect }: DocumentPickerProps) {
           </p>
           <button
             type="button"
+            onClick={() => setMode("drive")}
+            className="flex items-center gap-3 rounded-lg border border-gray-300 p-4 text-left transition hover:border-black hover:shadow-sm dark:border-gray-600 dark:hover:border-white"
+          >
+            <span className="text-2xl">🗂️</span>
+            <div>
+              <p className="text-sm font-medium">My Drive</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Open a previously uploaded PDF or import from a link
+              </p>
+            </div>
+          </button>
+          <button
+            type="button"
             onClick={() => setMode("upload")}
             className="flex items-center gap-3 rounded-lg border border-gray-300 p-4 text-left transition hover:border-black hover:shadow-sm dark:border-gray-600 dark:hover:border-white"
           >
@@ -115,7 +128,7 @@ export function DocumentPicker({ onSelect }: DocumentPickerProps) {
             <div>
               <p className="text-sm font-medium">Upload a PDF</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Upload your own textbook, notes, or reading material
+                Upload files or a folder from your computer
               </p>
             </div>
           </button>
@@ -135,8 +148,153 @@ export function DocumentPicker({ onSelect }: DocumentPickerProps) {
         </div>
       )}
 
+      {mode === "drive" && <DrivePanel onSelect={onSelect} onBack={() => setMode("choose")} />}
       {mode === "upload" && <UploadPanel onSelect={onSelect} onBack={() => setMode("choose")} />}
       {mode === "textbook" && <TextbookPanel onSelect={onSelect} onBack={() => setMode("choose")} />}
+    </div>
+  );
+}
+
+/* ── Drive Panel ───────────────────────────────────────────────────── */
+
+interface DriveDoc {
+  id: string;
+  title: string;
+  fileUrl: string;
+  totalPages: number | null;
+  createdAt: string | null;
+}
+
+function DrivePanel({
+  onSelect,
+  onBack,
+}: {
+  onSelect: (doc: SelectedDocument) => void;
+  onBack: () => void;
+}) {
+  const [docs, setDocs] = useState<DriveDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  // URL import state
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const loadDocs = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/user/drive");
+    if (res.ok) setDocs(await res.json());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  async function handleImport() {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch("/api/user/drive/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportError(data.error ?? "Import failed");
+      } else {
+        setImportUrl("");
+        await loadDocs();
+      }
+    } catch {
+      setImportError("Network error. Please try again.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleDelete(doc: DriveDoc) {
+    setDeleting(doc.id);
+    await fetch(`/api/user/drive?id=${doc.id}`, { method: "DELETE" });
+    setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+    setDeleting(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <button type="button" onClick={onBack} className="text-sm underline underline-offset-4">
+        ← Back
+      </button>
+
+      {/* URL Import */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800/50">
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          Import from link
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-500">
+          Paste a direct URL to a PDF or ZIP file — ZIP files are automatically unpacked
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={importUrl}
+            onChange={(e) => { setImportUrl(e.target.value); setImportError(null); }}
+            onKeyDown={(e) => e.key === "Enter" && handleImport()}
+            placeholder="https://example.com/textbook.pdf"
+            className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:border-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          />
+          <button
+            type="button"
+            onClick={handleImport}
+            disabled={importing || !importUrl.trim()}
+            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+          >
+            {importing ? "Importing…" : "Import"}
+          </button>
+        </div>
+        {importError && (
+          <p className="text-xs text-red-500">{importError}</p>
+        )}
+      </div>
+
+      {/* Drive file list */}
+      {loading ? (
+        <p className="text-sm text-gray-400 animate-pulse">Loading your drive…</p>
+      ) : docs.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-4">
+          No files saved yet. Upload PDFs or import from a link above.
+        </p>
+      ) : (
+        <ul className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {docs.map((doc) => (
+            <li
+              key={doc.id}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 dark:border-gray-700"
+            >
+              <button
+                type="button"
+                onClick={() => onSelect({ type: "upload", documentId: doc.id, title: doc.title, sourceUrl: doc.fileUrl })}
+                className="flex-1 text-left text-sm font-medium truncate hover:text-gray-600 dark:hover:text-gray-300 transition"
+              >
+                {doc.title}
+              </button>
+              <span className="text-xs text-gray-400 shrink-0">
+                {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleDelete(doc)}
+                disabled={deleting === doc.id}
+                className="shrink-0 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-1"
+                title="Delete"
+              >
+                {deleting === doc.id ? "…" : "✕"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

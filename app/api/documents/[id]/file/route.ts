@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { readFile } from "fs/promises";
-import path from "path";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -22,17 +20,10 @@ export async function GET(
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  const filePath = path.join(process.cwd(), "uploads", `${doc.id}.pdf`);
-
-  try {
-    const buffer = await readFile(filePath);
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${doc.title ?? "document"}.pdf"`,
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: "File not found on disk" }, { status: 404 });
+  if (!doc.fileUrl) {
+    return NextResponse.json({ error: "No file stored for this document" }, { status: 404 });
   }
+
+  // Redirect to the Vercel Blob public URL
+  return NextResponse.redirect(doc.fileUrl);
 }

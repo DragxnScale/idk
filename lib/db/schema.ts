@@ -83,6 +83,7 @@ export const documents = sqliteTable("documents", {
   title: text("title"),
   sourceType: text("source_type").notNull(), // "upload" | "textbook"
   textbookCatalogId: text("textbook_catalog_id"),
+  fileUrl: text("file_url"), // Vercel Blob URL for uploaded PDFs
   totalPages: integer("total_pages"),
   extractedText: text("extracted_text"),
   createdAt: integer("created_at", { mode: "timestamp" }),

@@ -14,8 +14,10 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.37",
     "@libsql/client": "^0.14.0",
+    "@vercel/blob": "^2.3.0",
     "ai": "^6.0.105",
     "drizzle-orm": "^0.36.0",
+    "fflate": "^0.8.2",
     "next": "14.2.18",
     "next-auth": "^4.24.10",
     "react": "^18.3.1",
