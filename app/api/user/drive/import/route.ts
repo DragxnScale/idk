@@ -7,8 +7,8 @@ import { documents } from "@/lib/db/schema";
 
 export const maxDuration = 120;
 
-// ZIP files must fit in memory to be unzipped — cap at 200 MB
-const ZIP_MAX_BYTES = 200 * 1024 * 1024;
+// ZIP files must fit in memory to be unzipped — cap at 500 MB
+const ZIP_MAX_BYTES = 500 * 1024 * 1024;
 
 interface ImportedDoc {
   id: string;
