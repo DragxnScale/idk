@@ -45,9 +45,12 @@ export function PdfViewer({ url, initialPage = 1, onPageChange, onPageText }: Pd
     setLoading(false);
   }, []);
 
+  const visitedPagesRef = useRef<Set<number>>(new Set([initialPage]));
+
   const goToPage = useCallback(
     (page: number) => {
       const clamped = Math.max(1, Math.min(page, numPages));
+      visitedPagesRef.current.add(clamped);
       setPageNumber(clamped);
       onPageChange?.(clamped);
     },

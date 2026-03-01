@@ -69,7 +69,9 @@ export function Timer({
         <p className="text-sm text-gray-500 dark:text-gray-400">
           Chapter goal
         </p>
-        <p className="text-3xl font-semibold">Chapter {targetValue}</p>
+        <p className="text-3xl font-semibold">
+          {targetValue} ch.
+        </p>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           {formatTime(elapsed)} studied
         </p>

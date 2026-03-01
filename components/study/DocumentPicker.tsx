@@ -19,6 +19,8 @@ export interface SelectedDocument {
   title: string;
   startPage?: number;
   sourceUrl?: string;
+  availableChapters?: string[];
+  chapterPageRanges?: Record<string, [number, number]>;
 }
 
 interface DocumentPickerProps {
@@ -151,6 +153,8 @@ function TextbookPanel({
   const [loading, setLoading] = useState(false);
   const [selectedBook, setSelectedBook] = useState<TextbookEntry | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+  const [customStart, setCustomStart] = useState<number | null>(null);
+  const [customEnd, setCustomEnd] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -209,7 +213,7 @@ function TextbookPanel({
                   <button
                     key={ch}
                     type="button"
-                    onClick={() => setSelectedChapter(ch)}
+                    onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
                     className={`rounded-md border px-3 py-1.5 text-sm transition ${
                       selectedChapter === ch
                         ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
@@ -220,30 +224,75 @@ function TextbookPanel({
                   </button>
                 ))}
               </div>
-              {selectedChapter && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const range = selectedBook.chapterPageRanges[selectedChapter];
-                    onSelect({
-                      type: "textbook",
-                      documentId: selectedBook.id,
-                      title: `${selectedBook.title} — Ch. ${selectedChapter}`,
-                      startPage: range ? range[0] : 1,
-                      sourceUrl: selectedBook.sourceUrl ?? undefined,
-                    });
-                  }}
-                  className="mt-4 w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
-                >
-                  Read Chapter {selectedChapter}
-                  {selectedBook.chapterPageRanges[selectedChapter] && (
-                    <span className="ml-1 opacity-70">
-                      (p. {selectedBook.chapterPageRanges[selectedChapter][0]}–
-                      {selectedBook.chapterPageRanges[selectedChapter][1]})
-                    </span>
-                  )}
-                </button>
-              )}
+              {selectedChapter && (() => {
+                const range = selectedBook.chapterPageRanges[selectedChapter];
+                const chStart = range ? range[0] : 1;
+                const chEnd = range ? range[1] : 1;
+                const startPage = customStart ?? chStart;
+                const endPage = customEnd ?? chEnd;
+
+                return (
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                        Page range (Ch. {selectedChapter}: p. {chStart}–{chEnd})
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={chStart}
+                          max={endPage}
+                          value={startPage}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setCustomStart(v >= chStart && v <= chEnd ? v : chStart);
+                          }}
+                          className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                        />
+                        <span className="text-xs text-gray-400">to</span>
+                        <input
+                          type="number"
+                          min={startPage}
+                          max={chEnd}
+                          value={endPage}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setCustomEnd(v >= chStart && v <= chEnd ? v : chEnd);
+                          }}
+                          className="w-20 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-center dark:border-gray-600 dark:bg-gray-800"
+                        />
+                        {(customStart !== null || customEnd !== null) && (
+                          <button
+                            type="button"
+                            onClick={() => { setCustomStart(null); setCustomEnd(null); }}
+                            className="text-xs text-gray-500 underline underline-offset-2"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect({
+                          type: "textbook",
+                          documentId: selectedBook.id,
+                          title: `${selectedBook.title} — Ch. ${selectedChapter} (p. ${startPage}–${endPage})`,
+                          startPage,
+                          sourceUrl: selectedBook.sourceUrl ?? undefined,
+                          availableChapters: selectedBook.chapters,
+                          chapterPageRanges: selectedBook.chapterPageRanges,
+                        });
+                      }}
+                      className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                    >
+                      Read p. {startPage}–{endPage}
+                    </button>
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>

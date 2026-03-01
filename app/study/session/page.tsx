@@ -19,15 +19,25 @@ export default function StudySessionPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [goalType, setGoalType] = useState<GoalType>("time");
   const [targetValue, setTargetValue] = useState(25);
+  const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<SelectedDocument | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [pageTexts, setPageTexts] = useState<Map<number, string>>(new Map());
+  const [visitedPageCount, setVisitedPageCount] = useState(0);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
   const accumulatedTextRef = useRef("");
+  const visitedPagesRef = useRef<Set<number>>(new Set());
+
+  const handlePageChange = useCallback((page: number) => {
+    if (!visitedPagesRef.current.has(page)) {
+      visitedPagesRef.current.add(page);
+      setVisitedPageCount(visitedPagesRef.current.size);
+    }
+  }, []);
 
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
@@ -78,7 +88,6 @@ export default function StudySessionPage() {
   const handleEnd = useCallback(async () => {
     if (!sessionId) return;
 
-    // Store accumulated text in sessionStorage for the summary page
     if (accumulatedTextRef.current.trim()) {
       try {
         sessionStorage.setItem(`session-text-${sessionId}`, accumulatedTextRef.current);
@@ -113,6 +122,25 @@ export default function StudySessionPage() {
     return null;
   }
 
+  function getStartPage(): number {
+    if (goalType === "chapter" && selectedChapters.length > 0 && selectedDoc?.chapterPageRanges) {
+      const firstChapter = selectedChapters[0];
+      const range = selectedDoc.chapterPageRanges[firstChapter];
+      return range ? range[0] : 1;
+    }
+    return selectedDoc?.startPage ?? 1;
+  }
+
+  function toggleChapter(ch: string) {
+    setSelectedChapters((prev) => {
+      if (prev.includes(ch)) return prev.filter((c) => c !== ch);
+      if (prev.length >= targetValue) return prev;
+      return [...prev, ch].sort((a, b) => Number(a) - Number(b));
+    });
+  }
+
+  const hasChapterData = selectedDoc?.availableChapters && selectedDoc.availableChapters.length > 0;
+
   /* ── Setup screen ──────────────────────────────────────────────── */
   if (!sessionId) {
     return (
@@ -132,7 +160,10 @@ export default function StudySessionPage() {
               </span>
               <button
                 type="button"
-                onClick={() => setSelectedDoc(null)}
+                onClick={() => {
+                  setSelectedDoc(null);
+                  setSelectedChapters([]);
+                }}
                 className="text-xs underline text-gray-500"
               >
                 Change
@@ -153,6 +184,10 @@ export default function StudySessionPage() {
                 setError("Pick reading material first");
                 return;
               }
+              if (goalType === "chapter" && hasChapterData && selectedChapters.length !== targetValue) {
+                setError(`Select exactly ${targetValue} chapter${targetValue !== 1 ? "s" : ""}`);
+                return;
+              }
               handleStart();
             }}
             className="space-y-5"
@@ -161,27 +196,96 @@ export default function StudySessionPage() {
               <label className="block text-sm font-medium mb-1.5">Goal type</label>
               <select
                 value={goalType}
-                onChange={(e) => setGoalType(e.target.value as GoalType)}
+                onChange={(e) => {
+                  setGoalType(e.target.value as GoalType);
+                  setSelectedChapters([]);
+                  setTargetValue(e.target.value === "time" ? 25 : 1);
+                }}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
               >
                 <option value="time">Time (minutes)</option>
-                <option value="chapter">Chapter</option>
+                <option value="chapter">Chapters</option>
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1.5">
-                {goalType === "time" ? "Minutes" : "Chapter number"}
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={goalType === "time" ? 240 : 99}
-                value={targetValue}
-                onChange={(e) => setTargetValue(Number(e.target.value))}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
+            {goalType === "time" ? (
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Minutes</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={targetValue}
+                  onChange={(e) => setTargetValue(Number(e.target.value))}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">
+                    How many chapters do you want to read?
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={hasChapterData ? selectedDoc!.availableChapters!.length : 99}
+                    value={targetValue}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setTargetValue(v);
+                      setSelectedChapters((prev) => prev.slice(0, v));
+                    }}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                  />
+                </div>
+
+                {hasChapterData && targetValue > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Which {targetValue} chapter{targetValue !== 1 ? "s" : ""} do you want to read?
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedDoc!.availableChapters!.map((ch) => {
+                        const isSelected = selectedChapters.includes(ch);
+                        const isFull = selectedChapters.length >= targetValue && !isSelected;
+                        const range = selectedDoc!.chapterPageRanges?.[ch];
+                        return (
+                          <button
+                            key={ch}
+                            type="button"
+                            onClick={() => toggleChapter(ch)}
+                            disabled={isFull}
+                            className={`rounded-md border px-3 py-1.5 text-sm transition ${
+                              isSelected
+                                ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                                : isFull
+                                ? "border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600"
+                                : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                            }`}
+                          >
+                            Ch. {ch}
+                            {range && (
+                              <span className="ml-1 text-xs opacity-60">
+                                (p.{range[0]}–{range[1]})
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {selectedChapters.length} / {targetValue} selected
+                      {selectedChapters.length > 0 && (
+                        <span>
+                          {" "}— Ch. {selectedChapters.join(", ")}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
 
             {error && (
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -206,6 +310,7 @@ export default function StudySessionPage() {
 
   /* ── Active session ────────────────────────────────────────────── */
   const pdfUrl = getPdfUrl();
+  const startPage = getStartPage();
 
   return (
     <VisibilityGuard
@@ -256,7 +361,23 @@ export default function StudySessionPage() {
               onGoalReached={handleEnd}
             />
             <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-              <p>Pages read: {pageTexts.size}</p>
+              <p>Pages visited: {visitedPageCount}</p>
+              {goalType === "chapter" && selectedChapters.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                  <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Reading chapters:
+                  </p>
+                  {selectedChapters.map((ch) => {
+                    const range = selectedDoc?.chapterPageRanges?.[ch];
+                    return (
+                      <p key={ch}>
+                        Ch. {ch}
+                        {range && <span className="opacity-60"> (p.{range[0]}–{range[1]})</span>}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
               <p>Stay on this tab to keep the timer running.</p>
             </div>
           </aside>
@@ -266,7 +387,8 @@ export default function StudySessionPage() {
             {pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
-                initialPage={selectedDoc?.startPage ?? 1}
+                initialPage={startPage}
+                onPageChange={handlePageChange}
                 onPageText={handlePageText}
               />
             ) : (

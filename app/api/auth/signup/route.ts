@@ -38,14 +38,22 @@ export async function POST(request: Request) {
   const now = new Date();
   const passwordHash = await hashPassword(password);
 
-  await db.insert(users).values({
-    id,
-    email,
-    name: name || email.split("@")[0],
-    passwordHash,
-    createdAt: now,
-    updatedAt: now,
-  });
+  try {
+    await db.insert(users).values({
+      id,
+      email,
+      name: name || email.split("@")[0],
+      passwordHash,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (e) {
+    console.error("Signup DB error:", e);
+    return NextResponse.json(
+      { error: "Failed to create account. Please try again." },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
