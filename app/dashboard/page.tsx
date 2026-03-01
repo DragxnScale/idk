@@ -80,12 +80,20 @@ export default function DashboardPage() {
               Your study progress at a glance
             </p>
           </div>
-          <Link
-            href="/study/session"
-            className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
-          >
-            New session
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/settings"
+              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-600"
+            >
+              Settings
+            </Link>
+            <Link
+              href="/study/session"
+              className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+            >
+              New session
+            </Link>
+          </div>
         </div>
 
         {/* Stat cards */}
