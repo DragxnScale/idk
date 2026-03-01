@@ -7,10 +7,20 @@ import { documents } from "@/lib/db/schema";
 
 export const maxDuration = 120;
 
+// ZIP files must fit in memory to be unzipped — cap at 200 MB
+const ZIP_MAX_BYTES = 200 * 1024 * 1024;
+
 interface ImportedDoc {
   id: string;
   title: string;
   fileUrl: string;
+}
+
+function titleFromUrl(url: string, filename?: string): string {
+  const raw = (filename ?? url.split("/").pop() ?? "Document")
+    .replace(/\.pdf$/i, "")
+    .replace(/\.zip$/i, "");
+  return decodeURIComponent(raw).replace(/[-_]/g, " ").trim() || "Document";
 }
 
 export async function POST(request: Request) {
@@ -21,12 +31,10 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const url: string = (body.url ?? "").trim();
-
   if (!url) {
     return NextResponse.json({ error: "url is required" }, { status: 400 });
   }
 
-  // Fetch the remote file
   let fetchRes: Response;
   try {
     fetchRes = await fetch(url, {
@@ -34,42 +42,38 @@ export async function POST(request: Request) {
       redirect: "follow",
     });
   } catch {
-    return NextResponse.json({ error: "Could not reach that URL. Check the link and try again." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Could not reach that URL. Check the link and try again." },
+      { status: 400 }
+    );
   }
 
   if (!fetchRes.ok) {
     return NextResponse.json(
-      { error: `The URL returned an error (${fetchRes.status}). Make sure the link is publicly accessible.` },
+      { error: `The URL returned ${fetchRes.status}. Make sure it's publicly accessible.` },
       { status: 400 }
     );
   }
 
   const contentType = fetchRes.headers.get("content-type") ?? "";
-  const rawBytes = new Uint8Array(await fetchRes.arrayBuffer());
+  const lowerUrl = url.toLowerCase();
 
-  const isZip =
-    contentType.includes("zip") ||
-    url.toLowerCase().endsWith(".zip") ||
-    // Check ZIP magic bytes: PK\x03\x04
-    (rawBytes[0] === 0x50 && rawBytes[1] === 0x4b && rawBytes[2] === 0x03 && rawBytes[3] === 0x04);
+  const looksLikeZip = contentType.includes("zip") || lowerUrl.endsWith(".zip");
+  const looksLikePdf = contentType.includes("pdf") || lowerUrl.endsWith(".pdf");
 
-  const isPdf =
-    contentType.includes("pdf") ||
-    url.toLowerCase().endsWith(".pdf") ||
-    // Check PDF magic bytes: %PDF
-    (rawBytes[0] === 0x25 && rawBytes[1] === 0x50 && rawBytes[2] === 0x44 && rawBytes[3] === 0x46);
-
-  const imported: ImportedDoc[] = [];
-  const now = new Date();
-
-  if (isPdf && !isZip) {
-    // Single PDF — store directly
-    const rawTitle = url.split("/").pop()?.replace(/\.pdf$/i, "") ?? "Document";
-    const title = decodeURIComponent(rawTitle).replace(/[-_]/g, " ").trim();
+  // ── Direct PDF: stream response body straight to Vercel Blob ──────────
+  // No buffering — the file never sits in server memory.
+  if (looksLikePdf && !looksLikeZip) {
     const id = crypto.randomUUID();
-    const blob = await put(`${session.user.id}/${id}.pdf`, new Blob([rawBytes], { type: "application/pdf" }), {
+    const title = titleFromUrl(url);
+    const filename = `${session.user.id}/${id}.pdf`;
+
+    const blob = await put(filename, fetchRes.body!, {
       access: "public",
+      contentType: "application/pdf",
     });
+
+    const now = new Date();
     await db.insert(documents).values({
       id,
       userId: session.user.id,
@@ -79,10 +83,40 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     });
-    imported.push({ id, title, fileUrl: blob.url });
 
-  } else if (isZip) {
-    // Unzip and extract all PDFs
+    return NextResponse.json({ imported: [{ id, title, fileUrl: blob.url }] });
+  }
+
+  // ── ZIP: buffer, check size, unzip, upload each PDF ───────────────────
+  if (looksLikeZip) {
+    const contentLength = Number(fetchRes.headers.get("content-length") ?? 0);
+    if (contentLength > ZIP_MAX_BYTES) {
+      return NextResponse.json(
+        { error: `ZIP file is too large (${Math.round(contentLength / 1024 / 1024)} MB). Max is 200 MB.` },
+        { status: 400 }
+      );
+    }
+
+    const rawBytes = new Uint8Array(await fetchRes.arrayBuffer());
+
+    // Double-check magic bytes in case Content-Type was wrong
+    const isPdfMagic = rawBytes[0] === 0x25 && rawBytes[1] === 0x50 && rawBytes[2] === 0x44 && rawBytes[3] === 0x46;
+    if (isPdfMagic) {
+      // Server said zip but it's actually a PDF — stream to blob
+      const id = crypto.randomUUID();
+      const title = titleFromUrl(url);
+      const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(rawBytes), {
+        access: "public",
+        contentType: "application/pdf",
+      });
+      const now = new Date();
+      await db.insert(documents).values({
+        id, userId: session.user.id, title, sourceType: "upload",
+        fileUrl: blob.url, createdAt: now, updatedAt: now,
+      });
+      return NextResponse.json({ imported: [{ id, title, fileUrl: blob.url }] });
+    }
+
     let unzipped: ReturnType<typeof unzipSync>;
     try {
       unzipped = unzipSync(rawBytes);
@@ -93,44 +127,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const pdfEntries = Object.entries(unzipped).filter(([name]) =>
-      name.toLowerCase().endsWith(".pdf") && !name.startsWith("__MACOSX")
+    const pdfEntries = Object.entries(unzipped).filter(
+      ([name]) => name.toLowerCase().endsWith(".pdf") && !name.startsWith("__MACOSX")
     );
 
     if (pdfEntries.length === 0) {
-      return NextResponse.json(
-        { error: "The zip file contains no PDF files." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "The zip file contains no PDF files." }, { status: 400 });
     }
 
+    const imported: ImportedDoc[] = [];
+    const now = new Date();
+
     for (const [name, bytes] of pdfEntries) {
-      const rawTitle = name.split("/").pop()?.replace(/\.pdf$/i, "") ?? "Document";
-      const title = decodeURIComponent(rawTitle).replace(/[-_]/g, " ").trim();
       const id = crypto.randomUUID();
-      const blob = await put(
-        `${session.user.id}/${id}.pdf`,
-        new Blob([Buffer.from(bytes)], { type: "application/pdf" }),
-        { access: "public" }
-      );
+      const title = titleFromUrl(url, name.split("/").pop());
+      const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(bytes), {
+        access: "public",
+        contentType: "application/pdf",
+      });
       await db.insert(documents).values({
-        id,
-        userId: session.user.id,
-        title,
-        sourceType: "upload",
-        fileUrl: blob.url,
-        createdAt: now,
-        updatedAt: now,
+        id, userId: session.user.id, title, sourceType: "upload",
+        fileUrl: blob.url, createdAt: now, updatedAt: now,
       });
       imported.push({ id, title, fileUrl: blob.url });
     }
 
-  } else {
-    return NextResponse.json(
-      { error: "The URL doesn't appear to be a PDF or ZIP file. Make sure it's a direct link ending in .pdf or .zip." },
-      { status: 400 }
-    );
+    return NextResponse.json({ imported });
   }
 
-  return NextResponse.json({ imported });
+  // ── Unknown type: peek at magic bytes ─────────────────────────────────
+  // We've already consumed the body above if zip; this path only runs for
+  // content that is neither clearly PDF nor ZIP by URL/Content-Type.
+  return NextResponse.json(
+    { error: "The link doesn't appear to be a PDF or ZIP file. Make sure it ends in .pdf or .zip." },
+    { status: 400 }
+  );
 }
