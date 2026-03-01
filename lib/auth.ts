@@ -5,44 +5,22 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/password";
 
-const isSecure = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
-const hostName = (() => {
-  try { return new URL(process.env.NEXTAUTH_URL ?? "").hostname; } catch { return undefined; }
-})();
-
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/auth/signin" },
-  useSecureCookies: isSecure,
+  useSecureCookies: false,
   cookies: {
     sessionToken: {
-      name: isSecure ? "__Secure-next-auth.session-token" : "next-auth.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: isSecure,
-        domain: hostName,
-      },
+      name: "sf.session-token",
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
     },
     callbackUrl: {
-      name: isSecure ? "__Secure-next-auth.callback-url" : "next-auth.callback-url",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: isSecure,
-        domain: hostName,
-      },
+      name: "sf.callback-url",
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
     },
     csrfToken: {
-      name: isSecure ? "__Host-next-auth.csrf-token" : "next-auth.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: isSecure,
-      },
+      name: "sf.csrf-token",
+      options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: false },
     },
   },
   providers: [
