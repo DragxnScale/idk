@@ -7,37 +7,54 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 type OutlineItem = { title: string; dest: string | unknown[] | null; items: OutlineItem[] };
 
+async function resolvePageIndex(
+  doc: pdfjs.PDFDocumentProxy,
+  dest: string | unknown[] | null
+): Promise<number | null> {
+  try {
+    if (typeof dest === "string") {
+      const resolved = await doc.getDestination(dest);
+      if (resolved) return await doc.getPageIndex(resolved[0] as never);
+    } else if (Array.isArray(dest) && dest[0]) {
+      return await doc.getPageIndex(dest[0] as never);
+    }
+  } catch {}
+  return null;
+}
+
 async function extractChapterRanges(
   proxyUrl: string
 ): Promise<Record<string, [number, number]> | null> {
   try {
     const doc = await pdfjs.getDocument(proxyUrl).promise;
     const outline: OutlineItem[] | null = await doc.getOutline();
-    if (!outline || outline.length === 0) return null;
+    if (!outline || outline.length === 0) { await doc.destroy(); return null; }
 
     const chapters: { num: string; page: number }[] = [];
 
     for (const item of outline) {
-      const match = item.title.match(/^(?:chapter\s+)?(\d+)/i);
+      const match = item.title.match(/^(?:chapter\s+)?(\d{1,2})\s+[A-Za-z]/i);
       if (!match) continue;
 
-      let pageIndex = 0;
-      try {
-        if (typeof item.dest === "string") {
-          const dest = await doc.getDestination(item.dest);
-          if (dest) pageIndex = await doc.getPageIndex(dest[0] as never);
-        } else if (Array.isArray(item.dest) && item.dest[0]) {
-          pageIndex = await doc.getPageIndex(item.dest[0] as never);
-        } else {
-          continue;
+      let pageIndex = await resolvePageIndex(doc, item.dest);
+
+      // Fallback: use the first resolvable child item's destination
+      if (pageIndex === null && item.items?.length) {
+        for (const child of item.items) {
+          const childIdx = await resolvePageIndex(doc, child.dest);
+          if (childIdx !== null) {
+            pageIndex = Math.max(0, childIdx - 1);
+            break;
+          }
         }
-      } catch {
-        continue;
       }
+
+      if (pageIndex === null) continue;
 
       chapters.push({ num: match[1], page: pageIndex + 1 });
     }
 
+    await doc.destroy();
     if (chapters.length === 0) return null;
 
     const totalPages = doc.numPages;
@@ -294,11 +311,14 @@ function TextbookPanel({
                   <button
                     key={ch}
                     type="button"
+                    disabled={extracting}
                     onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
                     className={`rounded-md border px-3 py-1.5 text-sm transition ${
-                      selectedChapter === ch
-                        ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                        : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                      extracting
+                        ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
+                        : selectedChapter === ch
+                          ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                          : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
                     }`}
                   >
                     Ch. {ch}

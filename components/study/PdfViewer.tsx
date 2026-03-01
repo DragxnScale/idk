@@ -20,7 +20,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [containerWidth, setContainerWidth] = useState(720);
+  const [containerWidth, setContainerWidth] = useState(960);
   const pdfDocRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
   const extractedPagesRef = useRef<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,7 +28,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
   useEffect(() => {
     function updateWidth() {
       if (containerRef.current) {
-        setContainerWidth(Math.min(containerRef.current.clientWidth - 2, 720));
+        setContainerWidth(containerRef.current.clientWidth - 2);
       }
     }
     updateWidth();
@@ -131,7 +131,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
       </div>
 
       {/* PDF Canvas */}
-      <div ref={containerRef} className="w-full max-w-3xl overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700">
+      <div ref={containerRef} className="w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700">
         {error ? (
           <div className="flex min-h-[300px] items-center justify-center p-6">
             <p className="text-sm text-red-600 dark:text-red-400">Failed to load PDF: {error}</p>

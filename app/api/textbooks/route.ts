@@ -6,15 +6,19 @@ import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks } from "@/lib/db/seed-textbooks";
 
 async function ensureSeeded() {
-  const count = await db.query.textbookCatalog.findFirst();
-  if (!count) {
-    const now = new Date();
-    for (const book of seedTextbooks) {
-      await db
-        .insert(textbookCatalog)
-        .values({ ...book, createdAt: now })
-        .onConflictDoNothing();
-    }
+  const now = new Date();
+  for (const book of seedTextbooks) {
+    await db
+      .insert(textbookCatalog)
+      .values({ ...book, createdAt: now })
+      .onConflictDoUpdate({
+        target: textbookCatalog.id,
+        set: {
+          chapterPageRanges: book.chapterPageRanges,
+          sourceUrl: book.sourceUrl,
+          sourceType: book.sourceType,
+        },
+      });
   }
 }
 

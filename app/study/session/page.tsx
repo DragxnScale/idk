@@ -429,7 +429,7 @@ export default function StudySessionPage() {
           </aside>
 
           {/* Reader */}
-          <section className="flex-1 overflow-auto p-6 flex justify-center">
+          <section className="flex-1 overflow-auto p-3 lg:p-4 flex justify-center">
             {pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
