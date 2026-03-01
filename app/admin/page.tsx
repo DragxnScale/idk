@@ -302,7 +302,22 @@ function UploadTab() {
     addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      addLog("Requesting client token from /api/admin/blob-token…");
+      // Pre-flight: check the token endpoint is alive and env vars are set.
+      addLog("Checking /api/admin/blob-token health…");
+      try {
+        const healthRes = await fetch("/api/admin/blob-token");
+        const health = await healthRes.json();
+        addLog(`Health: ${JSON.stringify(health)}`);
+        if (!health.ok) {
+          throw new Error(`Missing env vars: ${JSON.stringify(health)}`);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        addLog(`Health check failed: ${msg}`);
+        throw new Error(`Token endpoint not ready: ${msg}`);
+      }
+
+      addLog("Requesting client token…");
       const blob = await upload(blobPathname, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-token",
