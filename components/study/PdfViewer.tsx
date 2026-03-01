@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import { getPdfZoom } from "@/lib/prefs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -21,11 +22,14 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(960);
+  const [zoom, setZoom] = useState(1);
   const pdfDocRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
   const extractedPagesRef = useRef<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setZoom(getPdfZoom());
+
     function updateWidth() {
       if (containerRef.current) {
         setContainerWidth(containerRef.current.clientWidth - 2);
@@ -33,7 +37,17 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
     }
     updateWidth();
     window.addEventListener("resize", updateWidth);
-    return () => window.removeEventListener("resize", updateWidth);
+
+    // Re-read zoom whenever the setting changes (e.g. changed in Settings tab)
+    function onStorage(e: StorageEvent) {
+      if (e.key === "studyfocus-pdf-zoom") setZoom(getPdfZoom());
+    }
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: total }: { numPages: number }) => {
@@ -154,7 +168,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, onPageChange, onPa
           >
             <Page
               pageNumber={pageNumber}
-              width={containerWidth}
+              width={Math.round(containerWidth * zoom)}
               loading={
                 <div className="flex min-h-[300px] items-center justify-center">
                   <div className="spinner" />

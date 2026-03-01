@@ -1,9 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
+
+const ZOOM_PRESETS = [
+  { label: "Small", value: 0.75 },
+  { label: "Normal", value: 1 },
+  { label: "Large", value: 1.25 },
+  { label: "Extra Large", value: 1.5 },
+];
 
 export default function SettingsPage() {
+  const [zoom, setZoomState] = useState(1);
+
+  useEffect(() => {
+    setZoomState(getPdfZoom());
+  }, []);
+
+  function handleZoomChange(value: number) {
+    setZoomState(value);
+    setPdfZoom(value);
+    // Notify any open PdfViewer tabs
+    window.dispatchEvent(new StorageEvent("storage", { key: "studyfocus-pdf-zoom" }));
+  }
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newExitPassword, setNewExitPassword] = useState("");
   const [confirmExitPassword, setConfirmExitPassword] = useState("");
@@ -62,6 +83,34 @@ export default function SettingsPage() {
           </Link>
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
+
+        {/* Textbook display size */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Controls how large the PDF pages appear while reading. Saved on
+            this device.
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {ZOOM_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => handleZoomChange(preset.value)}
+                className={`rounded-lg border py-3 text-sm font-medium transition ${
+                  zoom === preset.value
+                    ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                }`}
+              >
+                {preset.label}
+                <span className="block text-xs opacity-60 mt-0.5">
+                  {Math.round(preset.value * 100)}%
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
 
         {/* Exit password section */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
