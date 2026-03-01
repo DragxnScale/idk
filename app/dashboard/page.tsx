@@ -25,6 +25,10 @@ interface StatsData {
   streak: number;
   weekDays: WeekDay[];
   recentSessions: RecentSession[];
+  todayMinutes: number;
+  todaySessions: number;
+  dailyMinutesGoal: number | null;
+  dailySessionsGoal: number | null;
 }
 
 export default function DashboardPage() {
@@ -113,6 +117,39 @@ export default function DashboardPage() {
             value={`${stats.streak} day${stats.streak !== 1 ? "s" : ""}`}
           />
         </div>
+
+        {/* Daily goal progress */}
+        {(stats.dailyMinutesGoal || stats.dailySessionsGoal) && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold">Today&apos;s Goals</h2>
+              <Link
+                href="/settings"
+                className="text-xs text-gray-500 underline underline-offset-4 dark:text-gray-400"
+              >
+                Edit
+              </Link>
+            </div>
+            <div className="space-y-4">
+              {stats.dailyMinutesGoal != null && (
+                <GoalBar
+                  label="Study time"
+                  current={stats.todayMinutes}
+                  goal={stats.dailyMinutesGoal}
+                  format={(v) => `${v}m`}
+                />
+              )}
+              {stats.dailySessionsGoal != null && (
+                <GoalBar
+                  label="Sessions"
+                  current={stats.todaySessions}
+                  goal={stats.dailySessionsGoal}
+                  format={(v) => String(v)}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Weekly chart */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
@@ -234,6 +271,38 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900">
       <p className="text-2xl font-bold">{value}</p>
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+    </div>
+  );
+}
+
+function GoalBar({
+  label,
+  current,
+  goal,
+  format,
+}: {
+  label: string;
+  current: number;
+  goal: number;
+  format: (v: number) => string;
+}) {
+  const pct = Math.min(100, goal > 0 ? Math.round((current / goal) * 100) : 0);
+  const done = current >= goal;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
+        <span className={`text-xs font-semibold ${done ? "text-green-600 dark:text-green-400" : "text-gray-700 dark:text-gray-300"}`}>
+          {format(current)} / {format(goal)}
+          {done && " ✓"}
+        </span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${done ? "bg-green-500" : "bg-black dark:bg-white"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }

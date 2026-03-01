@@ -8,6 +8,8 @@ export const users = sqliteTable("users", {
   name: text("name"),
   passwordHash: text("password_hash"),
   exitPasswordHash: text("exit_password_hash"),
+  dailyMinutesGoal: integer("daily_minutes_goal"),
+  dailySessionsGoal: integer("daily_sessions_goal"),
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }),

@@ -8,9 +8,14 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = await db.query.studySessions.findMany({
-    where: (s, { eq }) => eq(s.userId, session.user.id),
-  });
+  const [rows, user] = await Promise.all([
+    db.query.studySessions.findMany({
+      where: (s, { eq }) => eq(s.userId, session.user.id),
+    }),
+    db.query.users.findFirst({
+      where: (u, { eq }) => eq(u.id, session.user.id),
+    }),
+  ]);
 
   const completed = rows.filter((r) => r.endedAt);
   const totalMinutes = completed.reduce(
@@ -60,12 +65,22 @@ export async function GET() {
     }
   }
 
+  const todayStr = today.toISOString().slice(0, 10);
+  const todaySessions = completed.filter(
+    (r) => r.startedAt?.toISOString().slice(0, 10) === todayStr
+  );
+  const todayMinutes = todaySessions.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0);
+
   return NextResponse.json({
     totalSessions: completed.length,
     totalMinutes,
     averageMinutes: completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0,
     streak,
     weekDays,
+    todayMinutes,
+    todaySessions: todaySessions.length,
+    dailyMinutesGoal: user?.dailyMinutesGoal ?? null,
+    dailySessionsGoal: user?.dailySessionsGoal ?? null,
     recentSessions: rows
       .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))
       .slice(0, 5)
