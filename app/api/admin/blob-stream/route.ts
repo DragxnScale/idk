@@ -1,13 +1,13 @@
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdminEdge } from "@/lib/admin-edge";
 
 // Edge runtime: no 4.5 MB body limit, handles large streaming uploads
 export const runtime = "edge";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const session = await requireAdmin();
+  const session = await requireAdminEdge(request);
   if (!session) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
