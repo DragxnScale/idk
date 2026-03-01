@@ -337,12 +337,15 @@ function UploadTab() {
         xhr.setRequestHeader("x-content-type", "application/pdf");
         xhr.setRequestHeader("x-api-blob-request-attempt", "0");
 
+        let lastLoggedPct = -1;
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             const pct = Math.round((e.loaded / e.total) * 100);
             setProgress(Math.round(pct * 0.7));
-            if (pct % 10 === 0) {
-              addLog(`Upload progress: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)}/${(e.total / 1024 / 1024).toFixed(1)} MB)`);
+            const bucket = Math.floor(pct / 10) * 10;
+            if (bucket > lastLoggedPct) {
+              lastLoggedPct = bucket;
+              addLog(`Upload: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(0)}/${(e.total / 1024 / 1024).toFixed(0)} MB)`);
             }
           }
         };
@@ -363,8 +366,10 @@ function UploadTab() {
         };
 
         xhr.onerror = () => {
-          addLog("XHR onerror fired — likely CORS block or network failure");
-          reject(new Error("Network error (CORS or connectivity)"));
+          // CORS blocks reading the response, but the data IS uploaded.
+          // We'll look up the blob URL server-side instead.
+          addLog("XHR finished (CORS blocks response — expected)");
+          resolve("__cors_blocked__");
         };
 
         xhr.onabort = () => reject(new Error("Upload cancelled"));
@@ -378,8 +383,25 @@ function UploadTab() {
         xhr.send(file);
       });
 
-      blobUrl = uploadResult;
-      addLog(`Upload complete! URL: ${blobUrl}`);
+      // If CORS blocked the response, look up the blob URL server-side.
+      if (uploadResult === "__cors_blocked__") {
+        addLog("Looking up blob URL from server…");
+        const lookupRes = await fetch(
+          `/api/admin/blob-lookup?prefix=${encodeURIComponent(blobPathname)}`
+        );
+        addLog(`Lookup response: ${lookupRes.status}`);
+        if (!lookupRes.ok) {
+          const err = await lookupRes.text();
+          addLog(`Lookup error: ${err}`);
+          throw new Error(`Blob lookup failed: ${err}`);
+        }
+        const lookupData = await lookupRes.json();
+        blobUrl = lookupData.url;
+        addLog(`Found blob URL: ${blobUrl}`);
+      } else {
+        blobUrl = uploadResult;
+        addLog(`Upload complete! URL: ${blobUrl}`);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload to storage failed";
       addLog(`UPLOAD ERROR: ${msg}`);
