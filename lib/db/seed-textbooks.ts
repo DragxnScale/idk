@@ -48,7 +48,7 @@ export const seedTextbooks = [
     isbn: null,
     sourceType: "oer" as const,
     sourceUrl:
-      "https://archive.org/download/stephen-marshak-earth-portrait-of-a-planet-w.-w.-norton-co-2015/stephen-marshak-earth-portrait-of-a-planet-w.-w.-norton-co-2015.pdf",
+      "https://archive.org/download/stephen-marshak-earth-portrait-of-a-planet-w.-w.-norton-co-2015/Stephen%20Marshak-Earth_%20Portrait%20of%20a%20Planet-W.%20W.%20Norton%20%26%20Co%20%282015%29.pdf",
     chapterPageRanges: JSON.stringify({
       "1": [2, 29],
       "2": [30, 69],

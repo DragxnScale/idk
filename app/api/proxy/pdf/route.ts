@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
 
 const ALLOWED_HOSTS = [
-  "dn790008.ca.archive.org",
   "archive.org",
-  "ia800107.us.archive.org",
   "openstax.org",
   "assets.openstax.org",
   "vercel-storage.com",
