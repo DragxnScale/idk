@@ -7,12 +7,17 @@ import { VisibilityGuard } from "@/components/focus/VisibilityGuard";
 import { FullscreenTrigger } from "@/components/focus/FullscreenTrigger";
 import { OverrideFlow } from "@/components/focus/OverrideFlow";
 import dynamic from "next/dynamic";
-import { DocumentPicker, type SelectedDocument } from "@/components/study/DocumentPicker";
+import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
   { ssr: false, loading: () => <p className="text-sm text-gray-500 animate-pulse">Loading reader…</p> }
+);
+
+const DocumentPicker = dynamic(
+  () => import("@/components/study/DocumentPicker").then((m) => m.DocumentPicker),
+  { ssr: false, loading: () => <p className="text-sm text-gray-500 animate-pulse">Loading…</p> }
 );
 
 export default function StudySessionPage() {
