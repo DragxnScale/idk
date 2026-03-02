@@ -117,6 +117,22 @@ export const sessionContent = sqliteTable("session_content", {
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
+// ── Bookmarks & Highlights ───────────────────────────────────────────
+
+export const bookmarks = sqliteTable("bookmarks", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  documentId: text("document_id").notNull(),
+  pageNumber: integer("page_number").notNull(),
+  type: text("type").notNull(), // "bookmark" | "highlight"
+  label: text("label"),
+  highlightText: text("highlight_text"),
+  color: text("color"), // "yellow" | "green" | "blue" | "pink"
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
 // ── AI tables ────────────────────────────────────────────────────────
 
 export const aiNotes = sqliteTable("ai_notes", {

@@ -5,6 +5,12 @@ export const metadata: Metadata = {
   title: "Study Focus",
   description:
     "Stay focused while studying. Set goals, read in-app, and get AI-powered notes and quizzes.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Study Focus",
+  },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {

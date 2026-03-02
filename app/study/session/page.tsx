@@ -568,6 +568,7 @@ function StudySessionInner() {
                 url={pdfUrl}
                 initialPage={startPage}
                 jumpToPage={jumpTarget}
+                documentId={selectedDoc?.documentId}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
               />
