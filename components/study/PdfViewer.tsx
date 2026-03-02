@@ -36,7 +36,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [containerWidth, setContainerWidth] = useState(960);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [baseZoom, setBaseZoom] = useState(1);
   const [localZoom, setLocalZoom] = useState(1);
   const [showZoomBadge, setShowZoomBadge] = useState(false);
@@ -51,11 +51,21 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const extractedPagesRef = useRef<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageWrapRef = useRef<HTMLDivElement>(null);
+  const [innerHeight, setInnerHeight] = useState(800);
 
   const effectiveZoom = baseZoom * localZoom;
-  const pageWidth = Math.round(containerWidth * effectiveZoom);
+  const renderWidth = containerWidth || 600;
 
-  // Flash the zoom badge and auto-hide it after 1.5 s
+  // Track actual rendered page height so the zoom wrapper can size correctly
+  useEffect(() => {
+    const el = pageWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setInnerHeight(el.scrollHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const flashZoomBadge = useCallback(() => {
     setShowZoomBadge(true);
     if (zoomBadgeTimerRef.current) clearTimeout(zoomBadgeTimerRef.current);
@@ -75,7 +85,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     flashZoomBadge();
   }, [flashZoomBadge]);
 
-  // Load base zoom from settings & listen for changes
   useEffect(() => {
     setBaseZoom(getPdfZoom());
 
@@ -99,7 +108,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     };
   }, []);
 
-  // Ctrl+scroll and pinch-to-zoom (browsers fire wheel with ctrlKey for pinch)
+  // Ctrl+scroll and trackpad pinch (browsers fire wheel with ctrlKey for pinch)
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -107,7 +116,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      // deltaY < 0 = scroll up = zoom in
       const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
       setLocalZoom((prev) => {
         const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev + delta));
@@ -116,9 +124,54 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       flashZoomBadge();
     }
 
-    // passive:false so we can call preventDefault
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
+  }, [flashZoomBadge]);
+
+  // Touch pinch-to-zoom on the PDF area
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    let lastDist = 0;
+
+    function getDistance(touches: TouchList) {
+      const [a, b] = [touches[0], touches[1]];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        lastDist = getDistance(e.touches);
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+      const dist = getDistance(e.touches);
+      if (lastDist > 0) {
+        const scale = dist / lastDist;
+        setLocalZoom((prev) => {
+          const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev * scale));
+          return Math.round(next * 100) / 100;
+        });
+        flashZoomBadge();
+      }
+      lastDist = dist;
+    }
+
+    function onTouchEnd() {
+      lastDist = 0;
+    }
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
   }, [flashZoomBadge]);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: total }: { numPages: number }) => {
@@ -219,7 +272,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     } finally {
       setSavingBookmark(false);
     }
-  }, [documentId, pageNumber, isCurrentPageBookmarked, bookmarkItems, savingBookmark]);
+  }, [documentId, pageNumber, isCurrentPageBookmarked, bookmarkItems, savingBookmark, sessionId]);
 
   const saveHighlight = useCallback(async (text: string, color: string) => {
     if (!documentId || !text.trim()) return;
@@ -241,7 +294,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     }
     setSelectedText("");
     window.getSelection()?.removeAllRanges();
-  }, [documentId, pageNumber]);
+  }, [documentId, pageNumber, sessionId]);
 
   const deleteItem = useCallback(async (id: string) => {
     await fetch(`/api/bookmarks?id=${id}`, { method: "DELETE" });
@@ -252,13 +305,13 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    function onMouseUp() {
+    function onPointerUp() {
       const sel = window.getSelection();
       const text = sel?.toString().trim() ?? "";
       setSelectedText(text);
     }
-    el.addEventListener("mouseup", onMouseUp);
-    return () => el.removeEventListener("mouseup", onMouseUp);
+    el.addEventListener("pointerup", onPointerUp);
+    return () => el.removeEventListener("pointerup", onPointerUp);
   }, []);
 
   const bookmarkCount = bookmarkItems.length;
@@ -276,184 +329,181 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     pink: "border-pink-400",
   };
 
+  const scaledW = Math.round(renderWidth * effectiveZoom);
+  const scaledH = Math.round(innerHeight * effectiveZoom);
+
   return (
-    <div ref={containerRef} className="flex flex-col items-center gap-4 w-full">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full max-w-full">
-        {/* Page navigation */}
-        <button
-          onClick={() => goToPage(pageNumber - 1)}
-          disabled={pageNumber <= 1}
-          className="rounded-md px-2 py-1 text-sm font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700"
-          aria-label="Previous page"
-        >
-          ← Prev
-        </button>
-        <div className="flex items-center gap-1.5 text-sm">
-          <input
-            type="number"
-            min={1}
-            max={numPages || 1}
-            value={pageNumber}
-            onChange={(e) => goToPage(Number(e.target.value))}
-            className="w-14 rounded border border-gray-300 bg-transparent px-1.5 py-0.5 text-center text-sm dark:border-gray-600"
-          />
-          <span className="text-gray-500 dark:text-gray-400">/ {numPages || "…"}</span>
-        </div>
-        <button
-          onClick={() => goToPage(pageNumber + 1)}
-          disabled={pageNumber >= numPages}
-          className="rounded-md px-2 py-1 text-sm font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700"
-          aria-label="Next page"
-        >
-          Next →
-        </button>
-
-        {/* Divider */}
-        <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
-
-        {/* Zoom controls */}
-        <button
-          onClick={() => adjustZoom(-ZOOM_STEP)}
-          disabled={localZoom <= MIN_ZOOM}
-          className="rounded-md px-2 py-1 text-base font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
-          aria-label="Zoom out"
-          title="Zoom out (Ctrl + scroll)"
-        >
-          −
-        </button>
-        <button
-          onClick={resetZoom}
-          className="rounded-md px-2 py-0.5 text-xs font-mono tabular-nums hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[3.5rem] text-center"
-          aria-label="Reset zoom"
-          title="Reset zoom"
-        >
-          {Math.round(effectiveZoom * 100)}%
-        </button>
-        <button
-          onClick={() => adjustZoom(ZOOM_STEP)}
-          disabled={localZoom >= MAX_ZOOM}
-          className="rounded-md px-2 py-1 text-base font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
-          aria-label="Zoom in"
-          title="Zoom in (Ctrl + scroll)"
-        >
-          +
-        </button>
-
-        {documentId && (
-          <>
-            <div className="h-5 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
-
-            {/* Bookmark toggle */}
+    <div ref={containerRef} className="flex flex-col items-center gap-2 w-full">
+      {/* ── Toolbar: responsive two-row layout on mobile ── */}
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full">
+        {/* Row 1: page navigation + zoom */}
+        <div className="flex items-center justify-between px-2 py-1.5 sm:px-3 sm:py-2 gap-1">
+          {/* Page navigation */}
+          <div className="flex items-center gap-1">
             <button
-              onClick={toggleBookmark}
-              disabled={savingBookmark}
-              className={`rounded-md px-2 py-1 text-sm transition ${
-                isCurrentPageBookmarked
-                  ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                  : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-              aria-label={isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page"}
-              title={isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page"}
+              onClick={() => goToPage(pageNumber - 1)}
+              disabled={pageNumber <= 1}
+              className="rounded-md px-1.5 py-1 text-xs sm:text-sm font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700"
+              aria-label="Previous page"
             >
-              {isCurrentPageBookmarked ? "★" : "☆"}
+              ‹
             </button>
+            <div className="flex items-center gap-1 text-xs sm:text-sm">
+              <input
+                type="number"
+                min={1}
+                max={numPages || 1}
+                value={pageNumber}
+                onChange={(e) => goToPage(Number(e.target.value))}
+                className="w-10 sm:w-14 rounded border border-gray-300 bg-transparent px-1 py-0.5 text-center text-xs sm:text-sm dark:border-gray-600"
+              />
+              <span className="text-gray-500 dark:text-gray-400">/ {numPages || "…"}</span>
+            </div>
+            <button
+              onClick={() => goToPage(pageNumber + 1)}
+              disabled={pageNumber >= numPages}
+              className="rounded-md px-1.5 py-1 text-xs sm:text-sm font-medium hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700"
+              aria-label="Next page"
+            >
+              ›
+            </button>
+          </div>
 
-            {/* Bookmarks list toggle */}
-            <div className="relative">
+          {/* Zoom controls */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => adjustZoom(-ZOOM_STEP)}
+              disabled={localZoom <= MIN_ZOOM}
+              className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <button
+              onClick={resetZoom}
+              className="rounded-md px-1.5 py-0.5 text-[11px] font-mono tabular-nums hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[2.5rem] text-center"
+              aria-label="Reset zoom"
+            >
+              {Math.round(effectiveZoom * 100)}%
+            </button>
+            <button
+              onClick={() => adjustZoom(ZOOM_STEP)}
+              disabled={localZoom >= MAX_ZOOM}
+              className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+          </div>
+
+          {/* Bookmark controls */}
+          {documentId && (
+            <div className="flex items-center gap-0.5">
               <button
-                onClick={() => setShowBookmarks((v) => !v)}
-                className={`rounded-md px-2 py-1 text-xs transition ${
-                  showBookmarks
-                    ? "bg-gray-200 dark:bg-gray-600"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={toggleBookmark}
+                disabled={savingBookmark}
+                className={`rounded-md px-1.5 py-1 text-sm transition ${
+                  isCurrentPageBookmarked
+                    ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                    : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                 }`}
-                title="Bookmarks & highlights"
+                aria-label={isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page"}
               >
-                {bookmarkCount > 0 ? `${bookmarkCount}` : "0"} saved
+                {isCurrentPageBookmarked ? "★" : "☆"}
               </button>
 
-              {showBookmarks && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                  {bookmarkItems.length === 0 ? (
-                    <p className="p-4 text-xs text-gray-500 text-center">
-                      No bookmarks or highlights yet.
-                      <br />
-                      Click ☆ to bookmark a page, or select text to highlight.
-                    </p>
-                  ) : (
-                    <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {bookmarkItems.map((item) => (
-                        <li key={item.id} className="group flex items-start gap-2 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                          <button
-                            onClick={() => {
-                              goToPage(item.pageNumber);
-                              setShowBookmarks(false);
-                            }}
-                            className="flex-1 text-left min-w-0"
-                          >
-                            {item.type === "bookmark" ? (
-                              <p className="text-xs font-medium truncate">
-                                <span className="text-amber-500 mr-1">★</span>
-                                Page {item.pageNumber}
-                                {item.label && <span className="text-gray-500 ml-1">— {item.label}</span>}
-                              </p>
-                            ) : (
-                              <div>
-                                <p className="text-[10px] text-gray-400 mb-0.5">
+              <div className="relative">
+                <button
+                  onClick={() => setShowBookmarks((v) => !v)}
+                  className={`rounded-md px-1.5 py-1 text-[11px] transition ${
+                    showBookmarks
+                      ? "bg-gray-200 dark:bg-gray-600"
+                      : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {bookmarkCount}
+                </button>
+
+                {showBookmarks && (
+                  <div className="absolute right-0 top-full mt-2 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                    {bookmarkItems.length === 0 ? (
+                      <p className="p-4 text-xs text-gray-500 text-center">
+                        No bookmarks or highlights yet.
+                        <br />
+                        Click ☆ to bookmark a page, or select text to highlight.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {bookmarkItems.map((item) => (
+                          <li key={item.id} className="group flex items-start gap-2 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <button
+                              onClick={() => {
+                                goToPage(item.pageNumber);
+                                setShowBookmarks(false);
+                              }}
+                              className="flex-1 text-left min-w-0"
+                            >
+                              {item.type === "bookmark" ? (
+                                <p className="text-xs font-medium truncate">
+                                  <span className="text-amber-500 mr-1">★</span>
                                   Page {item.pageNumber}
+                                  {item.label && <span className="text-gray-500 ml-1">— {item.label}</span>}
                                 </p>
-                                <p className={`text-xs rounded px-1.5 py-0.5 line-clamp-2 ${colorClasses[item.color ?? "yellow"]}`}>
-                                  &ldquo;{item.highlightText}&rdquo;
-                                </p>
-                              </div>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => deleteItem(item.id)}
-                            className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition mt-0.5"
-                            title="Delete"
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+                              ) : (
+                                <div>
+                                  <p className="text-[10px] text-gray-400 mb-0.5">Page {item.pageNumber}</p>
+                                  <p className={`text-xs rounded px-1.5 py-0.5 line-clamp-2 ${colorClasses[item.color ?? "yellow"]}`}>
+                                    &ldquo;{item.highlightText}&rdquo;
+                                  </p>
+                                </div>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => deleteItem(item.id)}
+                              className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition mt-0.5"
+                              title="Delete"
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Highlight save bar */}
       {selectedText && documentId && (
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full max-w-full">
+        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full">
           <span className="text-xs text-gray-500 truncate flex-1 min-w-0">
-            &ldquo;{selectedText.slice(0, 80)}{selectedText.length > 80 ? "…" : ""}&rdquo;
+            &ldquo;{selectedText.slice(0, 60)}{selectedText.length > 60 ? "…" : ""}&rdquo;
           </span>
           {highlightColors.map((c) => (
             <button
               key={c}
               onClick={() => saveHighlight(selectedText, c)}
-              className={`w-6 h-6 rounded-full border-2 ${colorClasses[c]} ${colorBorders[c]} hover:scale-110 transition`}
+              className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 ${colorClasses[c]} ${colorBorders[c]} hover:scale-110 transition flex-shrink-0`}
               title={`Save as ${c} highlight`}
             />
           ))}
           <button
             onClick={() => { setSelectedText(""); window.getSelection()?.removeAllRanges(); }}
-            className="text-xs text-gray-400 hover:text-gray-600 ml-1"
+            className="text-xs text-gray-400 hover:text-gray-600 ml-1 flex-shrink-0"
           >
             ×
           </button>
         </div>
       )}
 
-      {/* PDF canvas — scroll container for overflow when zoomed in */}
+      {/* PDF canvas — scroll container with CSS-transform zoom */}
       <div
         ref={scrollContainerRef}
-        className="relative w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700"
+        className="relative w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 touch-pan-x touch-pan-y"
       >
         {/* Floating zoom badge */}
         {showZoomBadge && (
@@ -467,26 +517,43 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
             <p className="text-sm text-red-600 dark:text-red-400">Failed to load PDF: {error}</p>
           </div>
         ) : (
-          <Document
-            file={url}
-            onLoadSuccess={onDocumentLoadSuccess}
-            onLoadError={onDocumentLoadError}
-            loading={
-              <div className="flex min-h-[300px] items-center justify-center">
-                <div className="spinner" />
-              </div>
-            }
+          <div
+            style={{
+              width: scaledW,
+              height: scaledH,
+              overflow: "hidden",
+            }}
           >
-            <Page
-              pageNumber={pageNumber}
-              width={pageWidth}
-              loading={
-                <div className="flex min-h-[300px] items-center justify-center">
-                  <div className="spinner" />
-                </div>
-              }
-            />
-          </Document>
+            <div
+              ref={pageWrapRef}
+              style={{
+                transform: `scale(${effectiveZoom})`,
+                transformOrigin: "top left",
+                width: renderWidth,
+              }}
+            >
+              <Document
+                file={url}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={
+                  <div className="flex min-h-[300px] items-center justify-center">
+                    <div className="spinner" />
+                  </div>
+                }
+              >
+                <Page
+                  pageNumber={pageNumber}
+                  width={renderWidth}
+                  loading={
+                    <div className="flex min-h-[300px] items-center justify-center">
+                      <div className="spinner" />
+                    </div>
+                  }
+                />
+              </Document>
+            </div>
+          </div>
         )}
       </div>
 
