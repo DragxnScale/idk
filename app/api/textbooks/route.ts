@@ -3,23 +3,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { textbookCatalog } from "@/lib/db/schema";
-import { seedTextbooks } from "@/lib/db/seed-textbooks";
-
-async function ensureSeeded() {
-  const now = new Date();
-  for (const book of seedTextbooks) {
-    await db
-      .insert(textbookCatalog)
-      .values({ ...book, createdAt: now })
-      .onConflictDoUpdate({
-        target: textbookCatalog.id,
-        set: {
-          chapterPageRanges: book.chapterPageRanges,
-          sourceUrl: book.sourceUrl,
-        },
-      });
-  }
-}
+import { seedTextbooks, ensureSeeded } from "@/lib/db/seed-textbooks";
 
 export async function GET(request: Request) {
   const session = await auth();

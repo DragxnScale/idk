@@ -3,10 +3,13 @@ import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { textbookCatalog } from "@/lib/db/schema";
+import { ensureSeeded } from "@/lib/db/seed-textbooks";
 
 export async function GET() {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  await ensureSeeded();
 
   const all = await db.query.textbookCatalog.findMany({
     orderBy: (t, { desc }) => [desc(t.createdAt)],

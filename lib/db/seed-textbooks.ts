@@ -1,3 +1,6 @@
+import { db } from "@/lib/db";
+import { textbookCatalog } from "@/lib/db/schema";
+
 /**
  * Seed data for the textbook catalog.
  *
@@ -158,3 +161,19 @@ export const seedTextbooks = [
     chapterPageRanges: null,
   },
 ];
+
+export async function ensureSeeded() {
+  const now = new Date();
+  for (const book of seedTextbooks) {
+    await db
+      .insert(textbookCatalog)
+      .values({ ...book, createdAt: now })
+      .onConflictDoUpdate({
+        target: textbookCatalog.id,
+        set: {
+          chapterPageRanges: book.chapterPageRanges,
+          sourceUrl: book.sourceUrl,
+        },
+      });
+  }
+}
