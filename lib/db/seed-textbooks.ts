@@ -95,4 +95,14 @@ export const seedTextbooks = [
       "https://archive.org/download/michael-a.-michael-a.-seeds-seeds-dana-backman-astronomy-the-solar-system-and-be/Michael%20A.%28Michael%20A.%20Seeds%29%20Seeds%2C%20Dana%20Backman%20-%20Astronomy_%20The%20Solar%20System%20and%20Beyond-Brooks%20Cole%20%282009%29.pdf",
     chapterPageRanges: null,
   },
+  {
+    id: "seeds-foundations-astronomy-2011",
+    title: "Foundations of Astronomy (Seeds, Backman)",
+    edition: "2011",
+    isbn: null,
+    sourceType: "oer" as const,
+    sourceUrl:
+      "https://archive.org/download/michael-a.-seeds-dana-backman-foundations-of-astronomy-brooks-cole-cengage-learning-2011/Michael%20A.%20Seeds%2C%20Dana%20Backman%20-%20Foundations%20of%20Astronomy-Brooks_Cole%2C%20Cengage%20Learning%20%282011%29.pdf",
+    chapterPageRanges: null,
+  },
 ];
