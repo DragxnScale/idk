@@ -962,6 +962,7 @@ interface Conversation {
   lastAt: string;
   unread: number;
   muted: boolean;
+  mutedUntil: string | null;
   blocked: boolean;
 }
 
@@ -981,6 +982,8 @@ function MessagesTab() {
   const [chatLoading, setChatLoading] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
+  const [muteDuration, setMuteDuration] = useState(60);
+  const [showMutePicker, setShowMutePicker] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(() => {
@@ -994,6 +997,7 @@ function MessagesTab() {
 
   const openConversation = useCallback((userId: string) => {
     setSelectedUserId(userId);
+    setShowMutePicker(false);
     setChatLoading(true);
     fetch(`/api/messages?userId=${userId}`)
       .then((r) => (r.ok ? r.json() : []))
@@ -1027,22 +1031,25 @@ function MessagesTab() {
     }
   }
 
-  async function handleMuteBlock(userId: string, action: "mute" | "unmute" | "block" | "unblock") {
-    await fetch("/api/admin/mute-block", {
+  async function handleMuteBlock(userId: string, action: "mute" | "unmute" | "block" | "unblock", durationMinutes?: number) {
+    const res = await fetch("/api/admin/mute-block", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, action }),
+      body: JSON.stringify({ userId, action, durationMinutes }),
     });
+    const data = await res.json().catch(() => ({}));
     setConversations((prev) =>
       prev.map((c) => {
         if (c.userId !== userId) return c;
         return {
           ...c,
           muted: action === "mute" ? true : action === "unmute" ? false : c.muted,
+          mutedUntil: action === "mute" ? (data.mutedUntil ?? null) : action === "unmute" ? null : c.mutedUntil,
           blocked: action === "block" ? true : action === "unblock" ? false : c.blocked,
         };
       })
     );
+    setShowMutePicker(false);
   }
 
   const selected = conversations.find((c) => c.userId === selectedUserId);
@@ -1078,7 +1085,9 @@ function MessagesTab() {
                         <span className="text-[10px] rounded bg-red-900 text-red-300 px-1.5 py-0.5">blocked</span>
                       )}
                       {c.muted && !c.blocked && (
-                        <span className="text-[10px] rounded bg-yellow-900 text-yellow-300 px-1.5 py-0.5">muted</span>
+                        <span className="text-[10px] rounded bg-yellow-900 text-yellow-300 px-1.5 py-0.5" title={c.mutedUntil ? `Until ${new Date(c.mutedUntil).toLocaleString()}` : ""}>
+                          muted{c.mutedUntil && ` · ${new Date(c.mutedUntil).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                        </span>
                       )}
                       {c.unread > 0 && (
                         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">
@@ -1119,18 +1128,62 @@ function MessagesTab() {
                 )}
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    handleMuteBlock(selectedUserId, selected?.muted ? "unmute" : "mute")
-                  }
-                  className={`rounded-md px-3 py-1.5 text-xs border transition ${
-                    selected?.muted
-                      ? "border-yellow-600 text-yellow-400 hover:bg-yellow-900/20"
-                      : "border-gray-700 text-gray-400 hover:bg-gray-800"
-                  }`}
-                >
-                  {selected?.muted ? "Unmute" : "Mute"}
-                </button>
+                <div className="relative">
+                  {selected?.muted ? (
+                    <button
+                      onClick={() => handleMuteBlock(selectedUserId, "unmute")}
+                      className="rounded-md px-3 py-1.5 text-xs border border-yellow-600 text-yellow-400 hover:bg-yellow-900/20 transition"
+                      title={selected.mutedUntil ? `Muted until ${new Date(selected.mutedUntil).toLocaleString()}` : "Muted"}
+                    >
+                      Unmute
+                      {selected.mutedUntil && (
+                        <span className="ml-1 text-[10px] text-yellow-500">
+                          ({new Date(selected.mutedUntil).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowMutePicker((v) => !v)}
+                      className="rounded-md px-3 py-1.5 text-xs border border-gray-700 text-gray-400 hover:bg-gray-800 transition"
+                    >
+                      Mute
+                    </button>
+                  )}
+                  {showMutePicker && !selected?.muted && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-lg border border-gray-700 bg-gray-900 p-3 shadow-xl">
+                      <p className="text-xs font-medium text-gray-300 mb-2">Mute duration</p>
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {[
+                          { label: "15m", mins: 15 },
+                          { label: "1h", mins: 60 },
+                          { label: "6h", mins: 360 },
+                          { label: "24h", mins: 1440 },
+                          { label: "7d", mins: 10080 },
+                          { label: "30d", mins: 43200 },
+                        ].map((opt) => (
+                          <button
+                            key={opt.mins}
+                            onClick={() => setMuteDuration(opt.mins)}
+                            className={`rounded px-2 py-1 text-xs transition ${
+                              muteDuration === opt.mins
+                                ? "bg-yellow-600 text-white"
+                                : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => handleMuteBlock(selectedUserId, "mute", muteDuration)}
+                        className="w-full rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 transition"
+                      >
+                        Mute for {muteDuration >= 1440 ? `${Math.round(muteDuration / 1440)}d` : muteDuration >= 60 ? `${Math.round(muteDuration / 60)}h` : `${muteDuration}m`}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() =>
                     handleMuteBlock(selectedUserId, selected?.blocked ? "unblock" : "block")

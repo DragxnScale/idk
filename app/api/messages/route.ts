@@ -86,16 +86,27 @@ export async function GET(req: NextRequest) {
         : [];
 
     const userMap = new Map(
-      userRows.filter(Boolean).map((u) => [u!.id, { name: u!.name, email: u!.email, muted: u!.muted, blocked: u!.blocked }])
+      userRows.filter(Boolean).map((u) => [u!.id, {
+        name: u!.name,
+        email: u!.email,
+        mutedUntil: u!.mutedUntil?.toISOString() ?? null,
+        blocked: u!.blocked,
+      }])
     );
 
-    const conversations = Array.from(conversationMap.values()).map((c) => ({
-      ...c,
-      userName: userMap.get(c.userId)?.name ?? null,
-      userEmail: userMap.get(c.userId)?.email ?? null,
-      muted: userMap.get(c.userId)?.muted ?? false,
-      blocked: userMap.get(c.userId)?.blocked ?? false,
-    }));
+    const now = new Date();
+    const conversations = Array.from(conversationMap.values()).map((c) => {
+      const info = userMap.get(c.userId);
+      const mutedUntil = info?.mutedUntil ? new Date(info.mutedUntil) : null;
+      return {
+        ...c,
+        userName: info?.name ?? null,
+        userEmail: info?.email ?? null,
+        muted: mutedUntil ? mutedUntil > now : false,
+        mutedUntil: info?.mutedUntil ?? null,
+        blocked: info?.blocked ?? false,
+      };
+    });
 
     return NextResponse.json({ conversations });
   }
@@ -122,7 +133,7 @@ export async function GET(req: NextRequest) {
       and(eq(messages.toUserId, session.user.id), eq(messages.fromUserId, adminId))
     );
 
-  return NextResponse.json(rows);
+  return NextResponse.json({ messages: rows, currentUserId: session.user.id });
 }
 
 export async function POST(req: NextRequest) {
@@ -149,9 +160,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (user?.muted) {
+  if (user?.mutedUntil && user.mutedUntil > new Date()) {
+    const until = user.mutedUntil.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     return NextResponse.json(
-      { error: "You have been muted. Messages cannot be sent at this time." },
+      { error: `You are muted until ${until}.` },
       { status: 403 }
     );
   }

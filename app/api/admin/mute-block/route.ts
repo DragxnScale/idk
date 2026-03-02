@@ -10,30 +10,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { userId, action } = await req.json();
+  const { userId, action, durationMinutes } = await req.json();
   if (!userId || !action) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  const updates: Record<string, boolean> = {};
-
   switch (action) {
-    case "mute":
-      updates.muted = true;
-      break;
+    case "mute": {
+      const mins = durationMinutes ?? 60;
+      const until = new Date(Date.now() + mins * 60_000);
+      await db.update(users).set({ mutedUntil: until }).where(eq(users.id, userId));
+      return NextResponse.json({ ok: true, mutedUntil: until.toISOString() });
+    }
     case "unmute":
-      updates.muted = false;
-      break;
+      await db.update(users).set({ mutedUntil: null }).where(eq(users.id, userId));
+      return NextResponse.json({ ok: true });
     case "block":
-      updates.blocked = true;
-      break;
+      await db.update(users).set({ blocked: true }).where(eq(users.id, userId));
+      return NextResponse.json({ ok: true });
     case "unblock":
-      updates.blocked = false;
-      break;
+      await db.update(users).set({ blocked: false }).where(eq(users.id, userId));
+      return NextResponse.json({ ok: true });
     default:
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
-
-  await db.update(users).set(updates).where(eq(users.id, userId));
-  return NextResponse.json({ ok: true });
 }

@@ -507,12 +507,17 @@ function MessageModal({
   onSend: () => void;
 }) {
   const [history, setHistory] = useState<{ id: string; fromUserId: string; content: string; createdAt: string | null }[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const chatEndRef = useCallback((node: HTMLDivElement | null) => {
+    node?.scrollIntoView({ behavior: "smooth" });
+  }, []);
 
   useEffect(() => {
     fetch("/api/messages")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: unknown) => {
-        if (Array.isArray(data)) setHistory(data);
+      .then((r) => (r.ok ? r.json() : { messages: [], currentUserId: null }))
+      .then((data: { messages?: { id: string; fromUserId: string; content: string; createdAt: string | null }[]; currentUserId?: string }) => {
+        if (data.messages) setHistory(data.messages);
+        if (data.currentUserId) setMyUserId(data.currentUserId);
       })
       .catch(() => {});
   }, [msgSent]);
@@ -530,20 +535,22 @@ function MessageModal({
             <p className="text-xs text-gray-400 text-center py-8">No messages yet. Send one below!</p>
           )}
           {history.map((msg) => {
-            const isMe = msg.fromUserId !== undefined;
-            const fromDev = !isMe;
+            const isMe = myUserId ? msg.fromUserId === myUserId : false;
             return (
-              <div key={msg.id} className={`flex ${fromDev ? "justify-start" : "justify-end"}`}>
+              <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                 <div
                   className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
-                    fromDev
-                      ? "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                      : "bg-black text-white dark:bg-white dark:text-black"
+                    isMe
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
                   }`}
                 >
+                  {!isMe && (
+                    <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Developer</p>
+                  )}
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   {msg.createdAt && (
-                    <p className={`text-[10px] mt-1 ${fromDev ? "text-gray-400" : "text-gray-300 dark:text-gray-600"}`}>
+                    <p className={`text-[10px] mt-1 ${isMe ? "text-gray-300 dark:text-gray-600" : "text-gray-400"}`}>
                       {new Date(msg.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   )}
@@ -551,6 +558,7 @@ function MessageModal({
               </div>
             );
           })}
+          <div ref={chatEndRef} />
         </div>
 
         <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-3">

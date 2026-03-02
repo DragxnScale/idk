@@ -12,7 +12,7 @@ export const users = sqliteTable("users", {
   dailySessionsGoal: integer("daily_sessions_goal"),
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
-  muted: integer("muted", { mode: "boolean" }).default(false),
+  mutedUntil: integer("muted_until", { mode: "timestamp" }),
   blocked: integer("blocked", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
