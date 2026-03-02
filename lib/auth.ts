@@ -80,7 +80,7 @@ export async function auth(): Promise<{ user: { id: string; email: string; name:
     const token = await decode({
       token: raw,
       secret: process.env.NEXTAUTH_SECRET!,
-      salt: SESSION_COOKIE,
+      salt: "",
     });
     if (!token?.id) return null;
 

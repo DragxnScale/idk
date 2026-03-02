@@ -1,17 +1,26 @@
-// Edge-compatible admin auth — decodes the NextAuth JWT directly from the
-// cookie without touching the database (libsql is Node.js-only).
-import { getToken } from "next-auth/jwt";
+import { decode } from "next-auth/jwt";
 
 const ADMIN_EMAIL = "jaydenw0711@gmail.com";
+const SESSION_COOKIE = "sf.session-token";
 
 export async function requireAdminEdge(request: Request) {
-  const token = await getToken({
-    req: request as Parameters<typeof getToken>[0]["req"],
-    secret: process.env.NEXTAUTH_SECRET,
-  });
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = cookieHeader.split(";").map((c) => c.trim()).find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+  const raw = match?.slice(SESSION_COOKIE.length + 1);
+  if (!raw) return null;
 
-  if (!token?.email) return null;
-  if ((token.email as string).toLowerCase() !== ADMIN_EMAIL.toLowerCase()) return null;
+  try {
+    const token = await decode({
+      token: decodeURIComponent(raw),
+      secret: process.env.NEXTAUTH_SECRET!,
+      salt: "",
+    });
 
-  return token;
+    if (!token?.email) return null;
+    if ((token.email as string).toLowerCase() !== ADMIN_EMAIL.toLowerCase()) return null;
+
+    return token;
+  } catch {
+    return null;
+  }
 }
