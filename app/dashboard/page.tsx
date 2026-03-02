@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
 interface WeekDay {
@@ -28,6 +28,20 @@ interface ActiveSession {
   documentJson: string | null;
 }
 
+interface BookmarkItem {
+  id: string;
+  documentId: string;
+  sessionId: string | null;
+  pageNumber: number;
+  type: string;
+  label: string | null;
+  highlightText: string | null;
+  color: string | null;
+  createdAt: string | null;
+  sessionDate: string | null;
+  docTitle: string | null;
+}
+
 interface StatsData {
   isAdmin?: boolean;
   totalSessions: number;
@@ -48,6 +62,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [abandoning, setAbandoning] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [savedItems, setSavedItems] = useState<BookmarkItem[]>([]);
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [msgText, setMsgText] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgSent, setMsgSent] = useState(false);
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0);
 
   useEffect(() => {
     fetch("/api/study/stats")
@@ -61,6 +81,21 @@ export default function DashboardPage() {
       .then(setStats)
       .catch((e) => setFetchError(`Fetch failed: ${e}`))
       .finally(() => setLoading(false));
+
+    fetch("/api/bookmarks/all")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setSavedItems)
+      .catch(() => {});
+
+    fetch("/api/messages")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((msgs: { read?: boolean; toUserId?: string; fromUserId?: string }[]) => {
+        if (Array.isArray(msgs)) {
+          const unread = msgs.filter((m) => !m.read && m.fromUserId !== undefined).length;
+          setUnreadMsgCount(unread);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   async function abandonSession(sessionId: string) {
@@ -347,8 +382,49 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Saved Pages */}
+        {savedItems.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+            <h2 className="text-sm font-semibold mb-4">Saved Pages &amp; Highlights</h2>
+            <ul className="space-y-2 max-h-64 overflow-auto">
+              {savedItems.slice(0, 30).map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-start gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800"
+                >
+                  <span className="mt-0.5 text-sm">
+                    {item.type === "bookmark" ? "★" : "🖍"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {item.type === "bookmark"
+                        ? `Page ${item.pageNumber}`
+                        : `"${item.highlightText?.slice(0, 80)}${(item.highlightText?.length ?? 0) > 80 ? "…" : ""}"`}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {item.docTitle ?? `Document ${item.documentId}`}
+                      {item.sessionDate && (
+                        <> · {new Date(item.sessionDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                      )}
+                    </p>
+                  </div>
+                  {item.color && (
+                    <span
+                      className={`w-3 h-3 rounded-full mt-1 ${
+                        item.color === "yellow" ? "bg-yellow-400" :
+                        item.color === "green" ? "bg-emerald-400" :
+                        item.color === "blue" ? "bg-blue-400" : "bg-pink-400"
+                      }`}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Bottom nav */}
-        <div className="mt-8 flex flex-wrap gap-4 text-sm">
+        <div className="mt-8 flex flex-wrap items-center gap-4 text-sm">
           <Link href="/" className="underline underline-offset-4">
             Home
           </Link>
@@ -358,7 +434,49 @@ export default function DashboardPage() {
           <Link href="/study/history" className="underline underline-offset-4">
             History
           </Link>
+          <button
+            onClick={() => { setShowMessageModal(true); setMsgSent(false); }}
+            className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition relative"
+          >
+            Message Developer
+            {unreadMsgCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {unreadMsgCount}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Message modal */}
+        {showMessageModal && (
+          <MessageModal
+            onClose={() => setShowMessageModal(false)}
+            msgText={msgText}
+            setMsgText={setMsgText}
+            msgSending={msgSending}
+            msgSent={msgSent}
+            onSend={async () => {
+              if (!msgText.trim() || msgSending) return;
+              setMsgSending(true);
+              try {
+                const res = await fetch("/api/messages", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ content: msgText }),
+                });
+                if (res.ok) {
+                  setMsgSent(true);
+                  setMsgText("");
+                } else {
+                  const data = await res.json().catch(() => ({}));
+                  alert(data.error ?? "Failed to send");
+                }
+              } finally {
+                setMsgSending(false);
+              }
+            }}
+          />
+        )}
       </div>
     </main>
   );
@@ -369,6 +487,97 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900">
       <p className="text-2xl font-bold">{value}</p>
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+    </div>
+  );
+}
+
+function MessageModal({
+  onClose,
+  msgText,
+  setMsgText,
+  msgSending,
+  msgSent,
+  onSend,
+}: {
+  onClose: () => void;
+  msgText: string;
+  setMsgText: (v: string) => void;
+  msgSending: boolean;
+  msgSent: boolean;
+  onSend: () => void;
+}) {
+  const [history, setHistory] = useState<{ id: string; fromUserId: string; content: string; createdAt: string | null }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/messages")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: unknown) => {
+        if (Array.isArray(data)) setHistory(data);
+      })
+      .catch(() => {});
+  }, [msgSent]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-2xl dark:bg-gray-900 dark:border-gray-700 flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-5 py-3">
+          <h3 className="font-semibold text-sm">Message Developer</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-5 py-4 space-y-3 min-h-[200px]">
+          {history.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-8">No messages yet. Send one below!</p>
+          )}
+          {history.map((msg) => {
+            const isMe = msg.fromUserId !== undefined;
+            const fromDev = !isMe;
+            return (
+              <div key={msg.id} className={`flex ${fromDev ? "justify-start" : "justify-end"}`}>
+                <div
+                  className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+                    fromDev
+                      ? "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                      : "bg-black text-white dark:bg-white dark:text-black"
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {msg.createdAt && (
+                    <p className={`text-[10px] mt-1 ${fromDev ? "text-gray-400" : "text-gray-300 dark:text-gray-600"}`}>
+                      {new Date(msg.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-3">
+          {msgSent ? (
+            <p className="text-sm text-green-600 dark:text-green-400 text-center py-2">Message sent!</p>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={msgText}
+                onChange={(e) => setMsgText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onSend()}
+                placeholder="Type a message…"
+                maxLength={2000}
+                className="flex-1 rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-gray-600"
+              />
+              <button
+                onClick={onSend}
+                disabled={msgSending || !msgText.trim()}
+                className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+              >
+                {msgSending ? "…" : "Send"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

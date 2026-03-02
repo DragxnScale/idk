@@ -569,6 +569,7 @@ function StudySessionInner() {
                 initialPage={startPage}
                 jumpToPage={jumpTarget}
                 documentId={selectedDoc?.documentId}
+                sessionId={sessionId ?? undefined}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
               />

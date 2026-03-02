@@ -41,7 +41,7 @@ interface CatalogEntry {
   createdAt: string | null;
 }
 
-type Tab = "users" | "upload" | "catalog";
+type Tab = "users" | "upload" | "catalog" | "messages";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -115,7 +115,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-800 mb-6">
-          {(["users", "upload", "catalog"] as Tab[]).map((t) => (
+          {(["users", "upload", "catalog", "messages"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -125,7 +125,7 @@ export default function AdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-300"
               }`}
             >
-              {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : "Users"}
+              {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : "Users"}
             </button>
           ))}
         </div>
@@ -133,6 +133,7 @@ export default function AdminPage() {
         {tab === "users" && <UsersTab />}
         {tab === "upload" && <UploadTab />}
         {tab === "catalog" && <CatalogTab />}
+        {tab === "messages" && <MessagesTab />}
       </div>
     </main>
   );
@@ -948,5 +949,258 @@ function CatalogTab() {
         </div>
       )}
     </>
+  );
+}
+
+// ── Messages Tab ────────────────────────────────────────────────────
+
+interface Conversation {
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  lastMessage: string;
+  lastAt: string;
+  unread: number;
+  muted: boolean;
+  blocked: boolean;
+}
+
+interface ChatMsg {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  content: string;
+  createdAt: string | null;
+}
+
+function MessagesTab() {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const loadConversations = useCallback(() => {
+    fetch("/api/messages")
+      .then((r) => (r.ok ? r.json() : { conversations: [] }))
+      .then((data: { conversations?: Conversation[] }) => setConversations(data.conversations ?? []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  const openConversation = useCallback((userId: string) => {
+    setSelectedUserId(userId);
+    setChatLoading(true);
+    fetch(`/api/messages?userId=${userId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setChatMessages)
+      .finally(() => setChatLoading(false));
+    setConversations((prev) =>
+      prev.map((c) => (c.userId === userId ? { ...c, unread: 0 } : c))
+    );
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  async function sendReply() {
+    if (!replyText.trim() || !selectedUserId || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: replyText, toUserId: selectedUserId }),
+      });
+      if (res.ok) {
+        const msg = await res.json();
+        setChatMessages((prev) => [...prev, msg]);
+        setReplyText("");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleMuteBlock(userId: string, action: "mute" | "unmute" | "block" | "unblock") {
+    await fetch("/api/admin/mute-block", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, action }),
+    });
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.userId !== userId) return c;
+        return {
+          ...c,
+          muted: action === "mute" ? true : action === "unmute" ? false : c.muted,
+          blocked: action === "block" ? true : action === "unblock" ? false : c.blocked,
+        };
+      })
+    );
+  }
+
+  const selected = conversations.find((c) => c.userId === selectedUserId);
+
+  if (loading) {
+    return <p className="text-gray-400 animate-pulse py-10 text-center">Loading messages…</p>;
+  }
+
+  return (
+    <div className="flex gap-4" style={{ minHeight: 500 }}>
+      {/* Conversation list */}
+      <div className="w-72 flex-shrink-0 rounded-lg border border-gray-800 overflow-auto">
+        {conversations.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-10">No messages yet</p>
+        ) : (
+          <ul className="divide-y divide-gray-800">
+            {conversations.map((c) => (
+              <li key={c.userId}>
+                <button
+                  onClick={() => openConversation(c.userId)}
+                  className={`w-full text-left px-4 py-3 transition ${
+                    selectedUserId === c.userId
+                      ? "bg-gray-800"
+                      : "hover:bg-gray-800/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium truncate">
+                      {c.userName ?? c.userEmail ?? c.userId.slice(0, 8)}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      {c.blocked && (
+                        <span className="text-[10px] rounded bg-red-900 text-red-300 px-1.5 py-0.5">blocked</span>
+                      )}
+                      {c.muted && !c.blocked && (
+                        <span className="text-[10px] rounded bg-yellow-900 text-yellow-300 px-1.5 py-0.5">muted</span>
+                      )}
+                      {c.unread > 0 && (
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">
+                          {c.unread}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{c.lastMessage}</p>
+                  {c.lastAt && (
+                    <p className="text-[10px] text-gray-600 mt-0.5">
+                      {new Date(c.lastAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Chat area */}
+      <div className="flex-1 rounded-lg border border-gray-800 flex flex-col">
+        {!selectedUserId ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-gray-500">Select a conversation</p>
+          </div>
+        ) : (
+          <>
+            {/* Chat header */}
+            <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">
+                  {selected?.userName ?? selected?.userEmail ?? selectedUserId.slice(0, 8)}
+                </p>
+                {selected?.userEmail && (
+                  <p className="text-xs text-gray-500">{selected.userEmail}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() =>
+                    handleMuteBlock(selectedUserId, selected?.muted ? "unmute" : "mute")
+                  }
+                  className={`rounded-md px-3 py-1.5 text-xs border transition ${
+                    selected?.muted
+                      ? "border-yellow-600 text-yellow-400 hover:bg-yellow-900/20"
+                      : "border-gray-700 text-gray-400 hover:bg-gray-800"
+                  }`}
+                >
+                  {selected?.muted ? "Unmute" : "Mute"}
+                </button>
+                <button
+                  onClick={() =>
+                    handleMuteBlock(selectedUserId, selected?.blocked ? "unblock" : "block")
+                  }
+                  className={`rounded-md px-3 py-1.5 text-xs border transition ${
+                    selected?.blocked
+                      ? "border-red-600 text-red-400 hover:bg-red-900/20"
+                      : "border-gray-700 text-gray-400 hover:bg-gray-800"
+                  }`}
+                >
+                  {selected?.blocked ? "Unblock" : "Block"}
+                </button>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-auto px-4 py-4 space-y-3">
+              {chatLoading ? (
+                <p className="text-gray-400 animate-pulse text-center py-10">Loading…</p>
+              ) : chatMessages.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-10">No messages in this conversation</p>
+              ) : (
+                chatMessages.map((msg) => {
+                  const isAdmin = msg.fromUserId !== selectedUserId;
+                  return (
+                    <div key={msg.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[70%] rounded-xl px-3 py-2 text-sm ${
+                          isAdmin
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-800 text-gray-200"
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                        {msg.createdAt && (
+                          <p className={`text-[10px] mt-1 ${isAdmin ? "text-blue-200" : "text-gray-500"}`}>
+                            {new Date(msg.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Reply */}
+            <div className="border-t border-gray-800 px-4 py-3 flex gap-2">
+              <input
+                type="text"
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendReply()}
+                placeholder={selected?.blocked ? "User is blocked" : "Reply…"}
+                disabled={selected?.blocked}
+                maxLength={2000}
+                className="flex-1 rounded-lg border border-gray-700 bg-transparent px-3 py-2 text-sm disabled:opacity-40"
+              />
+              <button
+                onClick={sendReply}
+                disabled={sending || !replyText.trim() || selected?.blocked}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 hover:bg-blue-700 transition"
+              >
+                {sending ? "…" : "Send"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

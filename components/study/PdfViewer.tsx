@@ -26,11 +26,12 @@ interface PdfViewerProps {
   initialPage?: number;
   jumpToPage?: number | null;
   documentId?: string;
+  sessionId?: string;
   onPageChange?: (page: number) => void;
   onPageText?: (page: number, text: string) => void;
 }
 
-export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, onPageChange, onPageText }: PdfViewerProps) {
+export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, onPageChange, onPageText }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -177,14 +178,16 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, onPage
     });
   }, [pageNumber, onPageText]);
 
-  // Bookmarks: fetch on mount
+  // Bookmarks: fetch on mount (session-scoped when sessionId provided)
   useEffect(() => {
     if (!documentId) return;
-    fetch(`/api/bookmarks?documentId=${encodeURIComponent(documentId)}`)
+    const params = new URLSearchParams({ documentId });
+    if (sessionId) params.set("sessionId", sessionId);
+    fetch(`/api/bookmarks?${params}`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setBookmarkItems)
       .catch(() => {});
-  }, [documentId]);
+  }, [documentId, sessionId]);
 
   const isCurrentPageBookmarked = bookmarkItems.some(
     (b) => b.type === "bookmark" && b.pageNumber === pageNumber
@@ -206,7 +209,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, onPage
         const res = await fetch("/api/bookmarks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documentId, pageNumber, type: "bookmark" }),
+          body: JSON.stringify({ documentId, pageNumber, type: "bookmark", sessionId }),
         });
         if (res.ok) {
           const row = await res.json();
@@ -229,6 +232,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, onPage
         type: "highlight",
         highlightText: text.trim().slice(0, 500),
         color,
+        sessionId,
       }),
     });
     if (res.ok) {

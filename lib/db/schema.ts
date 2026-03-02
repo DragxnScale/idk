@@ -12,6 +12,8 @@ export const users = sqliteTable("users", {
   dailySessionsGoal: integer("daily_sessions_goal"),
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
+  muted: integer("muted", { mode: "boolean" }).default(false),
+  blocked: integer("blocked", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
@@ -124,12 +126,28 @@ export const bookmarks = sqliteTable("bookmarks", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+  sessionId: text("session_id"),
   documentId: text("document_id").notNull(),
   pageNumber: integer("page_number").notNull(),
   type: text("type").notNull(), // "bookmark" | "highlight"
   label: text("label"),
   highlightText: text("highlight_text"),
   color: text("color"), // "yellow" | "green" | "blue" | "pink"
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+// ── Messaging ───────────────────────────────────────────────────────
+
+export const messages = sqliteTable("messages", {
+  id: text("id").primaryKey(),
+  fromUserId: text("from_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  toUserId: text("to_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  read: integer("read", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
