@@ -553,6 +553,14 @@ function TextbookPanel({
   const [customEnd, setCustomEnd] = useState<number | null>(null);
   const [extractedRanges, setExtractedRanges] = useState<Record<string, [number, number]> | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [chaptersRead, setChaptersRead] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    fetch("/api/study/chapters-read")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then(setChaptersRead)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!selectedBook?.sourceUrl || selectedBook.sourceType === "user_upload") return;
@@ -637,24 +645,39 @@ function TextbookPanel({
                     {extracting && <span className="ml-2 text-xs text-gray-400 animate-pulse">Reading TOC…</span>}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {activeChapters.map((ch) => (
-                      <button
-                        key={ch}
-                        type="button"
-                        disabled={extracting}
-                        onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
-                        className={`rounded-md border px-3 py-1.5 text-sm transition ${
-                          extracting
-                            ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
-                            : selectedChapter === ch
-                              ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                              : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                        }`}
-                      >
-                        Ch. {ch}
-                      </button>
-                    ))}
+                    {activeChapters.map((ch) => {
+                      const isRead = chaptersRead[selectedBook.id]?.includes(ch);
+                      return (
+                        <button
+                          key={ch}
+                          type="button"
+                          disabled={extracting}
+                          onClick={() => { setSelectedChapter(ch); setCustomStart(null); setCustomEnd(null); }}
+                          className={`rounded-md border px-3 py-1.5 text-sm transition relative ${
+                            extracting
+                              ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
+                              : selectedChapter === ch
+                                ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                                : isRead
+                                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                  : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                          }`}
+                        >
+                          {isRead && <span className="mr-1 text-xs">&#10003;</span>}
+                          Ch. {ch}
+                        </button>
+                      );
+                    })}
                   </div>
+                  {(() => {
+                    const bookRead = chaptersRead[selectedBook.id] ?? [];
+                    if (bookRead.length === 0) return null;
+                    return (
+                      <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                        {bookRead.length} of {activeChapters.length} chapters read
+                      </p>
+                    );
+                  })()}
                   {selectedChapter && (() => {
                     const range = activeRanges[selectedChapter];
                     const chStart = range ? range[0] : 1;
@@ -815,6 +838,11 @@ function TextbookPanel({
               <p className="text-xs text-gray-500 mt-0.5">
                 {book.sourceType === "oer" ? "Open Access" : "Requires your PDF"}
                 {book.chapters.length > 0 ? ` · ${book.chapters.length} chapters` : " · No chapter index"}
+                {chaptersRead[book.id]?.length ? (
+                  <span className="text-emerald-600 dark:text-emerald-400">
+                    {" · "}{chaptersRead[book.id].length}/{book.chapters.length} read
+                  </span>
+                ) : null}
               </p>
             </button>
           </li>
