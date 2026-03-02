@@ -12,6 +12,30 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.15;
 
+function normalizeText(s: string): string {
+  return s.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Map an index in the normalized (collapsed-whitespace) string back to the original string */
+function mapNormalizedIndex(original: string, normIdx: number): number {
+  let ni = 0;
+  let inSpace = false;
+  for (let i = 0; i < original.length; i++) {
+    if (/\s/.test(original[i])) {
+      if (!inSpace && ni > 0) {
+        inSpace = true;
+        if (ni >= normIdx) return i;
+        ni++;
+      }
+    } else {
+      inSpace = false;
+      if (ni >= normIdx) return i;
+      ni++;
+    }
+  }
+  return original.length;
+}
+
 interface BookmarkRow {
   id: string;
   pageNumber: number;
@@ -332,6 +356,96 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const scaledW = Math.round(renderWidth * effectiveZoom);
   const scaledH = Math.round(innerHeight * effectiveZoom);
 
+  // Apply highlight overlays to the text layer after the page renders
+  const applyHighlightOverlays = useCallback(() => {
+    const container = pageWrapRef.current;
+    if (!container) return;
+
+    // Remove any previous highlight marks
+    container.querySelectorAll("mark[data-hl]").forEach((el) => {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+
+    const textLayer = container.querySelector(".react-pdf__Page__textContent");
+    if (!textLayer) return;
+
+    const pageHighlights = bookmarkItems.filter(
+      (b) => b.type === "highlight" && b.pageNumber === pageNumber && b.highlightText
+    );
+    if (pageHighlights.length === 0) return;
+
+    const hlColorMap: Record<string, string> = {
+      yellow: "rgba(250, 204, 21, 0.4)",
+      green: "rgba(52, 211, 153, 0.4)",
+      blue: "rgba(96, 165, 250, 0.4)",
+      pink: "rgba(244, 114, 182, 0.4)",
+    };
+
+    for (const hl of pageHighlights) {
+      const needle = normalizeText(hl.highlightText!);
+      if (!needle) continue;
+
+      // Collect all text node data with references
+      const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+      const textNodes: { node: Text; start: number; text: string }[] = [];
+      let fullText = "";
+      let node: Text | null;
+      while ((node = walker.nextNode() as Text | null)) {
+        const t = node.textContent ?? "";
+        textNodes.push({ node, start: fullText.length, text: t });
+        fullText += t;
+      }
+
+      const normalizedFull = normalizeText(fullText);
+      const idx = normalizedFull.indexOf(needle);
+      if (idx === -1) continue;
+
+      // Map normalized position back to original text positions
+      const origStart = mapNormalizedIndex(fullText, idx);
+      const origEnd = mapNormalizedIndex(fullText, idx + needle.length);
+
+      // Find which text nodes overlap [origStart, origEnd)
+      for (const tn of textNodes) {
+        const tnEnd = tn.start + tn.text.length;
+        const overlapStart = Math.max(origStart, tn.start);
+        const overlapEnd = Math.min(origEnd, tnEnd);
+        if (overlapStart >= overlapEnd) continue;
+
+        const localStart = overlapStart - tn.start;
+        const localEnd = overlapEnd - tn.start;
+
+        try {
+          const range = document.createRange();
+          range.setStart(tn.node, localStart);
+          range.setEnd(tn.node, localEnd);
+
+          const mark = document.createElement("mark");
+          mark.setAttribute("data-hl", hl.id);
+          mark.style.backgroundColor = hlColorMap[hl.color ?? "yellow"] ?? hlColorMap.yellow;
+          mark.style.borderRadius = "2px";
+          mark.style.padding = "0";
+          range.surroundContents(mark);
+        } catch {
+          // surroundContents can fail if range crosses element boundaries
+        }
+      }
+    }
+  }, [bookmarkItems, pageNumber]);
+
+  // Re-apply highlights when items change (e.g. after saving a new highlight)
+  const highlightsOnPage = bookmarkItems.filter(
+    (b) => b.type === "highlight" && b.pageNumber === pageNumber
+  ).length;
+  useEffect(() => {
+    if (highlightsOnPage > 0) {
+      const t = setTimeout(applyHighlightOverlays, 50);
+      return () => clearTimeout(t);
+    }
+  }, [highlightsOnPage, applyHighlightOverlays]);
+
   return (
     <div ref={containerRef} className="flex flex-col items-center gap-2 w-full">
       {/* ── Toolbar: responsive two-row layout on mobile ── */}
@@ -545,6 +659,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
                 <Page
                   pageNumber={pageNumber}
                   width={renderWidth}
+                  onRenderSuccess={applyHighlightOverlays}
                   loading={
                     <div className="flex min-h-[300px] items-center justify-center">
                       <div className="spinner" />

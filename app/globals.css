@@ -49,3 +49,17 @@ input[type="number"] {
     height: auto !important;
   }
 }
+
+/* Highlight marks in the PDF text layer */
+.react-pdf__Page__textContent mark[data-hl] {
+  color: transparent;
+  padding: 1px 0;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+@media (prefers-color-scheme: dark) {
+  .react-pdf__Page__textContent mark[data-hl] {
+    mix-blend-mode: screen;
+  }
+}

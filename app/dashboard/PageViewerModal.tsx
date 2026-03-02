@@ -60,6 +60,11 @@ export default function PageViewerModal({
   if (!item.pdfUrl) return null;
 
   const renderWidth = containerWidth || 600;
+  // Proxy external URLs to avoid CORS; keep blob/local URLs as-is
+  const isExternal = item.pdfUrl.startsWith("http");
+  const proxiedUrl = isExternal
+    ? `/api/proxy/pdf?url=${encodeURIComponent(item.pdfUrl)}`
+    : item.pdfUrl;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -130,7 +135,7 @@ export default function PageViewerModal({
         {/* PDF viewer */}
         <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-950 flex justify-center p-2">
           <Document
-            file={item.pdfUrl}
+            file={proxiedUrl}
             onLoadSuccess={({ numPages: total }) => setNumPages(total)}
             loading={
               <div className="flex min-h-[300px] items-center justify-center">
