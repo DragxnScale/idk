@@ -67,16 +67,21 @@ export default function SignInPage() {
         log(`Debug fetch failed: ${dbgErr}`);
       }
 
-      log("Calling /api/study/stats to check auth…");
+      log("Calling /api/study/stats to check auth (5s timeout)…");
       try {
-        const statsRes = await fetch("/api/study/stats");
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const statsRes = await fetch("/api/study/stats", { signal: ctrl.signal });
+        clearTimeout(timer);
         log(`Stats response: status=${statsRes.status} ok=${statsRes.ok}`);
         if (!statsRes.ok) {
           const body = await statsRes.text();
-          log(`Stats error body: ${body.slice(0, 200)}`);
+          log(`Stats error body: ${body.slice(0, 500)}`);
+        } else {
+          log("Stats OK — auth is fully working!");
         }
       } catch (statsErr) {
-        log(`Stats fetch failed: ${statsErr}`);
+        log(`Stats check failed/timed out: ${statsErr}`);
       }
 
       log("Navigating to /dashboard…");

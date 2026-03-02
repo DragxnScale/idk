@@ -47,11 +47,19 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [abandoning, setAbandoning] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/study/stats")
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        if (r.status === 401) return null;
+        const body = await r.text().catch(() => "");
+        setFetchError(`Server error (${r.status}): ${body.slice(0, 300)}`);
+        return null;
+      })
       .then(setStats)
+      .catch((e) => setFetchError(`Fetch failed: ${e}`))
       .finally(() => setLoading(false));
   }, []);
 
@@ -77,6 +85,25 @@ export default function DashboardPage() {
     );
   }
 
+  if (fetchError) {
+    return (
+      <main className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-6">
+        <div className="text-center space-y-4 max-w-md">
+          <p className="text-red-600 dark:text-red-400 font-medium">Something went wrong</p>
+          <pre className="text-xs text-left bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 overflow-auto max-h-40 whitespace-pre-wrap break-all">
+            {fetchError}
+          </pre>
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-block rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+          >
+            Retry
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   if (!stats) {
     return (
       <main className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
@@ -93,6 +120,7 @@ export default function DashboardPage() {
         </div>
       </main>
     );
+  
   }
 
   const maxMinutes = Math.max(...stats.weekDays.map((d) => d.minutes), 1);

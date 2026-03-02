@@ -4,21 +4,37 @@ import { db } from "@/lib/db";
 import { isAdminEmail } from "@/lib/admin";
 
 export async function GET() {
-  const session = await auth();
+  let session;
+  try {
+    session = await auth();
+  } catch (e) {
+    return NextResponse.json({ error: "Auth error", detail: (e as Error).message }, { status: 500 });
+  }
+
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
 
-  const [rows, user] = await Promise.all([
-    db.query.studySessions.findMany({
-      where: (s, { eq }) => eq(s.userId, session.user.id),
-    }),
-    db.query.users.findFirst({
-      where: (u, { eq }) => eq(u.id, session.user.id),
-    }),
-  ]);
+  let rows, user;
+  try {
+    [rows, user] = await Promise.all([
+      db.query.studySessions.findMany({
+        where: (s, { eq }) => eq(s.userId, session.user.id),
+      }),
+      db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.id, session.user.id),
+      }),
+    ]);
+  } catch (dbErr) {
+    return NextResponse.json({
+      error: "Database error",
+      detail: (dbErr as Error).message,
+      dbUrl: process.env.DATABASE_URL ? "set" : "NOT SET",
+      dbAuth: process.env.DATABASE_AUTH_TOKEN ? "set" : "NOT SET",
+    }, { status: 500 });
+  }
 
   const completed = rows.filter((r) => r.endedAt);
   const totalMinutes = completed.reduce(
