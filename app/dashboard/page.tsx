@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+
+const PageViewerModal = dynamic(() => import("./PageViewerModal"), { ssr: false });
 
 interface WeekDay {
   date: string;
@@ -40,6 +43,7 @@ interface BookmarkItem {
   createdAt: string | null;
   sessionDate: string | null;
   docTitle: string | null;
+  pdfUrl: string | null;
 }
 
 interface StatsData {
@@ -63,6 +67,8 @@ export default function DashboardPage() {
   const [abandoning, setAbandoning] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<BookmarkItem[]>([]);
+  const [viewingItem, setViewingItem] = useState<BookmarkItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [msgText, setMsgText] = useState("");
   const [msgSending, setMsgSending] = useState(false);
@@ -97,6 +103,19 @@ export default function DashboardPage() {
       })
       .catch(() => {});
   }, []);
+
+  async function deleteBookmark(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/bookmarks?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setSavedItems((prev) => prev.filter((b) => b.id !== id));
+        if (viewingItem?.id === id) setViewingItem(null);
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function abandonSession(sessionId: string) {
     setAbandoning(true);
@@ -386,42 +405,69 @@ export default function DashboardPage() {
         {savedItems.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
             <h2 className="text-sm font-semibold mb-4">Saved Pages &amp; Highlights</h2>
-            <ul className="space-y-2 max-h-64 overflow-auto">
-              {savedItems.slice(0, 30).map((item) => (
+            <ul className="space-y-2 max-h-80 overflow-auto">
+              {savedItems.slice(0, 50).map((item) => (
                 <li
                   key={item.id}
-                  className="flex items-start gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800"
+                  className="group flex items-start gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-600 transition"
                 >
-                  <span className="mt-0.5 text-sm">
-                    {item.type === "bookmark" ? "★" : "🖍"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {item.type === "bookmark"
-                        ? `Page ${item.pageNumber}`
-                        : `"${item.highlightText?.slice(0, 80)}${(item.highlightText?.length ?? 0) > 80 ? "…" : ""}"`}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {item.docTitle ?? `Document ${item.documentId}`}
-                      {item.sessionDate && (
-                        <> · {new Date(item.sessionDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                  <button
+                    onClick={() => item.pdfUrl ? setViewingItem(item) : undefined}
+                    className={`flex items-start gap-3 flex-1 min-w-0 text-left ${item.pdfUrl ? "cursor-pointer" : "cursor-default"}`}
+                  >
+                    <span className="mt-0.5 text-sm flex-shrink-0">
+                      {item.type === "bookmark" ? "★" : "🖍"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {item.type === "bookmark"
+                          ? `Page ${item.pageNumber}`
+                          : `"${item.highlightText?.slice(0, 80)}${(item.highlightText?.length ?? 0) > 80 ? "…" : ""}"`}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {item.docTitle ?? `Document ${item.documentId}`}
+                        {item.sessionDate && (
+                          <> · {new Date(item.sessionDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                        )}
+                      </p>
+                      {item.pdfUrl && (
+                        <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-0.5">Click to view page</p>
                       )}
-                    </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {item.color && (
+                      <span
+                        className={`w-3 h-3 rounded-full ${
+                          item.color === "yellow" ? "bg-yellow-400" :
+                          item.color === "green" ? "bg-emerald-400" :
+                          item.color === "blue" ? "bg-blue-400" : "bg-pink-400"
+                        }`}
+                      />
+                    )}
+                    <button
+                      onClick={() => deleteBookmark(item.id)}
+                      disabled={deletingId === item.id}
+                      className="sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 rounded p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                      title={item.type === "bookmark" ? "Remove bookmark" : "Remove highlight"}
+                    >
+                      {deletingId === item.id ? (
+                        <span className="block h-3.5 w-3.5 rounded-full border border-gray-400 border-t-transparent animate-spin" />
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
-                  {item.color && (
-                    <span
-                      className={`w-3 h-3 rounded-full mt-1 ${
-                        item.color === "yellow" ? "bg-yellow-400" :
-                        item.color === "green" ? "bg-emerald-400" :
-                        item.color === "blue" ? "bg-blue-400" : "bg-pink-400"
-                      }`}
-                    />
-                  )}
                 </li>
               ))}
             </ul>
           </div>
         )}
+
+        {/* Page Viewer Modal */}
+        {viewingItem && <PageViewerModal item={viewingItem} onClose={() => setViewingItem(null)} onDelete={deleteBookmark} />}
 
         {/* Bottom nav */}
         <div className="mt-8 flex flex-wrap items-center gap-4 text-sm">
