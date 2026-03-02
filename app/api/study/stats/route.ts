@@ -9,6 +9,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  try {
+
   const [rows, user] = await Promise.all([
     db.query.studySessions.findMany({
       where: (s, { eq }) => eq(s.userId, session.user.id),
@@ -108,4 +110,11 @@ export async function GET() {
         totalFocusedMinutes: r.totalFocusedMinutes,
       })),
   });
+
+  } catch (e) {
+    return NextResponse.json(
+      { error: "Internal error", detail: (e as Error).message },
+      { status: 500 }
+    );
+  }
 }
