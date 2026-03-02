@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -479,109 +480,15 @@ function UploadTab() {
     addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      // Step 1a: Request a client token from our server.
-      addLog("Requesting client token…");
-      const tokenRes = await fetch("/api/admin/blob-token", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: "blob.generate-client-token",
-          payload: { pathname: blobPathname, clientPayload: null, multipart: true },
-        }),
+      addLog("Uploading via Vercel Blob SDK…");
+      const blob = await upload(blobPathname, file, {
+        access: "public",
+        handleUploadUrl: "/api/admin/blob-token",
+        multipart: true,
       });
-      addLog(`Token response: ${tokenRes.status}`);
-      if (!tokenRes.ok) {
-        const errBody = await tokenRes.text();
-        addLog(`Token error: ${errBody}`);
-        throw new Error(`Token failed (${tokenRes.status}): ${errBody}`);
-      }
-      const tokenData = await tokenRes.json();
-      if (!tokenData.clientToken) {
-        throw new Error("No clientToken in response");
-      }
-      const clientToken = tokenData.clientToken;
-      addLog(`Got token (${clientToken.length} chars)`);
-
-      // Step 1b: Upload directly to Vercel Blob API via XHR.
-      // No SDK — raw XHR for full control and visibility.
-      const params = new URLSearchParams({ pathname: blobPathname });
-      const apiUrl = `https://vercel.com/api/blob/?${params.toString()}`;
-      addLog(`Uploading to Vercel Blob…`);
-
-      const uploadResult = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", apiUrl);
-        xhr.setRequestHeader("authorization", `Bearer ${clientToken}`);
-        xhr.setRequestHeader("x-api-version", "7");
-        xhr.setRequestHeader("x-content-type", "application/pdf");
-        xhr.setRequestHeader("x-vercel-blob-access", "public");
-        xhr.setRequestHeader("x-api-blob-request-attempt", "0");
-
-        let lastLoggedPct = -1;
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 100);
-            setProgress(Math.round(pct * 0.7));
-            const bucket = Math.floor(pct / 10) * 10;
-            if (bucket > lastLoggedPct) {
-              lastLoggedPct = bucket;
-              addLog(`Upload: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(0)}/${(e.total / 1024 / 1024).toFixed(0)} MB)`);
-            }
-          }
-        };
-
-        xhr.onload = () => {
-          addLog(`XHR response: ${xhr.status} ${xhr.statusText}`);
-          addLog(`XHR body: ${xhr.responseText.slice(0, 500)}`);
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const res = JSON.parse(xhr.responseText);
-              resolve(res.url);
-            } catch {
-              reject(new Error(`Invalid JSON: ${xhr.responseText.slice(0, 200)}`));
-            }
-          } else {
-            reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText.slice(0, 300)}`));
-          }
-        };
-
-        xhr.onerror = () => {
-          // CORS blocks reading the response, but the data IS uploaded.
-          // We'll look up the blob URL server-side instead.
-          addLog("XHR finished (CORS blocks response — expected)");
-          resolve("__cors_blocked__");
-        };
-
-        xhr.onabort = () => reject(new Error("Upload cancelled"));
-
-        xhr.ontimeout = () => {
-          addLog("XHR timeout");
-          reject(new Error("Upload timed out"));
-        };
-
-        addLog("Sending file via XHR PUT…");
-        xhr.send(file);
-      });
-
-      // If CORS blocked the response, look up the blob URL server-side.
-      if (uploadResult === "__cors_blocked__") {
-        addLog("Looking up blob URL from server…");
-        const lookupRes = await fetch(
-          `/api/admin/blob-lookup?prefix=${encodeURIComponent(blobPathname)}`
-        );
-        addLog(`Lookup response: ${lookupRes.status}`);
-        if (!lookupRes.ok) {
-          const err = await lookupRes.text();
-          addLog(`Lookup error: ${err}`);
-          throw new Error(`Blob lookup failed: ${err}`);
-        }
-        const lookupData = await lookupRes.json();
-        blobUrl = lookupData.url;
-        addLog(`Found blob URL: ${blobUrl}`);
-      } else {
-        blobUrl = uploadResult;
-        addLog(`Upload complete! URL: ${blobUrl}`);
-      }
+      blobUrl = blob.url;
+      setProgress(70);
+      addLog(`Upload complete! URL: ${blobUrl}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload to storage failed";
       addLog(`UPLOAD ERROR: ${msg}`);
