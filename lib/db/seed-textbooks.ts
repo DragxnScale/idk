@@ -75,4 +75,14 @@ export const seedTextbooks = [
       "23": [832, 867],
     }),
   },
+  {
+    id: "serway-college-physics-9e",
+    title: "College Physics (Serway, Vuille)",
+    edition: "9th",
+    isbn: "978-0-840-06206-2",
+    sourceType: "oer" as const,
+    sourceUrl:
+      "https://archive.org/download/raymond-a.-serway-jerry-s-faughn-chris-vuille-college-physics-9th-edition-cengage-learning-2011/Raymond%20A.%20Serway%2C%20Jerry%20S%20Faughn%2C%20Chris%20Vuille%20College%20Physics%2C%209th%20Edition%20Cengage%20Learning%20%28%202011%29.pdf",
+    chapterPageRanges: null,
+  },
 ];

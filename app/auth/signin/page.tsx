@@ -4,92 +4,31 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 
-interface DebugLine {
-  time: string;
-  msg: string;
-}
-
-function ts() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [debug, setDebug] = useState<DebugLine[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
-
-  function log(msg: string) {
-    setDebug((prev) => [...prev, { time: ts(), msg }]);
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    setDebug([]);
-    setShowDebug(true);
 
     try {
-      log("Starting signIn(credentials, redirect:false)…");
-
       const result = await signIn("credentials", {
         email,
         password,
         redirect: false,
       });
 
-      log(`signIn result: ok=${result?.ok} status=${result?.status} error=${result?.error ?? "none"} url=${result?.url ?? "none"}`);
-
       if (!result?.ok || result?.error) {
-        log("FAILED — signIn returned error or not ok");
         throw new Error("Invalid email or password");
       }
 
-      log("signIn succeeded. Checking cookies…");
-      const allCookies = document.cookie;
-      const cookieNames = allCookies
-        ? allCookies.split(";").map((c) => c.trim().split("=")[0])
-        : [];
-      log(`Browser cookies (${cookieNames.length}): ${cookieNames.join(", ") || "(none visible to JS)"}`);
-
-      log("Waiting 300ms for cookie to persist…");
-      await new Promise((r) => setTimeout(r, 300));
-
-      log("Calling /api/auth/debug to verify server-side session…");
-      try {
-        const dbg = await fetch("/api/auth/debug");
-        const data = await dbg.json();
-        log(`Debug response: ${JSON.stringify(data)}`);
-      } catch (dbgErr) {
-        log(`Debug fetch failed: ${dbgErr}`);
-      }
-
-      log("Calling /api/study/stats to check auth (5s timeout)…");
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 5000);
-        const statsRes = await fetch("/api/study/stats", { signal: ctrl.signal });
-        clearTimeout(timer);
-        log(`Stats response: status=${statsRes.status} ok=${statsRes.ok}`);
-        if (!statsRes.ok) {
-          const body = await statsRes.text();
-          log(`Stats error body: ${body.slice(0, 500)}`);
-        } else {
-          log("Stats OK — auth is fully working!");
-        }
-      } catch (statsErr) {
-        log(`Stats check failed/timed out: ${statsErr}`);
-      }
-
-      log("Navigating to /dashboard…");
       window.location.href = "/dashboard";
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Something went wrong";
-      log(`CATCH: ${msg}`);
-      setError(msg);
+      setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -155,31 +94,6 @@ export default function SignInPage() {
             </button>
           </form>
         </div>
-
-        {/* Debug panel */}
-        {showDebug && debug.length > 0 && (
-          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-amber-800 dark:text-amber-300">Debug Log</span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(debug.map((d) => `${d.time}: ${d.msg}`).join("\n"));
-                }}
-                className="text-xs text-amber-700 underline dark:text-amber-400"
-              >
-                Copy
-              </button>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-0.5">
-              {debug.map((d, i) => (
-                <p key={i} className="text-xs font-mono text-amber-900 dark:text-amber-200 break-all">
-                  <span className="text-amber-600 dark:text-amber-500">{d.time}</span>{" "}
-                  {d.msg}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
 
         <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
           Don&apos;t have an account?{" "}
