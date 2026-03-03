@@ -39,6 +39,11 @@ export default function RootLayout({
             __html: `try{var t=localStorage.getItem("bowlbeacon-theme");if(t&&t!=="default")document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
           }}
         />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js").then(function(r){r.addEventListener("updatefound",function(){var w=r.installing;if(w)w.addEventListener("statechange",function(){if(w.state==="installed"&&navigator.serviceWorker.controller){w.postMessage("skipWaiting");location.reload()}})});setInterval(function(){r.update()},60000)}).catch(function(){})}`
+          }}
+        />
       </head>
       <body className="antialiased min-h-screen">{children}</body>
     </html>

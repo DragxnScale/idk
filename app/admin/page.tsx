@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { upload } from "@vercel/blob/client";
 import Link from "next/link";
-import packageJson from "@/package.json";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -131,7 +130,7 @@ export default function AdminPage() {
             <span className="rounded-md bg-red-600 px-2 py-0.5 text-xs font-bold tracking-wide uppercase">Dev</span>
             <h1 className="text-xl font-bold">Developer Panel</h1>
             <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-[10px] font-mono text-gray-400 border border-gray-700">
-              v{packageJson.version}
+              v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.00"}
             </span>
           </div>
           <Link href="/dashboard" className="rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">

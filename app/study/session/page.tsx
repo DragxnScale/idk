@@ -45,6 +45,7 @@ function StudySessionInner() {
   const [targetValue, setTargetValue] = useState(25);
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<SelectedDocument | null>(null);
   const [showNotes, setShowNotes] = useState(false);
@@ -362,23 +363,33 @@ function StudySessionInner() {
 
   const handleStart = useCallback(async () => {
     setError(null);
+    setStarting(true);
     try {
       const docPayload = selectedDoc
         ? { ...selectedDoc, selectedChapters }
         : null;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
       const res = await fetch("/api/study/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ goalType, targetValue, documentJson: docPayload }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to start session");
+        throw new Error(data.error ?? `Server error (${res.status})`);
       }
       const data = await res.json();
       setSessionId(data.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setError("Request timed out. Please try again.");
+      } else {
+        setError(e instanceof Error ? e.message : "Something went wrong");
+      }
+      setStarting(false);
     }
   }, [goalType, targetValue, selectedDoc, selectedChapters]);
 
@@ -738,10 +749,17 @@ function StudySessionInner() {
 
             <button
               type="submit"
-              disabled={!selectedDoc}
-              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40"
+              disabled={!selectedDoc || starting}
+              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2"
             >
-              Start session
+              {starting ? (
+                <>
+                  <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                "Start session"
+              )}
             </button>
           </form>
         </section>
