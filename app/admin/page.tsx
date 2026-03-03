@@ -517,7 +517,7 @@ function UploadTab() {
 
   // Auto-generate identifier from title
   useEffect(() => {
-    if (title) setIdentifier(`studyfocus-${slugify(title)}`);
+    if (title) setIdentifier(`bowlbeacon-${slugify(title)}`);
   }, [title]);
 
   async function handleUpload() {

@@ -41,7 +41,7 @@ export default function Icon() {
               letterSpacing: -2,
             }}
           >
-            SF
+            BB
           </div>
         </div>
       </div>

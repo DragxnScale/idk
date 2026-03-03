@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Study Focus",
-    short_name: "StudyFocus",
+    name: "Bowl Beacon",
+    short_name: "BowlBeacon",
     description:
       "Stay focused while studying. Set goals, read in-app, and get AI-powered notes and quizzes.",
     start_url: "/dashboard",

@@ -1,4 +1,4 @@
-# Study Focus
+# Bowl Beacon
 
 A web app that helps you study by keeping you focused. Set a time or chapter goal, read in-app, and get AI-powered notes and quizzes when you finish.
 

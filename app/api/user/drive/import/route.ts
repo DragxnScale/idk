@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   let fetchRes: Response;
   try {
     fetchRes = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; StudyFocus/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; BowlBeacon/1.0)" },
       redirect: "follow",
     });
   } catch {

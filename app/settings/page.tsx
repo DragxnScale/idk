@@ -23,7 +23,7 @@ export default function SettingsPage() {
   function handleZoomChange(value: number) {
     setZoomState(value);
     setPdfZoom(value);
-    window.dispatchEvent(new StorageEvent("storage", { key: "studyfocus-pdf-zoom" }));
+    window.dispatchEvent(new StorageEvent("storage", { key: "bowlbeacon-pdf-zoom" }));
   }
 
   // ── Daily goals ─────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ export default function SettingsPage() {
   // ── Focus music URL (localStorage) ────────────────────────────────
   const [musicUrl, setMusicUrl] = useState("");
   useEffect(() => {
-    setMusicUrl(localStorage.getItem("studyfocus-music-url") ?? "");
+    setMusicUrl(localStorage.getItem("bowlbeacon-music-url") ?? "");
   }, []);
 
   useEffect(() => {
@@ -270,7 +270,7 @@ export default function SettingsPage() {
               value={musicUrl}
               onChange={(e) => {
                 setMusicUrl(e.target.value);
-                localStorage.setItem("studyfocus-music-url", e.target.value);
+                localStorage.setItem("bowlbeacon-music-url", e.target.value);
               }}
               placeholder="https://youtube.com/watch?v=... or audio URL"
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
@@ -292,7 +292,7 @@ export default function SettingsPage() {
               <button
                 onClick={() => {
                   setMusicUrl("");
-                  localStorage.removeItem("studyfocus-music-url");
+                  localStorage.removeItem("bowlbeacon-music-url");
                 }}
                 className="text-xs text-red-500 hover:underline"
               >
@@ -389,7 +389,7 @@ export default function SettingsPage() {
                         body: JSON.stringify({ themeId: t.id }),
                       });
                       document.documentElement.setAttribute("data-theme", t.id);
-                      localStorage.setItem("studyfocus-theme", t.id);
+                      localStorage.setItem("bowlbeacon-theme", t.id);
                     } finally {
                       setThemeSaving(false);
                     }

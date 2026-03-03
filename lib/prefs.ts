@@ -1,4 +1,4 @@
-const PDF_ZOOM_KEY = "studyfocus-pdf-zoom";
+const PDF_ZOOM_KEY = "bowlbeacon-pdf-zoom";
 const DEFAULT_ZOOM = 1;
 
 export function getPdfZoom(): number {

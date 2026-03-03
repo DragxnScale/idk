@@ -141,7 +141,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     window.addEventListener("resize", updateWidth);
 
     function onStorage(e: StorageEvent) {
-      if (e.key === "studyfocus-pdf-zoom") setBaseZoom(getPdfZoom());
+      if (e.key === "bowlbeacon-pdf-zoom") setBaseZoom(getPdfZoom());
     }
     window.addEventListener("storage", onStorage);
 

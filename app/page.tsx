@@ -7,7 +7,7 @@ export default function HomePage() {
       <header className="border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="text-lg font-bold tracking-tight">
-            Study Focus
+            Bowl Beacon
           </Link>
           <nav className="flex items-center gap-3">
             <Link
@@ -36,7 +36,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-5 text-lg text-gray-600 leading-relaxed dark:text-gray-400">
             Upload a PDF or pick a textbook, set your timer, and start reading.
-            Study Focus keeps you on track with focus enforcement, AI-generated
+            Bowl Beacon keeps you on track with focus enforcement, AI-generated
             notes, end-of-session quizzes, and personalized review material.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
@@ -116,7 +116,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-gray-200 py-8 dark:border-gray-800">
         <div className="mx-auto max-w-5xl px-6 flex flex-wrap items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-          <p>Study Focus</p>
+          <p>Bowl Beacon</p>
           <div className="flex gap-4">
             <Link href="/dashboard" className="hover:underline">
               Dashboard

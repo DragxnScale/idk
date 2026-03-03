@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Study Focus",
+  title: "Bowl Beacon",
   description:
     "Stay focused while studying. Set goals, read in-app, and get AI-powered notes and quizzes.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Study Focus",
+    title: "Bowl Beacon",
   },
   formatDetection: { telephone: false },
 };
@@ -32,7 +32,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("studyfocus-theme");if(t&&t!=="default")document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
+            __html: `try{var t=localStorage.getItem("bowlbeacon-theme");if(t&&t!=="default")document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
           }}
         />
       </head>

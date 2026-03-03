@@ -95,7 +95,7 @@ function StudySessionInner() {
 
   // Load music URL from localStorage
   useEffect(() => {
-    const url = localStorage.getItem("studyfocus-music-url");
+    const url = localStorage.getItem("bowlbeacon-music-url");
     if (url) setMusicUrl(url);
   }, []);
 

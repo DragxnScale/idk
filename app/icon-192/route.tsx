@@ -20,7 +20,7 @@ function IconContent({ size }: { size: number }) {
     >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
         <div style={{ fontSize: emojiSize, lineHeight: 1 }}>📖</div>
-        <div style={{ fontSize: textSize, fontWeight: 800, color: "white", letterSpacing: -1 }}>SF</div>
+        <div style={{ fontSize: textSize, fontWeight: 800, color: "white", letterSpacing: -1 }}>BB</div>
       </div>
     </div>
   );

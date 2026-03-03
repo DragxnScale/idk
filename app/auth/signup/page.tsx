@@ -50,7 +50,7 @@ export default function SignUpPage() {
     <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6 py-10 dark:bg-gray-950">
       <div className="w-full max-w-sm">
         <Link href="/" className="text-lg font-bold tracking-tight mb-8 block text-center">
-          Study Focus
+          Bowl Beacon
         </Link>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">

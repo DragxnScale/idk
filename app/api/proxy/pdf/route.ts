@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   const range = request.headers.get("range");
   const headers: Record<string, string> = {
-    "User-Agent": "StudyFocus/1.0",
+    "User-Agent": "BowlBeacon/1.0",
   };
   if (range) {
     headers["Range"] = range;

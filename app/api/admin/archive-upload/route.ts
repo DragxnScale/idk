@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     "x-archive-auto-make-bucket": "1",
     "x-archive-meta-title": title ?? "",
     "x-archive-meta-mediatype": "texts",
-    "x-archive-meta-subject": "textbook;education;studyfocus",
+    "x-archive-meta-subject": "textbook;education;bowlbeacon",
     "Content-Type": "application/pdf",
   };
 
