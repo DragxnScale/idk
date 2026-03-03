@@ -9,7 +9,7 @@ import { OverrideFlow } from "@/components/focus/OverrideFlow";
 import dynamic from "next/dynamic";
 import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
-import { loadPlaylist, parseYouTubeId, isYouTubeUrl, type MusicTrack } from "@/lib/music";
+import { loadPlaylist, savePlaylist, parseYouTubeId, isYouTubeUrl, resolveYouTubeTitle, isTitlePlaceholder, type MusicTrack } from "@/lib/music";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -107,10 +107,34 @@ function StudySessionInner() {
       .catch(() => setCheckingActive(false));
   }, [resumeId]);
 
-  // Load music playlist from localStorage
+  // Load music playlist from localStorage, resolve placeholder titles
   useEffect(() => {
     const tracks = loadPlaylist();
-    if (tracks.length > 0) setMusicTracks(tracks);
+    if (tracks.length === 0) return;
+    setMusicTracks(tracks);
+
+    const needsResolve = tracks.filter(
+      (t) => isYouTubeUrl(t.url) && isTitlePlaceholder(t.title)
+    );
+    if (needsResolve.length === 0) return;
+
+    Promise.all(
+      needsResolve.map(async (t) => {
+        const real = await resolveYouTubeTitle(t.url);
+        return { url: t.url, oldTitle: t.title, newTitle: real };
+      })
+    ).then((results) => {
+      setMusicTracks((prev) => {
+        let changed = false;
+        const updated = prev.map((t) => {
+          const match = results.find((r) => r.url === t.url && r.oldTitle === t.title && r.newTitle);
+          if (match) { changed = true; return { ...t, title: match.newTitle! }; }
+          return t;
+        });
+        if (changed) savePlaylist(updated);
+        return changed ? updated : prev;
+      });
+    });
   }, []);
 
   const currentTrack = musicTracks[musicIdx] ?? null;
@@ -140,10 +164,10 @@ function StudySessionInner() {
       const el = document.getElementById("yt-music-player");
       if (!el) return;
       ytPlayerRef.current = new (window as any).YT.Player("yt-music-player", {
-        height: "0",
-        width: "0",
+        height: "1",
+        width: "1",
         videoId: ytId,
-        playerVars: { autoplay: musicPlaying ? 1 : 0, controls: 0, modestbranding: 1, rel: 0 },
+        playerVars: { autoplay: musicPlaying ? 1 : 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
           onReady: () => setMusicReady(true),
           onStateChange: (e: any) => {
@@ -729,11 +753,15 @@ function StudySessionInner() {
               <div className="flex items-center gap-2">
                 {/* Song info + progress bar */}
                 {currentTrack && (
-                  <div className="hidden sm:flex flex-col items-end gap-0.5 max-w-[180px] min-w-[100px]">
-                    <span className="text-[11px] font-medium truncate w-full text-right leading-tight" title={currentTrack.title}>
-                      {musicTracks.length > 1 && <span className="text-gray-400 mr-1">{musicIdx + 1}/{musicTracks.length}</span>}
-                      {currentTrack.title}
-                    </span>
+                  <div className="hidden sm:flex flex-col items-end gap-0.5 max-w-[200px] min-w-[120px]">
+                    <div className="w-full overflow-hidden" title={currentTrack.title}>
+                      <div className="marquee-container">
+                        <span className="marquee-text text-[11px] font-medium whitespace-nowrap leading-tight">
+                          {musicTracks.length > 1 && <span className="text-gray-400 mr-1">{musicIdx + 1}/{musicTracks.length}</span>}
+                          {currentTrack.title}
+                        </span>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-1.5 w-full">
                       <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">{fmtTime(musicTime)}</span>
                       <div className="flex-1 h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
@@ -891,8 +919,8 @@ function StudySessionInner() {
           </div>
         )}
 
-        {/* Hidden YouTube player (zero dimensions, fully invisible) */}
-        <div style={{ position: "fixed", width: 0, height: 0, overflow: "hidden", pointerEvents: "none", opacity: 0 }}>
+        {/* Hidden YouTube player — needs real dimensions so browsers allow playback */}
+        <div style={{ position: "fixed", top: -9999, left: -9999, width: 1, height: 1, pointerEvents: "none" }}>
           <div id="yt-music-player" />
         </div>
         {/* Hidden HTML audio for non-YouTube tracks */}

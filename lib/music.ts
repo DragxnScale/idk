@@ -49,3 +49,29 @@ function titleFromUrl(url: string): string {
     return url.slice(0, 40);
   }
 }
+
+/** Fetch the real YouTube video title via oEmbed. Returns null if it fails. */
+export async function resolveYouTubeTitle(url: string): Promise<string | null> {
+  const id = parseYouTubeId(url);
+  if (!id) return null;
+  try {
+    const canonical = `https://www.youtube.com/watch?v=${id}`;
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true if the title looks like a raw URL or placeholder (not a real title). */
+export function isTitlePlaceholder(title: string): boolean {
+  return (
+    title.startsWith("http://") ||
+    title.startsWith("https://") ||
+    title.startsWith("YouTube – ")
+  );
+}

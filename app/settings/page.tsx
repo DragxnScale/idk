@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById } from "@/lib/themes";
-import { loadPlaylist, savePlaylist, type MusicTrack } from "@/lib/music";
+import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -51,12 +51,26 @@ export default function SettingsPage() {
     setPlaylist(loadPlaylist());
   }, []);
 
-  function addTrack(track: MusicTrack) {
+  async function addTrack(track: MusicTrack) {
     const next = [...playlist, track];
     setPlaylist(next);
     savePlaylist(next);
     setSearchQuery("");
     setSearchResults([]);
+
+    // Resolve actual title in background for YouTube URLs with placeholder titles
+    if (isYouTubeUrl(track.url) && (track.title.startsWith("http") || track.title.startsWith("YouTube –"))) {
+      const real = await resolveYouTubeTitle(track.url);
+      if (real) {
+        setPlaylist((prev) => {
+          const updated = prev.map((t) =>
+            t.url === track.url && t.title === track.title ? { ...t, title: real } : t
+          );
+          savePlaylist(updated);
+          return updated;
+        });
+      }
+    }
   }
 
   function removeTrack(idx: number) {
