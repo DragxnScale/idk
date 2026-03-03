@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { documentId, pageNumber, type, label, highlightText, color, sessionId } = body;
+  const { documentId, pageNumber, type, label, highlightText, color, tag, sessionId } = body;
 
   if (!documentId || !pageNumber || !type) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -76,11 +76,32 @@ export async function POST(req: NextRequest) {
     label: label ?? null,
     highlightText: highlightText ?? null,
     color: color ?? null,
+    tag: tag ?? null,
     createdAt: new Date(),
   };
 
   await db.insert(bookmarks).values(row);
   return NextResponse.json(row, { status: 201 });
+}
+
+export async function PATCH(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.json();
+  const { id, tag } = body;
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  await db
+    .update(bookmarks)
+    .set({ tag: tag ?? null })
+    .where(and(eq(bookmarks.id, id), eq(bookmarks.userId, session.user.id)));
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest) {

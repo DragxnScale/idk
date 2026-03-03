@@ -12,11 +12,17 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.15;
 
+const HIGHLIGHT_TAGS = [
+  { id: "definition", label: "Definition", icon: "D" },
+  { id: "key_concept", label: "Key Concept", icon: "K" },
+  { id: "review", label: "Review Later", icon: "R" },
+  { id: "important", label: "Important", icon: "!" },
+] as const;
+
 function normalizeText(s: string): string {
   return s.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-/** Map an index in the normalized (collapsed-whitespace) string back to the original string */
 function mapNormalizedIndex(original: string, normIdx: number): number {
   let ni = 0;
   let inSpace = false;
@@ -43,6 +49,7 @@ interface BookmarkRow {
   label: string | null;
   highlightText: string | null;
   color: string | null;
+  tag: string | null;
 }
 
 interface PdfViewerProps {
@@ -51,11 +58,12 @@ interface PdfViewerProps {
   jumpToPage?: number | null;
   documentId?: string;
   sessionId?: string;
+  chapterPageRanges?: Record<string, [number, number]>;
   onPageChange?: (page: number) => void;
   onPageText?: (page: number, text: string) => void;
 }
 
-export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, onPageChange, onPageText }: PdfViewerProps) {
+export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, chapterPageRanges, onPageChange, onPageText }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,19 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [savingBookmark, setSavingBookmark] = useState(false);
-  const [hlPopover, setHlPopover] = useState<{ id: string; x: number; y: number; text: string; color: string } | null>(null);
+  const [hlPopover, setHlPopover] = useState<{ id: string; x: number; y: number; text: string; color: string; tag: string | null } | null>(null);
+
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ page: number; snippet: string }[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // TOC state
+  const [showToc, setShowToc] = useState(false);
+
+  // Tag picker for highlights
+  const [tagPickerFor, setTagPickerFor] = useState<string | null>(null);
 
   const pdfDocRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
   const extractedPagesRef = useRef<Set<number>>(new Set());
@@ -82,7 +102,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const effectiveZoom = baseZoom * localZoom;
   const renderWidth = containerWidth || 600;
 
-  // Track actual rendered page height so the zoom wrapper can size correctly
   useEffect(() => {
     const el = pageWrapRef.current;
     if (!el) return;
@@ -133,11 +152,10 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     };
   }, []);
 
-  // Ctrl+scroll and trackpad pinch (browsers fire wheel with ctrlKey for pinch)
+  // Ctrl+scroll and trackpad pinch
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
@@ -148,28 +166,22 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       });
       flashZoomBadge();
     }
-
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [flashZoomBadge]);
 
-  // Touch pinch-to-zoom on the PDF area
+  // Touch pinch-to-zoom
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     let lastDist = 0;
-
     function getDistance(touches: TouchList) {
       const [a, b] = [touches[0], touches[1]];
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     }
-
     function onTouchStart(e: TouchEvent) {
-      if (e.touches.length === 2) {
-        lastDist = getDistance(e.touches);
-      }
+      if (e.touches.length === 2) lastDist = getDistance(e.touches);
     }
-
     function onTouchMove(e: TouchEvent) {
       if (e.touches.length !== 2) return;
       e.preventDefault();
@@ -184,11 +196,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       }
       lastDist = dist;
     }
-
-    function onTouchEnd() {
-      lastDist = 0;
-    }
-
+    function onTouchEnd() { lastDist = 0; }
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd, { passive: true });
@@ -256,7 +264,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     });
   }, [pageNumber, onPageText]);
 
-  // Bookmarks: fetch on mount (session-scoped when sessionId provided)
+  // Bookmarks: fetch on mount
   useEffect(() => {
     if (!documentId) return;
     const params = new URLSearchParams({ documentId });
@@ -299,7 +307,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     }
   }, [documentId, pageNumber, isCurrentPageBookmarked, bookmarkItems, savingBookmark, sessionId]);
 
-  const saveHighlight = useCallback(async (text: string, color: string) => {
+  const saveHighlight = useCallback(async (text: string, color: string, tag?: string) => {
     if (!documentId || !text.trim()) return;
     const res = await fetch("/api/bookmarks", {
       method: "POST",
@@ -310,6 +318,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
         type: "highlight",
         highlightText: text.trim().slice(0, 500),
         color,
+        tag: tag ?? null,
         sessionId,
       }),
     });
@@ -321,12 +330,22 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     window.getSelection()?.removeAllRanges();
   }, [documentId, pageNumber, sessionId]);
 
+  const updateTag = useCallback(async (id: string, tag: string | null) => {
+    await fetch("/api/bookmarks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, tag }),
+    });
+    setBookmarkItems((prev) => prev.map((b) => b.id === id ? { ...b, tag } : b));
+    setTagPickerFor(null);
+  }, []);
+
   const deleteItem = useCallback(async (id: string) => {
     await fetch(`/api/bookmarks?id=${id}`, { method: "DELETE" });
     setBookmarkItems((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
-  // Detect text selection inside the PDF
+  // Text selection detection
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -338,6 +357,76 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     el.addEventListener("pointerup", onPointerUp);
     return () => el.removeEventListener("pointerup", onPointerUp);
   }, []);
+
+  // Search within PDF
+  const runSearch = useCallback(async () => {
+    if (!searchQuery.trim() || !pdfDocRef.current) return;
+    setSearchLoading(true);
+    const doc = pdfDocRef.current;
+    const results: { page: number; snippet: string }[] = [];
+    const needle = searchQuery.toLowerCase();
+
+    for (let p = 1; p <= doc.numPages && results.length < 50; p++) {
+      try {
+        const page = await doc.getPage(p);
+        const content = await page.getTextContent();
+        const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+        const lower = text.toLowerCase();
+        const idx = lower.indexOf(needle);
+        if (idx !== -1) {
+          const start = Math.max(0, idx - 30);
+          const end = Math.min(text.length, idx + needle.length + 30);
+          results.push({
+            page: p,
+            snippet: (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : ""),
+          });
+        }
+      } catch {
+        // skip unreadable pages
+      }
+    }
+    setSearchResults(results);
+    setSearchLoading(false);
+  }, [searchQuery]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          goToPage(pageNumberRef.current - 1);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          goToPage(pageNumberRef.current + 1);
+          break;
+        case "b":
+        case "B":
+          if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            toggleBookmark();
+          }
+          break;
+        case "f":
+          if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            setShowSearch((v) => !v);
+          }
+          break;
+        case "Escape":
+          if (showSearch) setShowSearch(false);
+          if (showToc) setShowToc(false);
+          if (showBookmarks) setShowBookmarks(false);
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [goToPage, toggleBookmark, showSearch, showToc, showBookmarks]);
 
   const bookmarkCount = bookmarkItems.length;
   const highlightColors = ["yellow", "green", "blue", "pink"] as const;
@@ -357,12 +446,18 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const scaledW = Math.round(renderWidth * effectiveZoom);
   const scaledH = Math.round(innerHeight * effectiveZoom);
 
-  // Apply highlight overlays to the text layer after the page renders
+  // TOC entries from chapterPageRanges
+  const tocEntries = chapterPageRanges
+    ? Object.entries(chapterPageRanges)
+        .map(([ch, [start, end]]) => ({ chapter: ch, start, end }))
+        .sort((a, b) => a.start - b.start)
+    : [];
+
+  // Apply highlight overlays
   const applyHighlightOverlays = useCallback(() => {
     const container = pageWrapRef.current;
     if (!container) return;
 
-    // Remove any previous highlight marks
     container.querySelectorAll("mark[data-hl]").forEach((el) => {
       const parent = el.parentNode;
       if (!parent) return;
@@ -389,7 +484,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       const needle = normalizeText(hl.highlightText!);
       if (!needle) continue;
 
-      // Collect all text node data with references
       const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
       const textNodes: { node: Text; start: number; text: string }[] = [];
       let fullText = "";
@@ -404,11 +498,9 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       const idx = normalizedFull.indexOf(needle);
       if (idx === -1) continue;
 
-      // Map normalized position back to original text positions
       const origStart = mapNormalizedIndex(fullText, idx);
       const origEnd = mapNormalizedIndex(fullText, idx + needle.length);
 
-      // Find which text nodes overlap [origStart, origEnd)
       for (const tn of textNodes) {
         const tnEnd = tn.start + tn.text.length;
         const overlapStart = Math.max(origStart, tn.start);
@@ -438,6 +530,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
               y: rect.top,
               text: hl.highlightText?.slice(0, 60) ?? "",
               color: hl.color ?? "yellow",
+              tag: hl.tag,
             });
           });
           range.surroundContents(mark);
@@ -448,7 +541,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     }
   }, [bookmarkItems, pageNumber]);
 
-  // Re-apply highlights when items change (e.g. after saving a new highlight)
   const highlightsOnPage = bookmarkItems.filter(
     (b) => b.type === "highlight" && b.pageNumber === pageNumber
   ).length;
@@ -459,7 +551,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     }
   }, [highlightsOnPage, applyHighlightOverlays]);
 
-  // Dismiss highlight popover on click outside or page change
   useEffect(() => {
     if (!hlPopover) return;
     function dismiss() { setHlPopover(null); }
@@ -475,9 +566,8 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
 
   return (
     <div ref={containerRef} className="flex flex-col items-center gap-2 w-full">
-      {/* ── Toolbar: responsive two-row layout on mobile ── */}
+      {/* Toolbar */}
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full">
-        {/* Row 1: page navigation + zoom */}
         <div className="flex items-center justify-between px-2 py-1.5 sm:px-3 sm:py-2 gap-1">
           {/* Page navigation */}
           <div className="flex items-center gap-1">
@@ -512,111 +602,206 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
 
           {/* Zoom controls */}
           <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => adjustZoom(-ZOOM_STEP)}
-              disabled={localZoom <= MIN_ZOOM}
-              className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <button
-              onClick={resetZoom}
-              className="rounded-md px-1.5 py-0.5 text-[11px] font-mono tabular-nums hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[2.5rem] text-center"
-              aria-label="Reset zoom"
-            >
-              {Math.round(effectiveZoom * 100)}%
-            </button>
-            <button
-              onClick={() => adjustZoom(ZOOM_STEP)}
-              disabled={localZoom >= MAX_ZOOM}
-              className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none"
-              aria-label="Zoom in"
-            >
-              +
-            </button>
+            <button onClick={() => adjustZoom(-ZOOM_STEP)} disabled={localZoom <= MIN_ZOOM} className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none" aria-label="Zoom out">−</button>
+            <button onClick={resetZoom} className="rounded-md px-1.5 py-0.5 text-[11px] font-mono tabular-nums hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[2.5rem] text-center" aria-label="Reset zoom">{Math.round(effectiveZoom * 100)}%</button>
+            <button onClick={() => adjustZoom(ZOOM_STEP)} disabled={localZoom >= MAX_ZOOM} className="rounded-md px-1.5 py-1 text-sm font-bold hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 leading-none" aria-label="Zoom in">+</button>
           </div>
 
-          {/* Bookmark controls */}
-          {documentId && (
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={toggleBookmark}
-                disabled={savingBookmark}
-                className={`rounded-md px-1.5 py-1 text-sm transition ${
-                  isCurrentPageBookmarked
-                    ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                    : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                }`}
-                aria-label={isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page"}
-              >
-                {isCurrentPageBookmarked ? "★" : "☆"}
-              </button>
+          {/* Tools: Search, TOC, Bookmark */}
+          <div className="flex items-center gap-0.5">
+            {/* Search */}
+            <button
+              onClick={() => { setShowSearch((v) => !v); setShowToc(false); setShowBookmarks(false); }}
+              className={`rounded-md px-1.5 py-1 text-xs transition ${showSearch ? "bg-gray-200 dark:bg-gray-600" : "hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+              aria-label="Search (F)"
+              title="Search (F)"
+            >
+              🔍
+            </button>
 
-              <div className="relative">
+            {/* TOC */}
+            {tocEntries.length > 0 && (
+              <button
+                onClick={() => { setShowToc((v) => !v); setShowSearch(false); setShowBookmarks(false); }}
+                className={`rounded-md px-1.5 py-1 text-xs transition ${showToc ? "bg-gray-200 dark:bg-gray-600" : "hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+                aria-label="Table of Contents"
+                title="Table of Contents"
+              >
+                📑
+              </button>
+            )}
+
+            {documentId && (
+              <>
                 <button
-                  onClick={() => setShowBookmarks((v) => !v)}
-                  className={`rounded-md px-1.5 py-1 text-[11px] transition ${
-                    showBookmarks
-                      ? "bg-gray-200 dark:bg-gray-600"
-                      : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={toggleBookmark}
+                  disabled={savingBookmark}
+                  className={`rounded-md px-1.5 py-1 text-sm transition ${
+                    isCurrentPageBookmarked
+                      ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                      : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                   }`}
+                  aria-label={isCurrentPageBookmarked ? "Remove bookmark (B)" : "Bookmark this page (B)"}
+                  title={isCurrentPageBookmarked ? "Remove bookmark (B)" : "Bookmark (B)"}
                 >
-                  {bookmarkCount}
+                  {isCurrentPageBookmarked ? "★" : "☆"}
                 </button>
 
-                {showBookmarks && (
-                  <div className="absolute right-0 top-full mt-2 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                    {bookmarkItems.length === 0 ? (
-                      <p className="p-4 text-xs text-gray-500 text-center">
-                        No bookmarks or highlights yet.
-                        <br />
-                        Click ☆ to bookmark a page, or select text to highlight.
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {bookmarkItems.map((item) => (
-                          <li key={item.id} className="group flex items-start gap-2 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                            <button
-                              onClick={() => {
-                                goToPage(item.pageNumber);
-                                setShowBookmarks(false);
-                              }}
-                              className="flex-1 text-left min-w-0"
-                            >
-                              {item.type === "bookmark" ? (
-                                <p className="text-xs font-medium truncate">
-                                  <span className="text-amber-500 mr-1">★</span>
-                                  Page {item.pageNumber}
-                                  {item.label && <span className="text-gray-500 ml-1">— {item.label}</span>}
-                                </p>
-                              ) : (
-                                <div>
-                                  <p className="text-[10px] text-gray-400 mb-0.5">Page {item.pageNumber}</p>
-                                  <p className={`text-xs rounded px-1.5 py-0.5 line-clamp-2 ${colorClasses[item.color ?? "yellow"]}`}>
-                                    &ldquo;{item.highlightText}&rdquo;
+                <div className="relative">
+                  <button
+                    onClick={() => { setShowBookmarks((v) => !v); setShowSearch(false); setShowToc(false); }}
+                    className={`rounded-md px-1.5 py-1 text-[11px] transition ${showBookmarks ? "bg-gray-200 dark:bg-gray-600" : "hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+                  >
+                    {bookmarkCount}
+                  </button>
+
+                  {showBookmarks && (
+                    <div className="absolute right-0 top-full mt-2 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                      {bookmarkItems.length === 0 ? (
+                        <p className="p-4 text-xs text-gray-500 text-center">
+                          No bookmarks or highlights yet.<br />
+                          Click ☆ or press B to bookmark. Select text to highlight.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {bookmarkItems.map((item) => (
+                            <li key={item.id} className="group flex items-start gap-2 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                              <button
+                                onClick={() => { goToPage(item.pageNumber); setShowBookmarks(false); }}
+                                className="flex-1 text-left min-w-0"
+                              >
+                                {item.type === "bookmark" ? (
+                                  <p className="text-xs font-medium truncate">
+                                    <span className="text-amber-500 mr-1">★</span>
+                                    Page {item.pageNumber}
+                                    {item.label && <span className="text-gray-500 ml-1">— {item.label}</span>}
                                   </p>
-                                </div>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => deleteItem(item.id)}
-                              className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition mt-0.5"
-                              title="Delete"
-                            >
-                              ×
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+                                ) : (
+                                  <div>
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span className="text-[10px] text-gray-400">Page {item.pageNumber}</span>
+                                      {item.tag && (
+                                        <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                          {HIGHLIGHT_TAGS.find((t) => t.id === item.tag)?.label ?? item.tag}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className={`text-xs rounded px-1.5 py-0.5 line-clamp-2 ${colorClasses[item.color ?? "yellow"]}`}>
+                                      &ldquo;{item.highlightText}&rdquo;
+                                    </p>
+                                  </div>
+                                )}
+                              </button>
+                              <div className="flex items-center gap-1">
+                                {item.type === "highlight" && (
+                                  <div className="relative">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setTagPickerFor(tagPickerFor === item.id ? null : item.id); }}
+                                      className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-blue-500 transition mt-0.5"
+                                      title="Tag"
+                                    >
+                                      #
+                                    </button>
+                                    {tagPickerFor === item.id && (
+                                      <div className="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800 py-1" onClick={(e) => e.stopPropagation()}>
+                                        {HIGHLIGHT_TAGS.map((t) => (
+                                          <button
+                                            key={t.id}
+                                            onClick={() => updateTag(item.id, item.tag === t.id ? null : t.id)}
+                                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700/50 ${item.tag === t.id ? "font-semibold text-blue-600 dark:text-blue-400" : ""}`}
+                                          >
+                                            {t.icon} {t.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                <button
+                                  onClick={() => deleteItem(item.id)}
+                                  className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition mt-0.5"
+                                  title="Delete"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Search panel */}
+      {showSearch && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full p-3">
+          <form onSubmit={(e) => { e.preventDefault(); runSearch(); }} className="flex gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search in document…"
+              autoFocus
+              className="flex-1 rounded-md border border-gray-300 bg-transparent px-2.5 py-1.5 text-sm dark:border-gray-600"
+            />
+            <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">
+              {searchLoading ? "…" : "Search"}
+            </button>
+          </form>
+          {searchResults.length > 0 && (
+            <ul className="mt-2 max-h-48 overflow-auto divide-y divide-gray-100 dark:divide-gray-700">
+              {searchResults.map((r, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => { goToPage(r.page); setShowSearch(false); }}
+                    className="w-full text-left px-2 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    <span className="text-[10px] font-medium text-gray-400">Page {r.page}</span>
+                    <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">{r.snippet}</p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {searchResults.length === 0 && searchQuery && !searchLoading && (
+            <p className="mt-2 text-xs text-gray-500 text-center">No results found.</p>
+          )}
+          <p className="mt-2 text-[10px] text-gray-400 text-center">
+            Shortcuts: ← → pages · B bookmark · F search · Esc close
+          </p>
+        </div>
+      )}
+
+      {/* TOC panel */}
+      {showToc && tocEntries.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 w-full max-h-60 overflow-auto">
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+            <p className="text-xs font-semibold">Table of Contents</p>
+          </div>
+          <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+            {tocEntries.map(({ chapter, start, end }) => {
+              const isActive = pageNumber >= start && pageNumber <= end;
+              return (
+                <li key={chapter}>
+                  <button
+                    onClick={() => { goToPage(start); setShowToc(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700/50 flex justify-between items-center ${isActive ? "font-semibold bg-blue-50 dark:bg-blue-900/20" : ""}`}
+                  >
+                    <span>Chapter {chapter}</span>
+                    <span className="text-gray-400">p. {start}–{end}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Highlight save bar */}
       {selectedText && documentId && (
@@ -641,12 +826,11 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
         </div>
       )}
 
-      {/* PDF canvas — scroll container with CSS-transform zoom */}
+      {/* PDF canvas */}
       <div
         ref={scrollContainerRef}
         className="relative w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 touch-pan-x touch-pan-y"
       >
-        {/* Floating zoom badge */}
         {showZoomBadge && (
           <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-md bg-black/70 px-2.5 py-1 text-xs font-mono text-white backdrop-blur-sm">
             {Math.round(effectiveZoom * 100)}%
@@ -658,40 +842,22 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
             <p className="text-sm text-red-600 dark:text-red-400">Failed to load PDF: {error}</p>
           </div>
         ) : (
-          <div
-            style={{
-              width: scaledW,
-              height: scaledH,
-              overflow: "hidden",
-            }}
-          >
+          <div style={{ width: scaledW, height: scaledH, overflow: "hidden" }}>
             <div
               ref={pageWrapRef}
-              style={{
-                transform: `scale(${effectiveZoom})`,
-                transformOrigin: "top left",
-                width: renderWidth,
-              }}
+              style={{ transform: `scale(${effectiveZoom})`, transformOrigin: "top left", width: renderWidth }}
             >
               <Document
                 file={url}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={onDocumentLoadError}
-                loading={
-                  <div className="flex min-h-[300px] items-center justify-center">
-                    <div className="spinner" />
-                  </div>
-                }
+                loading={<div className="flex min-h-[300px] items-center justify-center"><div className="spinner" /></div>}
               >
                 <Page
                   pageNumber={pageNumber}
                   width={renderWidth}
                   onRenderSuccess={applyHighlightOverlays}
-                  loading={
-                    <div className="flex min-h-[300px] items-center justify-center">
-                      <div className="spinner" />
-                    </div>
-                  }
+                  loading={<div className="flex min-h-[300px] items-center justify-center"><div className="spinner" /></div>}
                 />
               </Document>
             </div>
@@ -710,16 +876,38 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
           style={{ left: hlPopover.x, top: hlPopover.y - 8 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-xl dark:border-gray-700 dark:bg-gray-800 flex items-center gap-2.5">
-            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-[150px] truncate">
-              &ldquo;{hlPopover.text}&rdquo;
-            </p>
-            <button
-              onClick={() => removeHighlight(hlPopover.id)}
-              className="rounded-md border border-red-200 dark:border-red-800 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition whitespace-nowrap"
-            >
-              Remove
-            </button>
+          <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2.5 mb-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 max-w-[150px] truncate">
+                &ldquo;{hlPopover.text}&rdquo;
+              </p>
+              <button
+                onClick={() => removeHighlight(hlPopover.id)}
+                className="rounded-md border border-red-200 dark:border-red-800 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition whitespace-nowrap"
+              >
+                Remove
+              </button>
+            </div>
+            {/* Tag buttons in popover */}
+            <div className="flex gap-1 flex-wrap">
+              {HIGHLIGHT_TAGS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateTag(hlPopover.id, hlPopover.tag === t.id ? null : t.id);
+                    setHlPopover((prev) => prev ? { ...prev, tag: prev.tag === t.id ? null : t.id } : null);
+                  }}
+                  className={`rounded px-1.5 py-0.5 text-[10px] border transition ${
+                    hlPopover.tag === t.id
+                      ? "border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
+                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  }`}
+                >
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="mx-auto w-2.5 h-2.5 rotate-45 bg-white border-b border-r border-gray-200 dark:border-gray-700 dark:bg-gray-800 -mt-[5px]" />
         </div>

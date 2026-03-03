@@ -40,10 +40,27 @@ interface BookmarkItem {
   label: string | null;
   highlightText: string | null;
   color: string | null;
+  tag: string | null;
   createdAt: string | null;
   sessionDate: string | null;
   docTitle: string | null;
   pdfUrl: string | null;
+}
+
+interface PlannerItem {
+  id: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  label: string | null;
+}
+
+interface CountdownItem {
+  id: string;
+  title: string;
+  examDate: string;
+  totalPages: number | null;
+  pagesCompleted: number;
 }
 
 interface StatsData {
@@ -73,6 +90,12 @@ export default function DashboardPage() {
   const [savedItems, setSavedItems] = useState<BookmarkItem[]>([]);
   const [viewingItem, setViewingItem] = useState<BookmarkItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // Planner & countdowns
+  const [plannerItems, setPlannerItems] = useState<PlannerItem[]>([]);
+  const [countdowns, setCountdowns] = useState<CountdownItem[]>([]);
+  const [showAddPlan, setShowAddPlan] = useState(false);
+  const [showAddCountdown, setShowAddCountdown] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [msgText, setMsgText] = useState("");
   const [msgSending, setMsgSending] = useState(false);
@@ -105,6 +128,16 @@ export default function DashboardPage() {
           setUnreadMsgCount(unread);
         }
       })
+      .catch(() => {});
+
+    fetch("/api/planner")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setPlannerItems)
+      .catch(() => {});
+
+    fetch("/api/countdowns")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCountdowns)
       .catch(() => {});
   }, []);
 
@@ -407,12 +440,126 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Exam Countdowns */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold">Exam Countdowns</h2>
+            <button onClick={() => setShowAddCountdown(true)} className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">+ Add</button>
+          </div>
+          {countdowns.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-3">No exams added yet. Add one to see daily page targets.</p>
+          ) : (
+            <div className="space-y-3">
+              {countdowns.map((cd) => {
+                const daysLeft = Math.max(0, Math.ceil((new Date(cd.examDate).getTime() - Date.now()) / 86400000));
+                const pagesLeft = (cd.totalPages ?? 0) - (cd.pagesCompleted ?? 0);
+                const dailyTarget = daysLeft > 0 && pagesLeft > 0 ? Math.ceil(pagesLeft / daysLeft) : 0;
+                return (
+                  <div key={cd.id} className="group flex items-center justify-between rounded-lg border border-gray-100 p-3 dark:border-gray-800">
+                    <div>
+                      <p className="text-sm font-medium">{cd.title}</p>
+                      <div className="flex gap-3 text-xs text-gray-500 mt-0.5">
+                        <span className={daysLeft <= 7 ? "text-red-500 font-semibold" : ""}>{daysLeft} day{daysLeft !== 1 ? "s" : ""} left</span>
+                        <span>{new Date(cd.examDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                        {cd.totalPages && <span>{cd.pagesCompleted}/{cd.totalPages} pages</span>}
+                        {dailyTarget > 0 && <span className="font-medium">{dailyTarget} pg/day needed</span>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/countdowns?id=${cd.id}`, { method: "DELETE" });
+                        setCountdowns((prev) => prev.filter((c) => c.id !== cd.id));
+                      }}
+                      className="sm:opacity-0 sm:group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Study Planner */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold">Weekly Study Planner</h2>
+            <button onClick={() => setShowAddPlan(true)} className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">+ Add block</button>
+          </div>
+          {plannerItems.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-3">No study blocks scheduled. Plan your week!</p>
+          ) : (
+            <div className="grid grid-cols-7 gap-1.5">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
+                const dayItems = plannerItems.filter((p) => p.dayOfWeek === i);
+                const isToday = new Date().getDay() === i;
+                return (
+                  <div key={day} className={`rounded-lg border p-2 min-h-[80px] ${isToday ? "border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/10" : "border-gray-100 dark:border-gray-800"}`}>
+                    <p className={`text-[10px] font-semibold mb-1 ${isToday ? "text-blue-600 dark:text-blue-400" : "text-gray-400"}`}>{day}</p>
+                    {dayItems.map((item) => (
+                      <div key={item.id} className="group relative rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-1 mb-1 text-[10px]">
+                        <p className="font-medium truncate">{item.startTime}–{item.endTime}</p>
+                        {item.label && <p className="text-gray-500 truncate">{item.label}</p>}
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/planner?id=${item.id}`, { method: "DELETE" });
+                            setPlannerItems((prev) => prev.filter((p) => p.id !== item.id));
+                          }}
+                          className="absolute top-0.5 right-0.5 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-red-500 text-[10px]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Add Plan Modal */}
+        {showAddPlan && (
+          <AddPlanModal
+            onClose={() => setShowAddPlan(false)}
+            onAdd={(item) => { setPlannerItems((prev) => [...prev, item]); setShowAddPlan(false); }}
+          />
+        )}
+
+        {/* Add Countdown Modal */}
+        {showAddCountdown && (
+          <AddCountdownModal
+            onClose={() => setShowAddCountdown(false)}
+            onAdd={(item) => { setCountdowns((prev) => [...prev, item]); setShowAddCountdown(false); }}
+          />
+        )}
+
         {/* Saved Pages */}
         {savedItems.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
-            <h2 className="text-sm font-semibold mb-4">Saved Pages &amp; Highlights</h2>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="text-sm font-semibold">Saved Pages &amp; Highlights</h2>
+              <div className="flex gap-1 flex-wrap">
+                <button
+                  onClick={() => setTagFilter(null)}
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${!tagFilter ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-300 dark:border-gray-600"}`}
+                >
+                  All
+                </button>
+                {[{ id: "definition", label: "Definitions" }, { id: "key_concept", label: "Key Concepts" }, { id: "review", label: "Review" }, { id: "important", label: "Important" }].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTagFilter(tagFilter === t.id ? null : t.id)}
+                    className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${tagFilter === t.id ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300" : "border-gray-300 dark:border-gray-600"}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <ul className="space-y-2 max-h-80 overflow-auto">
-              {savedItems.slice(0, 50).map((item) => (
+              {savedItems.filter((item) => !tagFilter || item.tag === tagFilter).slice(0, 50).map((item) => (
                 <li
                   key={item.id}
                   className="group flex items-start gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-600 transition"
@@ -430,12 +577,19 @@ export default function DashboardPage() {
                           ? `Page ${item.pageNumber}`
                           : `"${item.highlightText?.slice(0, 80)}${(item.highlightText?.length ?? 0) > 80 ? "…" : ""}"`}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {item.docTitle ?? `Document ${item.documentId}`}
-                        {item.sessionDate && (
-                          <> · {new Date(item.sessionDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {item.docTitle ?? `Document ${item.documentId}`}
+                          {item.sessionDate && (
+                            <> · {new Date(item.sessionDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                          )}
+                        </p>
+                        {item.tag && (
+                          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                            {item.tag === "definition" ? "Definition" : item.tag === "key_concept" ? "Key Concept" : item.tag === "review" ? "Review" : item.tag === "important" ? "Important" : item.tag}
+                          </span>
                         )}
-                      </p>
+                      </div>
                       {item.pdfUrl && (
                         <p className="text-[10px] text-blue-500 dark:text-blue-400 mt-0.5">Click to view page</p>
                       )}
@@ -531,6 +685,121 @@ export default function DashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function AddPlanModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item: PlannerItem) => void }) {
+  const [day, setDay] = useState(new Date().getDay());
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("10:00");
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch("/api/planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayOfWeek: day, startTime: start, endTime: end, label: label || null }),
+      });
+      if (res.ok) {
+        const item = await res.json();
+        onAdd(item);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm mx-4 rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-gray-900 dark:border-gray-700">
+        <h3 className="text-base font-semibold mb-4">Add study block</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Day</label>
+            <select value={day} onChange={(e) => setDay(Number(e.target.value))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+              {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
+                <option key={i} value={i}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Start</label>
+              <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">End</label>
+              <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Label (optional)</label>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Biology Ch 5-6" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">{saving ? "Adding…" : "Add"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddCountdownModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item: CountdownItem) => void }) {
+  const [title, setTitle] = useState("");
+  const [examDate, setExamDate] = useState("");
+  const [totalPages, setTotalPages] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title || !examDate) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/countdowns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, examDate, totalPages: totalPages ? Number(totalPages) : null }),
+      });
+      if (res.ok) {
+        const item = await res.json();
+        onAdd(item);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm mx-4 rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-gray-900 dark:border-gray-700">
+        <h3 className="text-base font-semibold mb-4">Add exam countdown</h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Exam name</label>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Biology Final" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Exam date</label>
+            <input type="date" value={examDate} onChange={(e) => setExamDate(e.target.value)} required className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Total pages to read (optional)</label>
+            <input type="number" min={1} value={totalPages} onChange={(e) => setTotalPages(e.target.value)} placeholder="e.g. 450" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+            <p className="text-[10px] text-gray-400 mt-1">If set, we&apos;ll calculate how many pages per day you need to read.</p>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
+            <button type="submit" disabled={saving || !title || !examDate} className="flex-1 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">{saving ? "Adding…" : "Add"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

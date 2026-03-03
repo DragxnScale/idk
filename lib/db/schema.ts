@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
   dailyMinutesGoal: integer("daily_minutes_goal"),
   dailySessionsGoal: integer("daily_sessions_goal"),
   inactivityTimeout: integer("inactivity_timeout"), // minutes, null = default (3)
+  themeId: text("theme_id"), // custom theme color set id
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   mutedUntil: integer("muted_until", { mode: "timestamp" }),
@@ -135,6 +136,7 @@ export const bookmarks = sqliteTable("bookmarks", {
   label: text("label"),
   highlightText: text("highlight_text"),
   color: text("color"), // "yellow" | "green" | "blue" | "pink"
+  tag: text("tag"), // "definition" | "key_concept" | "review" | "important" | null
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
@@ -150,6 +152,36 @@ export const messages = sqliteTable("messages", {
     .references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   read: integer("read", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+// ── Study planner ────────────────────────────────────────────────────
+
+export const studyPlans = sqliteTable("study_plans", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sun ... 6=Sat
+  startTime: text("start_time").notNull(), // "HH:MM"
+  endTime: text("end_time").notNull(), // "HH:MM"
+  label: text("label"), // e.g. "Biology Ch 5-6"
+  textbookCatalogId: text("textbook_catalog_id"),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+// ── Exam countdowns ──────────────────────────────────────────────────
+
+export const examCountdowns = sqliteTable("exam_countdowns", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(), // e.g. "Biology Final"
+  examDate: integer("exam_date", { mode: "timestamp" }).notNull(),
+  textbookCatalogId: text("textbook_catalog_id"),
+  totalPages: integer("total_pages"), // for daily page target calc
+  pagesCompleted: integer("pages_completed").default(0),
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 

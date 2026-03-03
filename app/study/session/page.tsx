@@ -114,6 +114,26 @@ function StudySessionInner() {
     return () => { for (const e of events) window.removeEventListener(e, onActivity); };
   }, [sessionId, inactivityPrompt]);
 
+  // Space key to pause/resume, F for fullscreen
+  useEffect(() => {
+    if (!sessionId) return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (e.key === " ") {
+        e.preventDefault();
+        setIsPaused((v) => !v);
+      }
+      if (e.key === "F11" || (e.key === "f" && e.shiftKey)) {
+        e.preventDefault();
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sessionId]);
+
   // Inactivity check interval
   useEffect(() => {
     if (!sessionId || isPaused || inactivityPrompt) return;
@@ -630,6 +650,7 @@ function StudySessionInner() {
                 jumpToPage={jumpTarget}
                 documentId={selectedDoc?.documentId}
                 sessionId={sessionId ?? undefined}
+                chapterPageRanges={selectedDoc?.chapterPageRanges}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
               />

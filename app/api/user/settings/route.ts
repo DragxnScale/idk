@@ -23,6 +23,7 @@ export async function GET() {
     dailyMinutesGoal: user.dailyMinutesGoal ?? null,
     dailySessionsGoal: user.dailySessionsGoal ?? null,
     inactivityTimeout: user.inactivityTimeout ?? null,
+    themeId: user.themeId ?? null,
   });
 }
 
@@ -33,7 +34,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout } = body;
+  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId } = body;
 
   const user = await db.query.users.findFirst({
     where: (u, { eq }) => eq(u.id, session.user.id),
@@ -63,6 +64,11 @@ export async function PATCH(request: Request) {
   }
 
   // ── Daily goals / settings update ────────────────────────────────
+  if (themeId !== undefined) {
+    await db.update(users).set({ themeId: themeId || null }).where(eq(users.id, session.user.id));
+    return NextResponse.json({ ok: true });
+  }
+
   if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
+import { THEMES, getThemeById } from "@/lib/themes";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -32,6 +33,10 @@ export default function SettingsPage() {
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
 
+  // ── Theme ──────────────────────────────────────────────────────────
+  const [themeId, setThemeId] = useState<string>("default");
+  const [themeSaving, setThemeSaving] = useState(false);
+
   // ── Focus music URL (localStorage) ────────────────────────────────
   const [musicUrl, setMusicUrl] = useState("");
   useEffect(() => {
@@ -46,6 +51,7 @@ export default function SettingsPage() {
         setMinutesGoal(data.dailyMinutesGoal != null ? String(data.dailyMinutesGoal) : "");
         setSessionsGoal(data.dailySessionsGoal != null ? String(data.dailySessionsGoal) : "");
         setInactivityMin(data.inactivityTimeout != null ? String(data.inactivityTimeout) : "");
+        if (data.themeId) setThemeId(data.themeId);
       });
   }, []);
 
@@ -359,6 +365,77 @@ export default function SettingsPage() {
               {pwStatus === "loading" ? "Saving…" : "Save exit password"}
             </button>
           </form>
+        </section>
+
+        {/* Custom theme */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Theme</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Pick a color theme for the app. This applies to your account across devices.
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {THEMES.map((t) => {
+              const isActive = themeId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={async () => {
+                    setThemeId(t.id);
+                    setThemeSaving(true);
+                    try {
+                      await fetch("/api/user/settings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ themeId: t.id }),
+                      });
+                      document.documentElement.setAttribute("data-theme", t.id);
+                      localStorage.setItem("studyfocus-theme", t.id);
+                    } finally {
+                      setThemeSaving(false);
+                    }
+                  }}
+                  disabled={themeSaving}
+                  className={`rounded-lg border py-2.5 text-xs font-medium transition ${
+                    isActive
+                      ? "border-black ring-2 ring-black/20 dark:border-white dark:ring-white/20"
+                      : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                  }`}
+                >
+                  <div className="flex justify-center gap-1 mb-1.5">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
+                  </div>
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Keyboard shortcuts reference */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Keyboard shortcuts</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Available while reading in a study session.
+          </p>
+          <div className="space-y-2">
+            {[
+              ["←  →", "Previous / Next page"],
+              ["B", "Toggle bookmark on current page"],
+              ["F", "Open / close search"],
+              ["Esc", "Close search, TOC, or bookmarks panel"],
+              ["Ctrl + scroll", "Zoom in / out"],
+              ["Pinch", "Zoom on touch devices"],
+            ].map(([key, desc]) => (
+              <div key={key} className="flex items-center gap-3">
+                <kbd className="inline-block min-w-[3.5rem] text-center rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-xs font-mono dark:border-gray-600 dark:bg-gray-800">
+                  {key}
+                </kbd>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{desc}</span>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </main>
