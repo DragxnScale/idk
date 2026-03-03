@@ -9,6 +9,7 @@ import { OverrideFlow } from "@/components/focus/OverrideFlow";
 import dynamic from "next/dynamic";
 import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
+import { loadPlaylist, parseYouTubeId, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -49,8 +50,12 @@ function StudySessionInner() {
   const [checkingActive, setCheckingActive] = useState(true);
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
   const [inactivityTimeout, setInactivityTimeout] = useState(3); // default 3 min
-  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
+  const [musicIdx, setMusicIdx] = useState(0);
   const [musicPlaying, setMusicPlaying] = useState(false);
+  const [musicReady, setMusicReady] = useState(false);
+  const ytPlayerRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
@@ -93,11 +98,119 @@ function StudySessionInner() {
       .catch(() => setCheckingActive(false));
   }, [resumeId]);
 
-  // Load music URL from localStorage
+  // Load music playlist from localStorage
   useEffect(() => {
-    const url = localStorage.getItem("bowlbeacon-music-url");
-    if (url) setMusicUrl(url);
+    const tracks = loadPlaylist();
+    if (tracks.length > 0) setMusicTracks(tracks);
   }, []);
+
+  const currentTrack = musicTracks[musicIdx] ?? null;
+  const currentIsYt = currentTrack ? isYouTubeUrl(currentTrack.url) : false;
+
+  // YouTube IFrame API setup
+  useEffect(() => {
+    if (musicTracks.length === 0) return;
+    if (!(window as any).YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+  }, [musicTracks.length]);
+
+  // Create / update YouTube player when current track changes
+  useEffect(() => {
+    if (!currentTrack || !currentIsYt) return;
+    const ytId = parseYouTubeId(currentTrack.url);
+    if (!ytId) return;
+
+    function initPlayer() {
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.destroy(); } catch {}
+        ytPlayerRef.current = null;
+      }
+      const el = document.getElementById("yt-music-player");
+      if (!el) return;
+      ytPlayerRef.current = new (window as any).YT.Player("yt-music-player", {
+        height: "0",
+        width: "0",
+        videoId: ytId,
+        playerVars: { autoplay: musicPlaying ? 1 : 0, controls: 0, modestbranding: 1, rel: 0 },
+        events: {
+          onReady: () => setMusicReady(true),
+          onStateChange: (e: any) => {
+            if (e.data === (window as any).YT.PlayerState.ENDED) {
+              handleTrackEnd();
+            }
+          },
+        },
+      });
+    }
+
+    if ((window as any).YT?.Player) {
+      initPlayer();
+    } else {
+      (window as any).onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    return () => {
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.destroy(); } catch {}
+        ytPlayerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.url, currentIsYt]);
+
+  // Sync play/pause state with YouTube player
+  useEffect(() => {
+    const p = ytPlayerRef.current;
+    if (!p || !currentIsYt) return;
+    try {
+      if (musicPlaying) p.playVideo?.();
+      else p.pauseVideo?.();
+    } catch {}
+  }, [musicPlaying, currentIsYt, musicReady]);
+
+  // HTML audio handling for non-YouTube tracks
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentTrack || currentIsYt) return;
+    audio.src = currentTrack.url;
+    if (musicPlaying) audio.play().catch(() => {});
+    else audio.pause();
+  }, [currentTrack?.url, currentIsYt, musicPlaying]);
+
+  const handleTrackEnd = useCallback(() => {
+    if (musicTracks.length <= 1) {
+      // Loop single track
+      if (currentIsYt && ytPlayerRef.current) {
+        ytPlayerRef.current.seekTo?.(0);
+        ytPlayerRef.current.playVideo?.();
+      } else if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
+    } else {
+      setMusicIdx((prev) => (prev + 1) % musicTracks.length);
+    }
+  }, [musicTracks.length, currentIsYt]);
+
+  function musicNext() {
+    if (musicTracks.length <= 1) return;
+    setMusicIdx((prev) => (prev + 1) % musicTracks.length);
+  }
+  function musicPrev() {
+    if (musicTracks.length <= 1) return;
+    setMusicIdx((prev) => (prev - 1 + musicTracks.length) % musicTracks.length);
+  }
+  function musicSkip(seconds: number) {
+    if (currentIsYt && ytPlayerRef.current) {
+      const cur = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+      ytPlayerRef.current.seekTo?.(Math.max(0, cur + seconds), true);
+    } else if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + seconds);
+    }
+  }
 
   // Inactivity tracker: reset on user interaction
   useEffect(() => {
@@ -570,19 +683,42 @@ function StudySessionInner() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* Music toggle */}
-            {musicUrl && (
-              <button
-                onClick={() => setMusicPlaying((v) => !v)}
-                className={`rounded-lg border px-3 py-1.5 text-xs transition ${
-                  musicPlaying
-                    ? "border-green-500 bg-green-50 text-green-700 dark:border-green-400 dark:bg-green-900/20 dark:text-green-300"
-                    : "border-gray-300 dark:border-gray-600"
-                }`}
-                title={musicPlaying ? "Pause music" : "Play music"}
-              >
-                {musicPlaying ? "♫ On" : "♫ Off"}
-              </button>
+            {/* Music controls */}
+            {musicTracks.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                {musicTracks.length > 1 && (
+                  <button onClick={musicPrev} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Previous">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                  </button>
+                )}
+                <button onClick={() => musicSkip(-10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="-10s">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                </button>
+                <button
+                  onClick={() => setMusicPlaying((v) => !v)}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                    musicPlaying
+                      ? "border-green-500 bg-green-50 text-green-700 dark:border-green-400 dark:bg-green-900/20 dark:text-green-300"
+                      : "border-gray-300 dark:border-gray-600"
+                  }`}
+                  title={musicPlaying ? "Pause music" : "Play music"}
+                >
+                  {musicPlaying ? "⏸" : "▶"}
+                </button>
+                <button onClick={() => musicSkip(10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="+10s">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                </button>
+                {musicTracks.length > 1 && (
+                  <button onClick={musicNext} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Next">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 18h2V6h-2zM6 18l8.5-6L6 6z"/></svg>
+                  </button>
+                )}
+                {currentTrack && (
+                  <span className="text-[10px] text-gray-500 max-w-[100px] truncate hidden sm:inline" title={currentTrack.title}>
+                    {musicTracks.length > 1 ? `${musicIdx + 1}/${musicTracks.length} ` : ""}{currentTrack.title}
+                  </span>
+                )}
+              </div>
             )}
             <button
               onClick={() => setShowNotes((v) => !v)}
@@ -697,28 +833,18 @@ function StudySessionInner() {
           </div>
         )}
 
-        {/* Hidden music player */}
-        {musicUrl && musicPlaying && (
-          <MusicEmbed url={musicUrl} />
-        )}
+        {/* Hidden YouTube player (zero dimensions, fully invisible) */}
+        <div style={{ position: "fixed", width: 0, height: 0, overflow: "hidden", pointerEvents: "none", opacity: 0 }}>
+          <div id="yt-music-player" />
+        </div>
+        {/* Hidden HTML audio for non-YouTube tracks */}
+        <audio
+          ref={audioRef}
+          onEnded={handleTrackEnd}
+          style={{ display: "none" }}
+        />
       </main>
     </VisibilityGuard>
   );
 }
 
-function MusicEmbed({ url }: { url: string }) {
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  if (ytMatch) {
-    return (
-      <iframe
-        src={`https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&loop=1`}
-        allow="autoplay"
-        className="fixed bottom-0 right-0 w-80 h-12 z-50 opacity-90 rounded-tl-lg border-l border-t border-gray-300 dark:border-gray-700"
-        title="Focus music"
-      />
-    );
-  }
-  return (
-    <audio src={url} autoPlay loop className="hidden" />
-  );
-}

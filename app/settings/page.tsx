@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById } from "@/lib/themes";
+import { loadPlaylist, savePlaylist, type MusicTrack } from "@/lib/music";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -37,11 +38,57 @@ export default function SettingsPage() {
   const [themeId, setThemeId] = useState<string>("default");
   const [themeSaving, setThemeSaving] = useState(false);
 
-  // ── Focus music URL (localStorage) ────────────────────────────────
-  const [musicUrl, setMusicUrl] = useState("");
+  // ── Focus music playlist (localStorage) ─────────────────────────
+  const [playlist, setPlaylist] = useState<MusicTrack[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ id: string; title: string; url: string; duration: string | null; thumbnail: string | null }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [urlMode, setUrlMode] = useState(false);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    setMusicUrl(localStorage.getItem("bowlbeacon-music-url") ?? "");
+    setPlaylist(loadPlaylist());
   }, []);
+
+  function addTrack(track: MusicTrack) {
+    const next = [...playlist, track];
+    setPlaylist(next);
+    savePlaylist(next);
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
+  function removeTrack(idx: number) {
+    const next = playlist.filter((_, i) => i !== idx);
+    setPlaylist(next);
+    savePlaylist(next);
+  }
+
+  function clearPlaylist() {
+    setPlaylist([]);
+    savePlaylist([]);
+  }
+
+  async function doSearch(q: string) {
+    if (q.trim().length < 2) { setSearchResults([]); return; }
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/music/search?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data.results ?? []);
+      }
+    } catch {} finally {
+      setSearching(false);
+    }
+  }
+
+  function handleSearchInput(val: string) {
+    setSearchQuery(val);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => doSearch(val), 400);
+  }
 
   useEffect(() => {
     fetch("/api/user/settings")
@@ -257,49 +304,138 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Focus music */}
+        {/* Focus music playlist */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Play background music during study sessions. Paste a URL to any audio
-            stream, YouTube video, or search for something below. Saved on this device.
+            Build a study playlist. Search for songs or paste a URL. Music loops
+            automatically during sessions. Saved on this device.
           </p>
-          <div className="space-y-3">
-            <input
-              type="url"
-              value={musicUrl}
-              onChange={(e) => {
-                setMusicUrl(e.target.value);
-                localStorage.setItem("bowlbeacon-music-url", e.target.value);
-              }}
-              placeholder="https://youtube.com/watch?v=... or audio URL"
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-            />
-            <div className="flex gap-2 flex-wrap">
-              {["lofi hip hop", "study music", "rain sounds", "classical piano", "white noise"].map((q) => (
-                <a
-                  key={q}
-                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q + " study")}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition"
-                >
-                  {q}
-                </a>
-              ))}
-            </div>
-            {musicUrl && (
+
+          {/* Search / URL toggle */}
+          <div className="flex gap-1 mb-3">
+            <button
+              onClick={() => setUrlMode(false)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${!urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+            >
+              Search songs
+            </button>
+            <button
+              onClick={() => setUrlMode(true)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+            >
+              Paste URL
+            </button>
+          </div>
+
+          {urlMode ? (
+            <div className="flex gap-2 mb-3">
+              <input
+                type="url"
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && pasteUrl.trim()) {
+                    addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) });
+                    setPasteUrl("");
+                  }
+                }}
+                placeholder="https://youtube.com/watch?v=..."
+                className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+              />
               <button
                 onClick={() => {
-                  setMusicUrl("");
-                  localStorage.removeItem("bowlbeacon-music-url");
+                  if (pasteUrl.trim()) {
+                    addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) });
+                    setPasteUrl("");
+                  }
                 }}
-                className="text-xs text-red-500 hover:underline"
+                className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
               >
-                Clear saved URL
+                Add
               </button>
-            )}
+            </div>
+          ) : (
+            <div className="relative mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") doSearch(searchQuery); }}
+                placeholder="Search YouTube... e.g. moonlight sonata"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 pr-10"
+              />
+              {searching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin dark:border-gray-600 dark:border-t-gray-300" />
+                </div>
+              )}
+              {searchResults.length > 0 && (
+                <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 max-h-64 overflow-y-auto">
+                  {searchResults.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => addTrack({ url: r.url, title: r.title })}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition border-b border-gray-100 dark:border-gray-800 last:border-b-0"
+                    >
+                      {r.thumbnail && (
+                        <img src={r.thumbnail} alt="" className="w-12 h-9 rounded object-cover flex-shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{r.title}</p>
+                        {r.duration && <p className="text-xs text-gray-500">{r.duration}</p>}
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">+ Add</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick search tags */}
+          <div className="flex gap-2 flex-wrap mb-4">
+            {["lofi hip hop", "study music", "rain sounds", "classical piano", "white noise"].map((q) => (
+              <button
+                key={q}
+                onClick={() => { setUrlMode(false); setSearchQuery(q); doSearch(q); }}
+                className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition"
+              >
+                {q}
+              </button>
+            ))}
           </div>
+
+          {/* Playlist */}
+          {playlist.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                Playlist ({playlist.length} song{playlist.length !== 1 ? "s" : ""})
+              </p>
+              {playlist.map((t, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50">
+                  <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}</span>
+                  <p className="text-sm truncate flex-1 min-w-0">{t.title}</p>
+                  <button
+                    onClick={() => removeTrack(i)}
+                    className="text-red-400 hover:text-red-600 transition flex-shrink-0"
+                    title="Remove"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              ))}
+              <button onClick={clearPlaylist} className="text-xs text-red-500 hover:underline mt-1">
+                Clear playlist
+              </button>
+            </div>
+          )}
+
+          {playlist.length === 0 && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">
+              No songs yet. Search above to add music to your study playlist.
+            </p>
+          )}
         </section>
 
         {/* Exit password */}

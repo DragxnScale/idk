@@ -1,0 +1,51 @@
+export interface MusicTrack {
+  url: string;
+  title: string;
+}
+
+const PLAYLIST_KEY = "bowlbeacon-music-playlist";
+const OLD_URL_KEY = "bowlbeacon-music-url";
+
+export function loadPlaylist(): MusicTrack[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(PLAYLIST_KEY);
+    if (raw) return JSON.parse(raw) as MusicTrack[];
+  } catch {}
+
+  // Migrate old single-URL key
+  const old = localStorage.getItem(OLD_URL_KEY);
+  if (old) {
+    const track: MusicTrack = { url: old, title: titleFromUrl(old) };
+    savePlaylist([track]);
+    localStorage.removeItem(OLD_URL_KEY);
+    return [track];
+  }
+  return [];
+}
+
+export function savePlaylist(tracks: MusicTrack[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PLAYLIST_KEY, JSON.stringify(tracks));
+}
+
+export function parseYouTubeId(url: string): string | null {
+  const m = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]+)/
+  );
+  return m ? m[1] : null;
+}
+
+export function isYouTubeUrl(url: string): boolean {
+  return parseYouTubeId(url) !== null;
+}
+
+function titleFromUrl(url: string): string {
+  const id = parseYouTubeId(url);
+  if (id) return `YouTube – ${id}`;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url.slice(0, 40);
+  }
+}
