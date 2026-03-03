@@ -28,8 +28,15 @@ export default function SettingsPage() {
   // ── Daily goals ─────────────────────────────────────────────────────
   const [minutesGoal, setMinutesGoal] = useState<string>("");
   const [sessionsGoal, setSessionsGoal] = useState<string>("");
+  const [inactivityMin, setInactivityMin] = useState<string>("");
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
+
+  // ── Focus music URL (localStorage) ────────────────────────────────
+  const [musicUrl, setMusicUrl] = useState("");
+  useEffect(() => {
+    setMusicUrl(localStorage.getItem("studyfocus-music-url") ?? "");
+  }, []);
 
   useEffect(() => {
     fetch("/api/user/settings")
@@ -38,6 +45,7 @@ export default function SettingsPage() {
         if (!data) return;
         setMinutesGoal(data.dailyMinutesGoal != null ? String(data.dailyMinutesGoal) : "");
         setSessionsGoal(data.dailySessionsGoal != null ? String(data.dailySessionsGoal) : "");
+        setInactivityMin(data.inactivityTimeout != null ? String(data.inactivityTimeout) : "");
       });
   }, []);
 
@@ -52,6 +60,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           dailyMinutesGoal: minutesGoal === "" ? 0 : Number(minutesGoal),
           dailySessionsGoal: sessionsGoal === "" ? 0 : Number(sessionsGoal),
+          inactivityTimeout: inactivityMin === "" ? 0 : Number(inactivityMin),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -175,6 +184,29 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Inactivity timeout
+              </label>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                Pause timer &amp; ask if you&apos;re still reading after this many minutes of no interaction. Leave blank for default (3 min).
+              </p>
+              <div className="relative w-40">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={inactivityMin}
+                  onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }}
+                  placeholder="3"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                  min
+                </span>
+              </div>
+            </div>
+
             {goalsMessage && (
               <p className={`text-sm ${goalsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                 {goalsMessage}
@@ -216,6 +248,51 @@ export default function SettingsPage() {
                 </span>
               </button>
             ))}
+          </div>
+        </section>
+
+        {/* Focus music */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Focus music</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Play background music during study sessions. Paste a URL to any audio
+            stream, YouTube video, or search for something below. Saved on this device.
+          </p>
+          <div className="space-y-3">
+            <input
+              type="url"
+              value={musicUrl}
+              onChange={(e) => {
+                setMusicUrl(e.target.value);
+                localStorage.setItem("studyfocus-music-url", e.target.value);
+              }}
+              placeholder="https://youtube.com/watch?v=... or audio URL"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+            />
+            <div className="flex gap-2 flex-wrap">
+              {["lofi hip hop", "study music", "rain sounds", "classical piano", "white noise"].map((q) => (
+                <a
+                  key={q}
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q + " study")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition"
+                >
+                  {q}
+                </a>
+              ))}
+            </div>
+            {musicUrl && (
+              <button
+                onClick={() => {
+                  setMusicUrl("");
+                  localStorage.removeItem("studyfocus-music-url");
+                }}
+                className="text-xs text-red-500 hover:underline"
+              >
+                Clear saved URL
+              </button>
+            )}
           </div>
         </section>
 

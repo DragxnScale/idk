@@ -88,6 +88,8 @@ export async function PATCH(request: Request) {
     updates.totalFocusedMinutes = body.totalFocusedMinutes;
   if (typeof body.lastPageIndex === "number")
     updates.lastPageIndex = body.lastPageIndex;
+  if (typeof body.pagesVisited === "number")
+    updates.pagesVisited = body.pagesVisited;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json(existing);

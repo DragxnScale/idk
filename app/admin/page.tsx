@@ -151,6 +151,8 @@ function UsersTab() {
   const [deletingSession, setDeletingSession] = useState<string | null>(null);
   const [confirmWipeAll, setConfirmWipeAll] = useState(false);
   const [wipingAll, setWipingAll] = useState(false);
+  const [userInactivityTimeout, setUserInactivityTimeout] = useState<string>("");
+  const [savingInactivity, setSavingInactivity] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -176,10 +178,14 @@ function UsersTab() {
   async function openUserDetail(user: UserRow) {
     setSelectedUser(user);
     setUserSessions(null);
+    setUserInactivityTimeout("");
     const res = await fetch(`/api/admin/users/${user.id}`);
     if (res.ok) {
       const data = await res.json();
       setUserSessions(data.sessions);
+      if (data.user?.inactivityTimeout != null) {
+        setUserInactivityTimeout(String(data.user.inactivityTimeout));
+      }
     }
   }
 
@@ -241,6 +247,68 @@ function UsersTab() {
             >
               Ban user
             </button>
+          </div>
+        </div>
+
+        {/* Inactivity timeout override */}
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+          <h3 className="text-sm font-semibold mb-2">Inactivity timeout override</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Override how long before the &quot;Are you still reading?&quot; prompt appears. Leave blank to reset to user&apos;s own setting.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={userInactivityTimeout}
+              onChange={(e) => setUserInactivityTimeout(e.target.value)}
+              placeholder="e.g. 3"
+              className="w-24 rounded-lg border border-gray-700 bg-gray-950 px-3 py-1.5 text-sm"
+            />
+            <span className="text-xs text-gray-500">min</span>
+            <button
+              onClick={async () => {
+                if (!selectedUser) return;
+                setSavingInactivity(true);
+                try {
+                  await fetch(`/api/admin/users/${selectedUser.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      inactivityTimeout: userInactivityTimeout === "" ? null : Number(userInactivityTimeout),
+                    }),
+                  });
+                } finally {
+                  setSavingInactivity(false);
+                }
+              }}
+              disabled={savingInactivity}
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black disabled:opacity-50"
+            >
+              {savingInactivity ? "Saving…" : "Save"}
+            </button>
+            {userInactivityTimeout !== "" && (
+              <button
+                onClick={async () => {
+                  if (!selectedUser) return;
+                  setUserInactivityTimeout("");
+                  setSavingInactivity(true);
+                  try {
+                    await fetch(`/api/admin/users/${selectedUser.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ inactivityTimeout: null }),
+                    });
+                  } finally {
+                    setSavingInactivity(false);
+                  }
+                }}
+                className="text-xs text-red-400 hover:underline"
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 

@@ -22,6 +22,7 @@ export async function GET() {
   return NextResponse.json({
     dailyMinutesGoal: user.dailyMinutesGoal ?? null,
     dailySessionsGoal: user.dailySessionsGoal ?? null,
+    inactivityTimeout: user.inactivityTimeout ?? null,
   });
 }
 
@@ -32,7 +33,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal } = body;
+  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout } = body;
 
   const user = await db.query.users.findFirst({
     where: (u, { eq }) => eq(u.id, session.user.id),
@@ -61,8 +62,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── Daily goals update ────────────────────────────────────────────
-  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined) {
+  // ── Daily goals / settings update ────────────────────────────────
+  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
     if (dailyMinutesGoal !== undefined) {
@@ -72,6 +73,10 @@ export async function PATCH(request: Request) {
     if (dailySessionsGoal !== undefined) {
       const v = Number(dailySessionsGoal);
       update.dailySessionsGoal = v > 0 ? v : null;
+    }
+    if (inactivityTimeout !== undefined) {
+      const v = Number(inactivityTimeout);
+      update.inactivityTimeout = v > 0 ? v : null;
     }
 
     await db.update(users).set(update).where(eq(users.id, session.user.id));

@@ -47,6 +47,10 @@ function StudySessionInner() {
   const [activeSession, setActiveSession] = useState<{ id: string; goalType: string; targetValue: number; totalFocusedMinutes: number } | null>(null);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [checkingActive, setCheckingActive] = useState(true);
+  const [inactivityPrompt, setInactivityPrompt] = useState(false);
+  const [inactivityTimeout, setInactivityTimeout] = useState(3); // default 3 min
+  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  const [musicPlaying, setMusicPlaying] = useState(false);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
@@ -54,6 +58,7 @@ function StudySessionInner() {
   const visitedPagesRef = useRef<Set<number>>(new Set());
   const sessionEndingRef = useRef(false);
   const resumeHandled = useRef(false);
+  const lastActivityRef = useRef(Date.now());
 
   // Check for active session / handle resume
   useEffect(() => {
@@ -63,6 +68,7 @@ function StudySessionInner() {
     fetch("/api/study/stats")
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
+        if (data?.inactivityTimeout) setInactivityTimeout(data.inactivityTimeout);
         if (!data?.activeSession) { setCheckingActive(false); return; }
         const active = data.activeSession;
 
@@ -86,6 +92,40 @@ function StudySessionInner() {
       })
       .catch(() => setCheckingActive(false));
   }, [resumeId]);
+
+  // Load music URL from localStorage
+  useEffect(() => {
+    const url = localStorage.getItem("studyfocus-music-url");
+    if (url) setMusicUrl(url);
+  }, []);
+
+  // Inactivity tracker: reset on user interaction
+  useEffect(() => {
+    if (!sessionId) return;
+    function onActivity() {
+      lastActivityRef.current = Date.now();
+      if (inactivityPrompt) {
+        setInactivityPrompt(false);
+        setIsPaused(false);
+      }
+    }
+    const events = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
+    for (const e of events) window.addEventListener(e, onActivity, { passive: true });
+    return () => { for (const e of events) window.removeEventListener(e, onActivity); };
+  }, [sessionId, inactivityPrompt]);
+
+  // Inactivity check interval
+  useEffect(() => {
+    if (!sessionId || isPaused || inactivityPrompt) return;
+    const iv = setInterval(() => {
+      const elapsed = (Date.now() - lastActivityRef.current) / 60_000;
+      if (elapsed >= inactivityTimeout) {
+        setIsPaused(true);
+        setInactivityPrompt(true);
+      }
+    }, 5_000);
+    return () => clearInterval(iv);
+  }, [sessionId, isPaused, inactivityPrompt, inactivityTimeout]);
 
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
@@ -126,7 +166,12 @@ function StudySessionInner() {
         await fetch("/api/study/sessions", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, totalFocusedMinutes: minutes, lastPageIndex: currentPageRef.current }),
+          body: JSON.stringify({
+            sessionId,
+            totalFocusedMinutes: minutes,
+            lastPageIndex: currentPageRef.current,
+            pagesVisited: visitedPagesRef.current.size,
+          }),
         });
       } catch {
         // will retry on next tick
@@ -158,6 +203,7 @@ function StudySessionInner() {
           sessionId,
           endedAt: new Date().toISOString(),
           totalFocusedMinutes: focusedMinutesRef.current,
+          pagesVisited: visitedPagesRef.current.size,
         }),
       });
     } finally {
@@ -504,6 +550,20 @@ function StudySessionInner() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* Music toggle */}
+            {musicUrl && (
+              <button
+                onClick={() => setMusicPlaying((v) => !v)}
+                className={`rounded-lg border px-3 py-1.5 text-xs transition ${
+                  musicPlaying
+                    ? "border-green-500 bg-green-50 text-green-700 dark:border-green-400 dark:bg-green-900/20 dark:text-green-300"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
+                title={musicPlaying ? "Pause music" : "Play music"}
+              >
+                {musicPlaying ? "♫ On" : "♫ Off"}
+              </button>
+            )}
             <button
               onClick={() => setShowNotes((v) => !v)}
               className={`rounded-lg border px-3 py-1.5 text-xs transition ${
@@ -592,7 +652,52 @@ function StudySessionInner() {
             </aside>
           )}
         </div>
+
+        {/* Inactivity prompt overlay */}
+        {inactivityPrompt && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="mx-4 max-w-sm rounded-2xl bg-white p-8 text-center dark:bg-gray-900 shadow-2xl">
+              <p className="text-4xl mb-4">👋</p>
+              <h2 className="text-lg font-bold mb-2">Are you still reading?</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                No activity detected for {inactivityTimeout} minute{inactivityTimeout !== 1 ? "s" : ""}. The timer has been paused.
+              </p>
+              <button
+                onClick={() => {
+                  lastActivityRef.current = Date.now();
+                  setInactivityPrompt(false);
+                  setIsPaused(false);
+                }}
+                className="w-full rounded-lg bg-black px-4 py-3 text-sm font-medium text-white dark:bg-white dark:text-black"
+              >
+                Yes, I&apos;m here!
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden music player */}
+        {musicUrl && musicPlaying && (
+          <MusicEmbed url={musicUrl} />
+        )}
       </main>
     </VisibilityGuard>
+  );
+}
+
+function MusicEmbed({ url }: { url: string }) {
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  if (ytMatch) {
+    return (
+      <iframe
+        src={`https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&loop=1`}
+        allow="autoplay"
+        className="fixed bottom-0 right-0 w-80 h-12 z-50 opacity-90 rounded-tl-lg border-l border-t border-gray-300 dark:border-gray-700"
+        title="Focus music"
+      />
+    );
+  }
+  return (
+    <audio src={url} autoPlay loop className="hidden" />
   );
 }

@@ -41,6 +41,10 @@ export async function GET() {
     (sum, r) => sum + (r.totalFocusedMinutes ?? 0),
     0
   );
+  const totalPages = completed.reduce(
+    (sum, r) => sum + (r.pagesVisited ?? 0),
+    0
+  );
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -92,17 +96,23 @@ export async function GET() {
 
   const activeSession = rows.find((r) => !r.endedAt);
 
+  const todayPages = todaySessions.reduce((s, r) => s + (r.pagesVisited ?? 0), 0);
+
   return NextResponse.json({
     isAdmin: isAdminEmail(session.user.email ?? ""),
     totalSessions: completed.length,
     totalMinutes,
+    totalPages,
     averageMinutes: completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0,
+    pagesPerHour: totalMinutes > 0 ? Math.round((totalPages / totalMinutes) * 60) : 0,
+    todayPages,
     streak,
     weekDays,
     todayMinutes,
     todaySessions: todaySessions.length,
     dailyMinutesGoal: user?.dailyMinutesGoal ?? null,
     dailySessionsGoal: user?.dailySessionsGoal ?? null,
+    inactivityTimeout: user?.inactivityTimeout ?? null,
     activeSession: activeSession
       ? {
           id: activeSession.id,
@@ -124,6 +134,7 @@ export async function GET() {
         startedAt: r.startedAt?.toISOString() ?? null,
         endedAt: r.endedAt?.toISOString() ?? null,
         totalFocusedMinutes: r.totalFocusedMinutes,
+        pagesVisited: r.pagesVisited ?? 0,
       })),
   });
 

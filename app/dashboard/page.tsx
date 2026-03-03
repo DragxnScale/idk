@@ -50,7 +50,10 @@ interface StatsData {
   isAdmin?: boolean;
   totalSessions: number;
   totalMinutes: number;
+  totalPages: number;
   averageMinutes: number;
+  pagesPerHour: number;
+  todayPages: number;
   streak: number;
   weekDays: WeekDay[];
   recentSessions: RecentSession[];
@@ -58,6 +61,7 @@ interface StatsData {
   todaySessions: number;
   dailyMinutesGoal: number | null;
   dailySessionsGoal: number | null;
+  inactivityTimeout: number | null;
   activeSession: ActiveSession | null;
 }
 
@@ -253,7 +257,7 @@ export default function DashboardPage() {
         )}
 
         {/* Today's stats */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-8">
           <StatCard
             label="Today"
             value={
@@ -262,12 +266,14 @@ export default function DashboardPage() {
                 : `${stats.todayMinutes}m`
             }
           />
-          <StatCard label="Today's Sessions" value={String(stats.todaySessions)} />
+          <StatCard label="Sessions" value={String(stats.todaySessions)} />
           <StatCard label="Avg / Session" value={`${stats.averageMinutes}m`} />
           <StatCard
             label="Streak"
             value={`${stats.streak} day${stats.streak !== 1 ? "s" : ""}`}
           />
+          <StatCard label="Pages Today" value={String(stats.todayPages)} />
+          <StatCard label="Reading Speed" value={stats.pagesPerHour > 0 ? `${stats.pagesPerHour} pg/hr` : "—"} />
         </div>
 
         {/* Daily goal progress */}

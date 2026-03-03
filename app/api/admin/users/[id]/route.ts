@@ -50,6 +50,7 @@ export async function GET(
       email: target.email,
       name: target.name ?? null,
       createdAt: target.createdAt?.toISOString() ?? null,
+      inactivityTimeout: target.inactivityTimeout ?? null,
     },
     sessions: sessions.map((s) => ({
       id: s.id,
@@ -61,6 +62,32 @@ export async function GET(
       lastPageIndex: s.lastPageIndex ?? null,
     })),
   });
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const session = await requireAdmin();
+  if (!session) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await request.json();
+  const updates: Record<string, unknown> = {};
+
+  if (typeof body.inactivityTimeout === "number") {
+    updates.inactivityTimeout = body.inactivityTimeout > 0 ? body.inactivityTimeout : null;
+  } else if (body.inactivityTimeout === null) {
+    updates.inactivityTimeout = null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  await db.update(users).set(updates).where(eq(users.id, params.id));
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(

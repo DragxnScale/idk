@@ -10,6 +10,7 @@ export const users = sqliteTable("users", {
   exitPasswordHash: text("exit_password_hash"),
   dailyMinutesGoal: integer("daily_minutes_goal"),
   dailySessionsGoal: integer("daily_sessions_goal"),
+  inactivityTimeout: integer("inactivity_timeout"), // minutes, null = default (3)
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   mutedUntil: integer("muted_until", { mode: "timestamp" }),
@@ -72,6 +73,7 @@ export const studySessions = sqliteTable("study_sessions", {
   startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
   endedAt: integer("ended_at", { mode: "timestamp" }),
   totalFocusedMinutes: integer("total_focused_minutes"),
+  pagesVisited: integer("pages_visited"),
   lastPageIndex: integer("last_page_index"),
   videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
   documentJson: text("document_json"), // JSON: serialized SelectedDocument for resume
