@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { requireAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
-import { users, studySessions } from "@/lib/db/schema";
+import { users, studySessions, pageVisits } from "@/lib/db/schema";
 import { isAdminEmail } from "@/lib/admin";
 
 export async function GET(
@@ -60,6 +60,8 @@ export async function GET(
       endedAt: s.endedAt?.toISOString() ?? null,
       totalFocusedMinutes: s.totalFocusedMinutes ?? 0,
       lastPageIndex: s.lastPageIndex ?? null,
+      pagesVisited: s.pagesVisited ?? 0,
+      documentJson: s.documentJson ?? null,
     })),
   });
 }

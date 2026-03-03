@@ -220,15 +220,103 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const visitedPagesRef = useRef<Set<number>>(new Set([initialPage]));
   const pageNumberRef = useRef(initialPage);
 
+  // Page visit tracking
+  const pageVisitRef = useRef<{ pageNumber: number; enteredAt: number } | null>(null);
+  const pendingVisitsRef = useRef<{ sessionId: string; pageNumber: number; enteredAt: string; leftAt: string; durationSeconds: number }[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPageVisits = useCallback(() => {
+    const batch = pendingVisitsRef.current.splice(0);
+    if (batch.length === 0 || !sessionId) return;
+    navigator.sendBeacon?.(
+      "/api/page-visits/batch",
+      new Blob([JSON.stringify({ visits: batch })], { type: "application/json" })
+    ) ||
+      fetch("/api/page-visits/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visits: batch }),
+        keepalive: true,
+      }).catch(() => {});
+  }, [sessionId]);
+
+  const recordPageLeave = useCallback(() => {
+    const cur = pageVisitRef.current;
+    if (!cur || !sessionId) return;
+    const now = Date.now();
+    const dur = Math.round((now - cur.enteredAt) / 1000);
+    if (dur >= 1) {
+      pendingVisitsRef.current.push({
+        sessionId,
+        pageNumber: cur.pageNumber,
+        enteredAt: new Date(cur.enteredAt).toISOString(),
+        leftAt: new Date(now).toISOString(),
+        durationSeconds: dur,
+      });
+    }
+    pageVisitRef.current = null;
+  }, [sessionId]);
+
+  const recordPageEnter = useCallback((page: number) => {
+    pageVisitRef.current = { pageNumber: page, enteredAt: Date.now() };
+  }, []);
+
+  // Start tracking the initial page
+  useEffect(() => {
+    if (sessionId) recordPageEnter(initialPage);
+    return () => {
+      recordPageLeave();
+      flushPageVisits();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Periodic flush every 30s
+  useEffect(() => {
+    if (!sessionId) return;
+    const interval = setInterval(() => {
+      recordPageLeave();
+      flushPageVisits();
+      recordPageEnter(pageNumberRef.current);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [sessionId, recordPageLeave, flushPageVisits, recordPageEnter]);
+
+  // Flush on visibilitychange / beforeunload
+  useEffect(() => {
+    if (!sessionId) return;
+    const handleUnload = () => {
+      recordPageLeave();
+      flushPageVisits();
+    };
+    const handleVis = () => {
+      if (document.hidden) handleUnload();
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    document.addEventListener("visibilitychange", handleVis);
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      document.removeEventListener("visibilitychange", handleVis);
+    };
+  }, [sessionId, recordPageLeave, flushPageVisits]);
+
   const goToPage = useCallback(
     (page: number) => {
       const clamped = Math.max(1, Math.min(page, numPages));
+      // Record leaving the current page and entering the new one
+      if (sessionId && clamped !== pageNumberRef.current) {
+        recordPageLeave();
+        recordPageEnter(clamped);
+        // Schedule a flush
+        if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = setTimeout(flushPageVisits, 10000);
+      }
       visitedPagesRef.current.add(clamped);
       pageNumberRef.current = clamped;
       setPageNumber(clamped);
       onPageChange?.(clamped);
     },
-    [numPages, onPageChange]
+    [numPages, onPageChange, sessionId, recordPageLeave, recordPageEnter, flushPageVisits]
   );
 
   useEffect(() => {

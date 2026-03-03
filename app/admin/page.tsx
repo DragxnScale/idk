@@ -26,6 +26,26 @@ interface UserSession {
   endedAt: string | null;
   totalFocusedMinutes: number;
   lastPageIndex: number | null;
+  pagesVisited: number;
+  documentJson: string | null;
+}
+
+interface PageVisit {
+  id: string;
+  pageNumber: number;
+  enteredAt: string | null;
+  leftAt: string | null;
+  durationSeconds: number | null;
+}
+
+interface SessionDetail {
+  session: UserSession;
+  document: {
+    title?: string;
+    chapterPageRanges?: Record<string, [number, number]>;
+    selectedChapters?: string[];
+  };
+  pageVisits: PageVisit[];
 }
 
 interface CatalogEntry {
@@ -57,6 +77,12 @@ function slugify(text: string) {
 
 function fmtMinutes(mins: number) {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+}
+
+function fmtSeconds(sec: number) {
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m ${sec % 60}s`;
+  if (sec >= 60) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  return `${sec}s`;
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────
@@ -153,6 +179,8 @@ function UsersTab() {
   const [wipingAll, setWipingAll] = useState(false);
   const [userInactivityTimeout, setUserInactivityTimeout] = useState<string>("");
   const [savingInactivity, setSavingInactivity] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -212,6 +240,20 @@ function UsersTab() {
     setConfirmWipeAll(false);
   }
 
+  async function openSessionDetail(sessionId: string) {
+    if (!selectedUser) return;
+    setLoadingDetail(true);
+    setSessionDetail(null);
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser.id}/sessions/${sessionId}`);
+      if (res.ok) {
+        setSessionDetail(await res.json());
+      }
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
   const filtered = (users ?? []).filter(
     (u) =>
       u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -221,11 +263,152 @@ function UsersTab() {
   const totalSessions = users?.reduce((s, u) => s + u.sessionCount, 0) ?? 0;
   const totalMins = users?.reduce((s, u) => s + u.totalMinutes, 0) ?? 0;
 
+  // Session detail loading state
+  if (selectedUser && loadingDetail) {
+    return (
+      <>
+        <button onClick={() => { setLoadingDetail(false); setSessionDetail(null); }} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
+          ← Back to {selectedUser.name ?? selectedUser.email}
+        </button>
+        <div className="flex items-center justify-center py-20">
+          <p className="text-gray-400 animate-pulse">Loading session details…</p>
+        </div>
+      </>
+    );
+  }
+
+  // Session detail view
+  if (selectedUser && sessionDetail) {
+    const { session: sd, document: doc, pageVisits: visits } = sessionDetail;
+
+    // Aggregate time per page
+    const pageTimeMap = new Map<number, number>();
+    const pageVisitCount = new Map<number, number>();
+    for (const v of visits) {
+      const dur = v.durationSeconds ?? 0;
+      pageTimeMap.set(v.pageNumber, (pageTimeMap.get(v.pageNumber) ?? 0) + dur);
+      pageVisitCount.set(v.pageNumber, (pageVisitCount.get(v.pageNumber) ?? 0) + 1);
+    }
+    const uniquePages = Array.from(new Set(visits.map((v) => v.pageNumber))).sort((a, b) => a - b);
+    const totalTrackedSeconds = Array.from(pageTimeMap.values()).reduce((a, b) => a + b, 0);
+
+    const getChapterForPage = (page: number): string | null => {
+      if (!doc.chapterPageRanges) return null;
+      for (const [ch, [start, end]] of Object.entries(doc.chapterPageRanges)) {
+        if (page >= start && page <= end) return ch;
+      }
+      return null;
+    };
+
+    return (
+      <>
+        <button onClick={() => setSessionDetail(null)} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
+          ← Back to {selectedUser.name ?? selectedUser.email}
+        </button>
+
+        {/* Session overview card */}
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-semibold text-lg">{doc.title ?? "Study Session"}</p>
+              <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-400">
+                <span>{sd.goalType === "time" ? `${sd.targetValue} min goal` : `${sd.targetValue} chapter${sd.targetValue !== 1 ? "s" : ""}`}</span>
+                <span>{sd.totalFocusedMinutes}m focused</span>
+                <span>{sd.pagesVisited} pages visited</span>
+                {sd.startedAt && <span>{new Date(sd.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+                {sd.endedAt ? <span className="text-green-500">Completed</span> : <span className="text-amber-400">In progress</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Selected chapters */}
+        {doc.selectedChapters && doc.selectedChapters.length > 0 && (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+            <h3 className="text-sm font-semibold mb-2">Chapters Selected</h3>
+            <div className="flex flex-wrap gap-2">
+              {doc.selectedChapters.map((ch) => {
+                const range = doc.chapterPageRanges?.[ch];
+                return (
+                  <span key={ch} className="rounded-full bg-gray-800 border border-gray-700 px-3 py-1 text-xs">
+                    {ch}{range ? ` (pp. ${range[0]}–${range[1]})` : ""}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Page-by-page breakdown */}
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+          <h3 className="text-sm font-semibold mb-1">Page-by-Page Reading Time</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            {uniquePages.length} unique pages &middot; {fmtSeconds(totalTrackedSeconds)} total tracked time
+          </p>
+
+          {visits.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">No page visit data recorded for this session.</p>
+          ) : (
+            <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+              {uniquePages.map((pg) => {
+                const dur = pageTimeMap.get(pg) ?? 0;
+                const count = pageVisitCount.get(pg) ?? 0;
+                const ch = getChapterForPage(pg);
+                const maxDur = Math.max(...Array.from(pageTimeMap.values()), 1);
+                const barWidth = Math.max(2, (dur / maxDur) * 100);
+                return (
+                  <div key={pg} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition group">
+                    <span className="w-14 text-xs text-gray-400 text-right font-mono flex-shrink-0">p. {pg}</span>
+                    {ch && <span className="text-[10px] text-gray-500 w-20 truncate flex-shrink-0" title={ch}>{ch}</span>}
+                    <div className="flex-1 min-w-0">
+                      <div className="h-4 rounded-full overflow-hidden bg-gray-800">
+                        <div className="h-full rounded-full bg-blue-500/70 transition-all" style={{ width: `${barWidth}%` }} />
+                      </div>
+                    </div>
+                    <span className="w-16 text-xs text-gray-400 text-right flex-shrink-0">{fmtSeconds(dur)}</span>
+                    {count > 1 && <span className="text-[10px] text-gray-600 flex-shrink-0">×{count}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Visit timeline */}
+        {visits.length > 0 && (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+            <h3 className="text-sm font-semibold mb-2">Visit Timeline</h3>
+            <div className="space-y-0.5 max-h-[40vh] overflow-y-auto pr-1 text-xs font-mono">
+              {visits.map((v, i) => {
+                const ch = getChapterForPage(v.pageNumber);
+                return (
+                  <div key={v.id} className="flex items-center gap-3 py-1 px-2 rounded hover:bg-gray-800/30 transition">
+                    <span className="text-gray-600 w-6 text-right">{i + 1}</span>
+                    <span className="text-gray-400 w-14 text-right">p. {v.pageNumber}</span>
+                    {ch && <span className="text-gray-600 w-20 truncate" title={ch}>{ch}</span>}
+                    <span className="text-gray-500">
+                      {v.enteredAt ? new Date(v.enteredAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+                    </span>
+                    <span className="text-gray-600">→</span>
+                    <span className="text-gray-500">
+                      {v.leftAt ? new Date(v.leftAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+                    </span>
+                    <span className="text-gray-400 ml-auto">{v.durationSeconds != null ? fmtSeconds(v.durationSeconds) : "—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
   // User detail view
   if (selectedUser) {
     return (
       <>
-        <button onClick={() => { setSelectedUser(null); setUserSessions(null); }} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
+        <button onClick={() => { setSelectedUser(null); setUserSessions(null); setSessionDetail(null); }} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
           ← Back to all users
         </button>
 
@@ -330,34 +513,48 @@ function UsersTab() {
           <p className="text-sm text-gray-500 text-center py-6">No sessions found.</p>
         ) : (
           <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-            {userSessions.map((s) => (
-              <div key={s.id} className="rounded-lg border border-gray-800 bg-gray-950 p-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium">
-                      {s.goalType === "time" ? `${s.targetValue} min goal` : `${s.targetValue} chapter${s.targetValue !== 1 ? "s" : ""}`}
-                    </p>
-                    {!s.endedAt && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-medium">Active</span>}
-                  </div>
-                  <div className="flex gap-3 text-xs text-gray-500 mt-0.5">
-                    <span>{s.totalFocusedMinutes}m studied</span>
-                    <span>{s.startedAt ? new Date(s.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
-                    {s.endedAt ? (
-                      <span className="text-green-500">Completed</span>
-                    ) : (
-                      <span className="text-amber-400">In progress</span>
-                    )}
-                  </div>
+            {userSessions.map((s) => {
+              let docTitle: string | null = null;
+              if (s.documentJson) {
+                try {
+                  const parsed = JSON.parse(s.documentJson);
+                  docTitle = parsed.title ?? parsed.catalogTitle ?? null;
+                } catch {}
+              }
+              return (
+                <div key={s.id} className="rounded-lg border border-gray-800 bg-gray-950 p-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => openSessionDetail(s.id)}
+                    className="min-w-0 text-left flex-1 hover:bg-gray-900/50 rounded-lg -m-1 p-1 transition"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium">
+                        {docTitle ? docTitle : s.goalType === "time" ? `${s.targetValue} min goal` : `${s.targetValue} chapter${s.targetValue !== 1 ? "s" : ""}`}
+                      </p>
+                      {!s.endedAt && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-medium">Active</span>}
+                    </div>
+                    <div className="flex gap-3 text-xs text-gray-500 mt-0.5">
+                      <span>{s.totalFocusedMinutes}m studied</span>
+                      {s.pagesVisited > 0 && <span>{s.pagesVisited} pages</span>}
+                      <span>{s.startedAt ? new Date(s.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                      {s.endedAt ? (
+                        <span className="text-green-500">Completed</span>
+                      ) : (
+                        <span className="text-amber-400">In progress</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-600 mt-1">Click to view details →</p>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                    disabled={deletingSession === s.id}
+                    className="flex-shrink-0 rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                  >
+                    {deletingSession === s.id ? "…" : "Delete"}
+                  </button>
                 </div>
-                <button
-                  onClick={() => deleteSession(s.id)}
-                  disabled={deletingSession === s.id}
-                  className="flex-shrink-0 rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
-                >
-                  {deletingSession === s.id ? "…" : "Delete"}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -122,6 +122,19 @@ export const sessionContent = sqliteTable("session_content", {
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
+// ── Page visit tracking ──────────────────────────────────────────────
+
+export const pageVisits = sqliteTable("page_visits", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => studySessions.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull(),
+  enteredAt: integer("entered_at", { mode: "timestamp" }).notNull(),
+  leftAt: integer("left_at", { mode: "timestamp" }),
+  durationSeconds: integer("duration_seconds"),
+});
+
 // ── Bookmarks & Highlights ───────────────────────────────────────────
 
 export const bookmarks = sqliteTable("bookmarks", {
