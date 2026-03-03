@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import ytsr from "ytsr";
+
+interface InnerTubeVideo {
+  videoRenderer?: {
+    videoId: string;
+    title?: { runs?: { text: string }[] };
+    lengthText?: { simpleText?: string };
+    thumbnail?: { thumbnails?: { url: string }[] };
+  };
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -14,17 +22,48 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const res = await ytsr(q, { limit: 8 });
-    const videos = res.items
-      .filter((item): item is ytsr.Video => item.type === "video")
+    const res = await fetch(
+      "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          context: {
+            client: { clientName: "WEB", clientVersion: "2.20240101.00.00" },
+          },
+          query: q,
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: "YouTube search failed", detail: `Status ${res.status}` },
+        { status: 502 }
+      );
+    }
+
+    const data = await res.json();
+    const sections =
+      data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
+        ?.sectionListRenderer?.contents ?? [];
+
+    const items: InnerTubeVideo[] =
+      sections[0]?.itemSectionRenderer?.contents ?? [];
+
+    const videos = items
+      .filter((i) => i.videoRenderer?.videoId)
       .slice(0, 6)
-      .map((v) => ({
-        id: v.id,
-        title: v.title,
-        url: v.url,
-        duration: v.duration ?? null,
-        thumbnail: v.bestThumbnail?.url ?? null,
-      }));
+      .map((i) => {
+        const v = i.videoRenderer!;
+        return {
+          id: v.videoId,
+          title: v.title?.runs?.[0]?.text ?? "Untitled",
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          duration: v.lengthText?.simpleText ?? null,
+          thumbnail: v.thumbnail?.thumbnails?.[0]?.url ?? null,
+        };
+      });
 
     return NextResponse.json({ results: videos });
   } catch (e) {
