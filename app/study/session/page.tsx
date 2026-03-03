@@ -29,6 +29,13 @@ export default function StudySessionPage() {
   );
 }
 
+function fmtTime(sec: number): string {
+  if (!sec || !isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 function StudySessionInner() {
   const searchParams = useSearchParams();
   const resumeId = searchParams.get("resume");
@@ -54,6 +61,8 @@ function StudySessionInner() {
   const [musicIdx, setMusicIdx] = useState(0);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicReady, setMusicReady] = useState(false);
+  const [musicTime, setMusicTime] = useState(0);
+  const [musicDuration, setMusicDuration] = useState(0);
   const ytPlayerRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -161,24 +170,56 @@ function StudySessionInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.url, currentIsYt]);
 
-  // Sync play/pause state with YouTube player
+  // When YouTube player becomes ready while musicPlaying is true, start playback
   useEffect(() => {
-    const p = ytPlayerRef.current;
-    if (!p || !currentIsYt) return;
-    try {
-      if (musicPlaying) p.playVideo?.();
-      else p.pauseVideo?.();
-    } catch {}
-  }, [musicPlaying, currentIsYt, musicReady]);
+    if (!musicReady || !currentIsYt || !musicPlaying) return;
+    try { ytPlayerRef.current?.playVideo?.(); } catch {}
+  }, [musicReady, currentIsYt, musicPlaying]);
 
-  // HTML audio handling for non-YouTube tracks
+  // Load audio src when track changes (non-YouTube)
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack || currentIsYt) return;
     audio.src = currentTrack.url;
+    audio.load();
     if (musicPlaying) audio.play().catch(() => {});
-    else audio.pause();
-  }, [currentTrack?.url, currentIsYt, musicPlaying]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.url, currentIsYt]);
+
+  // Poll music current time / duration for progress bar
+  useEffect(() => {
+    if (!musicPlaying || musicTracks.length === 0) {
+      return;
+    }
+    const iv = setInterval(() => {
+      if (currentIsYt && ytPlayerRef.current) {
+        try {
+          const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+          const d = ytPlayerRef.current.getDuration?.() ?? 0;
+          setMusicTime(t);
+          setMusicDuration(d);
+        } catch {}
+      } else if (audioRef.current) {
+        setMusicTime(audioRef.current.currentTime ?? 0);
+        setMusicDuration(audioRef.current.duration || 0);
+      }
+    }, 500);
+    return () => clearInterval(iv);
+  }, [musicPlaying, musicTracks.length, currentIsYt]);
+
+  function toggleMusic() {
+    const next = !musicPlaying;
+    setMusicPlaying(next);
+    if (currentIsYt && ytPlayerRef.current) {
+      try {
+        if (next) ytPlayerRef.current.playVideo?.();
+        else ytPlayerRef.current.pauseVideo?.();
+      } catch {}
+    } else if (audioRef.current && currentTrack) {
+      if (next) audioRef.current.play().catch(() => {});
+      else audioRef.current.pause();
+    }
+  }
 
   const handleTrackEnd = useCallback(() => {
     if (musicTracks.length <= 1) {
@@ -685,39 +726,56 @@ function StudySessionInner() {
           <div className="flex items-center gap-3">
             {/* Music controls */}
             {musicTracks.length > 0 && (
-              <div className="flex items-center gap-1.5">
-                {musicTracks.length > 1 && (
-                  <button onClick={musicPrev} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Previous">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                  </button>
-                )}
-                <button onClick={() => musicSkip(-10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="-10s">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                </button>
-                <button
-                  onClick={() => setMusicPlaying((v) => !v)}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                    musicPlaying
-                      ? "border-green-500 bg-green-50 text-green-700 dark:border-green-400 dark:bg-green-900/20 dark:text-green-300"
-                      : "border-gray-300 dark:border-gray-600"
-                  }`}
-                  title={musicPlaying ? "Pause music" : "Play music"}
-                >
-                  {musicPlaying ? "⏸" : "▶"}
-                </button>
-                <button onClick={() => musicSkip(10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="+10s">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                </button>
-                {musicTracks.length > 1 && (
-                  <button onClick={musicNext} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Next">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 18h2V6h-2zM6 18l8.5-6L6 6z"/></svg>
-                  </button>
-                )}
+              <div className="flex items-center gap-2">
+                {/* Song info + progress bar */}
                 {currentTrack && (
-                  <span className="text-[10px] text-gray-500 max-w-[100px] truncate hidden sm:inline" title={currentTrack.title}>
-                    {musicTracks.length > 1 ? `${musicIdx + 1}/${musicTracks.length} ` : ""}{currentTrack.title}
-                  </span>
+                  <div className="hidden sm:flex flex-col items-end gap-0.5 max-w-[180px] min-w-[100px]">
+                    <span className="text-[11px] font-medium truncate w-full text-right leading-tight" title={currentTrack.title}>
+                      {musicTracks.length > 1 && <span className="text-gray-400 mr-1">{musicIdx + 1}/{musicTracks.length}</span>}
+                      {currentTrack.title}
+                    </span>
+                    <div className="flex items-center gap-1.5 w-full">
+                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">{fmtTime(musicTime)}</span>
+                      <div className="flex-1 h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-accent transition-all duration-300"
+                          style={{ width: musicDuration > 0 ? `${(musicTime / musicDuration) * 100}%` : "0%" }}
+                        />
+                      </div>
+                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">{fmtTime(musicDuration)}</span>
+                    </div>
+                  </div>
                 )}
+                {/* Transport buttons */}
+                <div className="flex items-center gap-1">
+                  {musicTracks.length > 1 && (
+                    <button onClick={musicPrev} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Previous">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                  )}
+                  <button onClick={() => musicSkip(-10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="-10s">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  </button>
+                  <button
+                    onClick={toggleMusic}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      musicPlaying
+                        ? "border-green-500 bg-green-50 text-green-700 dark:border-green-400 dark:bg-green-900/20 dark:text-green-300"
+                        : "border-gray-300 dark:border-gray-600"
+                    }`}
+                    title={musicPlaying ? "Pause music" : "Play music"}
+                  >
+                    {musicPlaying ? "⏸" : "▶"}
+                  </button>
+                  <button onClick={() => musicSkip(10)} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="+10s">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                  </button>
+                  {musicTracks.length > 1 && (
+                    <button onClick={musicNext} className="rounded-md border border-gray-300 dark:border-gray-600 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Next">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 18h2V6h-2zM6 18l8.5-6L6 6z"/></svg>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             <button
