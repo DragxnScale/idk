@@ -5,6 +5,10 @@ export const metadata: Metadata = {
   title: "Bowl Beacon",
   description:
     "Stay focused while studying. Set goals, read in-app, and get AI-powered notes and quizzes.",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/apple-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
