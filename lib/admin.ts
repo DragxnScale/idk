@@ -1,15 +1,18 @@
 import { auth } from "@/lib/auth";
 
-const ADMIN_EMAIL = "jaydenw0711@gmail.com";
+const ADMIN_EMAILS = [
+  "jaydenw0711@gmail.com",
+  "nshifter@tcusd.net",
+];
 
 export async function requireAdmin() {
   const session = await auth();
-  if (!session?.user?.email || session.user.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+  if (!session?.user?.email || !isAdminEmail(session.user.email)) {
     return null;
   }
   return session;
 }
 
 export function isAdminEmail(email: string): boolean {
-  return email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  return ADMIN_EMAILS.some((e) => e.toLowerCase() === email.toLowerCase());
 }

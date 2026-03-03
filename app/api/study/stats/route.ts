@@ -135,6 +135,7 @@ export async function GET() {
         endedAt: r.endedAt?.toISOString() ?? null,
         totalFocusedMinutes: r.totalFocusedMinutes,
         pagesVisited: r.pagesVisited ?? 0,
+        documentJson: r.documentJson ?? null,
       })),
   });
 

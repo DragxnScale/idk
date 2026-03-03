@@ -43,6 +43,21 @@ export async function POST(request: Request) {
     );
   }
 
+  // Auto-close any stale active sessions for this user
+  const allSessions = await db.query.studySessions.findMany({
+    where: (s, { eq: e }) => e(s.userId, session.user.id),
+  });
+  const activeSessions = allSessions.filter((s) => !s.endedAt);
+  for (const active of activeSessions) {
+    await db
+      .update(studySessions)
+      .set({
+        endedAt: new Date(),
+        totalFocusedMinutes: active.totalFocusedMinutes ?? 0,
+      })
+      .where(eq(studySessions.id, active.id));
+  }
+
   const id = crypto.randomUUID();
   const now = new Date();
 

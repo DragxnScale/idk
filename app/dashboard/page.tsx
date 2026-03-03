@@ -19,6 +19,7 @@ interface RecentSession {
   startedAt: string | null;
   endedAt: string | null;
   totalFocusedMinutes: number | null;
+  documentJson: string | null;
 }
 
 interface ActiveSession {
@@ -416,40 +417,61 @@ export default function DashboardPage() {
             </p>
           ) : (
             <ul className="space-y-2">
-              {stats.recentSessions.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    href={`/study/session/${s.id}/summary`}
-                    className="flex items-center justify-between rounded-lg border border-gray-100 p-3 transition hover:border-gray-300 hover:shadow-sm dark:border-gray-800 dark:hover:border-gray-600"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {s.goalType === "time"
-                          ? `${s.targetValue} min goal`
-                          : `Chapter ${s.targetValue}`}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {s.startedAt
-                          ? new Date(s.startedAt).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "Unknown date"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">
-                        {s.totalFocusedMinutes ?? 0}m
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {s.endedAt ? "Completed" : "In progress"}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
-              ))}
+              {stats.recentSessions.map((s) => {
+                let docTitle: string | null = null;
+                let chaptersRead: string[] = [];
+                if (s.documentJson) {
+                  try {
+                    const parsed = JSON.parse(s.documentJson);
+                    docTitle = parsed.title ?? parsed.catalogTitle ?? null;
+                    if (Array.isArray(parsed.selectedChapters)) {
+                      chaptersRead = parsed.selectedChapters;
+                    }
+                  } catch {}
+                }
+                return (
+                  <li key={s.id}>
+                    <Link
+                      href={`/study/session/${s.id}/summary`}
+                      className="flex items-center justify-between rounded-lg border border-gray-100 p-3 transition hover:border-gray-300 hover:shadow-sm dark:border-gray-800 dark:hover:border-gray-600"
+                    >
+                      <div className="min-w-0 flex-1 mr-3">
+                        {docTitle && (
+                          <p className="text-sm font-semibold truncate">{docTitle}</p>
+                        )}
+                        <p className="text-sm font-medium">
+                          {s.goalType === "time"
+                            ? `${s.targetValue} min goal`
+                            : `${s.targetValue} chapter${s.targetValue !== 1 ? "s" : ""}`}
+                        </p>
+                        {chaptersRead.length > 0 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Ch. {chaptersRead.join(", ")}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {s.startedAt
+                            ? new Date(s.startedAt).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Unknown date"}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-medium">
+                          {s.totalFocusedMinutes ?? 0}m
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {s.endedAt ? "Completed" : "In progress"}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

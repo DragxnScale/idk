@@ -363,10 +363,13 @@ function StudySessionInner() {
   const handleStart = useCallback(async () => {
     setError(null);
     try {
+      const docPayload = selectedDoc
+        ? { ...selectedDoc, selectedChapters }
+        : null;
       const res = await fetch("/api/study/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalType, targetValue, documentJson: selectedDoc }),
+        body: JSON.stringify({ goalType, targetValue, documentJson: docPayload }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -377,7 +380,7 @@ function StudySessionInner() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     }
-  }, [goalType, targetValue, selectedDoc]);
+  }, [goalType, targetValue, selectedDoc, selectedChapters]);
 
   const currentPageRef = useRef(1);
 
