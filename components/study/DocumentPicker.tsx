@@ -192,14 +192,17 @@ function DrivePanel({
   useEffect(() => { loadDocs(); }, [loadDocs]);
 
   async function handleImport() {
-    if (!importUrl.trim()) return;
+    const url = importUrl.trim();
+    if (!url) return;
     setImporting(true);
     setImportError(null);
     try {
-      const res = await fetch("/api/user/drive/import", {
+      const isArchiveOrg = url.includes("archive.org/");
+      const endpoint = isArchiveOrg ? "/api/user/drive/link" : "/api/user/drive/import";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: importUrl.trim() }),
+        body: JSON.stringify({ url }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -234,7 +237,7 @@ function DrivePanel({
           Import from link
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-500">
-          Paste a direct URL to a PDF or ZIP file — ZIP files are automatically unpacked
+          Paste an archive.org link, PDF URL, or ZIP file — archive.org links work instantly
         </p>
         <div className="flex gap-2">
           <input
@@ -323,12 +326,51 @@ function UploadPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
+  // URL link state
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
   // Attach webkitdirectory (not a standard React prop) via ref
   useEffect(() => {
     if (folderRef.current) {
       folderRef.current.setAttribute("webkitdirectory", "");
     }
   }, []);
+
+  async function handleLinkAdd() {
+    const url = linkUrl.trim();
+    if (!url) return;
+    setLinking(true);
+    setLinkError(null);
+    try {
+      const res = await fetch("/api/user/drive/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, title: linkTitle.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLinkError(data.error ?? "Failed to add link");
+        return;
+      }
+      const isExternal = !url.includes("vercel-storage.com");
+      const sourceUrl = isExternal
+        ? `/api/proxy/pdf?url=${encodeURIComponent(url)}`
+        : url;
+      onSelect({
+        type: "upload",
+        documentId: data.id,
+        title: data.title,
+        sourceUrl,
+      });
+    } catch {
+      setLinkError("Network error. Please try again.");
+    } finally {
+      setLinking(false);
+    }
+  }
 
   function addFiles(fileList: FileList) {
     const pdfs = Array.from(fileList).filter(
@@ -356,8 +398,7 @@ function UploadPanel({
         prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
       );
       try {
-        // Upload directly from the browser to Vercel Blob — no server size limit
-        const blob = await upload(
+        const uploadPromise = upload(
           `${encodeURIComponent(title)}.pdf`,
           file,
           {
@@ -370,7 +411,13 @@ function UploadPanel({
             },
           }
         );
-        // Register the document in the DB via a lightweight POST
+
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Upload timed out after 60s. Try using the link paste option instead.")), 60_000)
+        );
+
+        const blob = await Promise.race([uploadPromise, timeout]);
+
         const reg = await fetch("/api/documents/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -385,10 +432,11 @@ function UploadPanel({
           )
         );
       } catch (e) {
+        const msg = e instanceof Error ? e.message : "Upload failed";
         setItems((prev) =>
           prev.map((it, idx) =>
             idx === i
-              ? { ...it, status: "error", error: e instanceof Error ? e.message : "Failed" }
+              ? { ...it, status: "error", error: msg }
               : it
           )
         );
@@ -450,6 +498,39 @@ function UploadPanel({
           className="hidden"
           onChange={(e) => e.target.files && addFiles(e.target.files)}
         />
+      </div>
+
+      {/* Link paste option */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 dark:border-gray-700 dark:bg-gray-800/50">
+        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          Or paste a PDF link
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-500">
+          Paste an archive.org link or any direct PDF URL — no upload needed
+        </p>
+        <input
+          type="url"
+          value={linkUrl}
+          onChange={(e) => { setLinkUrl(e.target.value); setLinkError(null); }}
+          placeholder="https://archive.org/download/..."
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 dark:border-gray-600 dark:bg-gray-800"
+        />
+        <input
+          type="text"
+          value={linkTitle}
+          onChange={(e) => setLinkTitle(e.target.value)}
+          placeholder="Title (optional — auto-detected from URL)"
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 dark:border-gray-600 dark:bg-gray-800"
+        />
+        <button
+          type="button"
+          onClick={handleLinkAdd}
+          disabled={linking || !linkUrl.trim()}
+          className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
+        >
+          {linking ? "Adding…" : "Use this link"}
+        </button>
+        {linkError && <p className="text-xs text-red-500">{linkError}</p>}
       </div>
 
       {/* File list */}

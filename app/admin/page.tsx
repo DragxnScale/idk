@@ -711,10 +711,75 @@ function UploadTab() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const addLog = (msg: string) => setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
 
+  // Archive.org link paste state
+  const [archiveLink, setArchiveLink] = useState("");
+  const [archiveLinkError, setArchiveLinkError] = useState<string | null>(null);
+
   // Auto-generate identifier from title
   useEffect(() => {
     if (title) setIdentifier(`bowlbeacon-${slugify(title)}`);
   }, [title]);
+
+  function handleArchiveLinkPaste() {
+    const url = archiveLink.trim();
+    if (!url) return;
+    setArchiveLinkError(null);
+
+    const isArchiveUrl = url.includes("archive.org/");
+    if (!isArchiveUrl) {
+      setArchiveLinkError("Paste an archive.org link (e.g. https://archive.org/download/identifier/file.pdf)");
+      return;
+    }
+
+    const archiveMatch = url.match(/archive\.org\/download\/([^/]+)\/([^/?#]+)/);
+    let archId = "";
+    let archTitle = "";
+
+    if (archiveMatch) {
+      archId = archiveMatch[1];
+      archTitle = decodeURIComponent(archiveMatch[2]).replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+    } else {
+      const detailsMatch = url.match(/archive\.org\/details\/([^/?#]+)/);
+      if (detailsMatch) archId = detailsMatch[1];
+    }
+
+    if (archId) setIdentifier(archId);
+    if (archTitle && !title) setTitle(archTitle);
+    setArchiveUrl(url);
+    setAddToCatalog(false);
+    setProgress(100);
+    setStatus("done");
+  }
+
+  async function handleArchiveLinkCatalog() {
+    if (!archiveUrl || !title || !identifier) return;
+    let parsedChapters: Record<string, [number, number]> | null = null;
+    try {
+      parsedChapters = JSON.parse(chaptersJson);
+    } catch {
+      setError("Chapter page ranges is not valid JSON.");
+      return;
+    }
+
+    const catalogRes = await fetch("/api/admin/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: identifier,
+        title,
+        edition: edition || null,
+        isbn: isbn || null,
+        sourceType: "oer",
+        sourceUrl: archiveUrl,
+        chapterPageRanges: parsedChapters,
+      }),
+    });
+    if (!catalogRes.ok) {
+      setError("Failed to add to textbook catalog.");
+      return;
+    }
+    setAddToCatalog(true);
+  }
 
   async function handleUpload() {
     if (!file || !title || !identifier) {
@@ -750,11 +815,19 @@ function UploadTab() {
     let blobUrl: string;
     try {
       addLog("Uploading via Vercel Blob SDK…");
-      const blob = await upload(blobPathname, file, {
+      const uploadPromise = upload(blobPathname, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-token",
         multipart: true,
+        onUploadProgress: ({ percentage }) => {
+          setProgress(Math.round(percentage * 0.7));
+          if (percentage % 25 === 0) addLog(`Progress: ${percentage}%`);
+        },
       });
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Upload timed out after 2 minutes. Try using the archive.org link paste option above instead.")), 120_000)
+      );
+      const blob = await Promise.race([uploadPromise, timeout]);
       blobUrl = blob.url;
       setProgress(70);
       addLog(`Upload complete! URL: ${blobUrl}`);
@@ -822,6 +895,9 @@ function UploadTab() {
     setProgress(0);
     setArchiveUrl(null);
     setError(null);
+    setArchiveLink("");
+    setArchiveLinkError(null);
+    setAddToCatalog(true);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -829,16 +905,80 @@ function UploadTab() {
     <div className="max-w-2xl">
       <p className="text-sm text-gray-400 mb-6">
         Upload a PDF to your Archive.org account and optionally add it to the public textbook catalog.
-        Upload a PDF directly to cloud storage, then transfer to Archive.org. No size limits.
+        Or paste an existing Archive.org link to skip the upload.
       </p>
+
+      {/* Archive.org link paste */}
+      {status === "idle" && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-6 space-y-3">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+            Already on Archive.org?
+          </p>
+          <p className="text-xs text-gray-500">
+            Paste the download link and skip the upload step entirely
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={archiveLink}
+              onChange={(e) => { setArchiveLink(e.target.value); setArchiveLinkError(null); }}
+              onKeyDown={(e) => e.key === "Enter" && handleArchiveLinkPaste()}
+              placeholder="https://archive.org/download/identifier/file.pdf"
+              className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm placeholder-gray-600 focus:outline-none focus:border-gray-500"
+            />
+            <button
+              onClick={handleArchiveLinkPaste}
+              disabled={!archiveLink.trim()}
+              className="rounded-lg bg-white text-black px-4 py-2 text-sm font-medium hover:bg-gray-200 transition disabled:opacity-40"
+            >
+              Use link
+            </button>
+          </div>
+          {archiveLinkError && <p className="text-xs text-red-400">{archiveLinkError}</p>}
+          <div className="border-t border-gray-800 pt-3 mt-3">
+            <p className="text-xs text-gray-500 text-center">— or upload a new file below —</p>
+          </div>
+        </div>
+      )}
 
       {status === "done" ? (
         <div className="rounded-xl border border-green-700 bg-green-900/20 p-6 space-y-3">
-          <p className="text-green-400 font-semibold text-base">Upload complete!</p>
-          <p className="text-sm text-gray-300">Your file is now live on Archive.org:</p>
+          <p className="text-green-400 font-semibold text-base">Ready!</p>
+          <p className="text-sm text-gray-300">Archive.org link:</p>
           <a href={archiveUrl!} target="_blank" rel="noopener noreferrer" className="block text-sm text-blue-400 underline break-all">{archiveUrl}</a>
           {addToCatalog && <p className="text-sm text-gray-400">Also added to the textbook catalog — users can now find it in the document picker.</p>}
-          <button onClick={reset} className="mt-2 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Upload another</button>
+
+          {/* Offer catalog add if from link paste and not yet cataloged */}
+          {!addToCatalog && (
+            <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-4 space-y-3 mt-2">
+              <p className="text-sm font-medium text-gray-300">Add to textbook catalog?</p>
+              <div className="space-y-2">
+                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *" className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="text" value={edition} onChange={(e) => setEdition(e.target.value)} placeholder="Edition" className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm" />
+                  <input type="text" value={isbn} onChange={(e) => setIsbn(e.target.value)} placeholder="ISBN" className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm" />
+                </div>
+                <textarea
+                  value={chaptersJson}
+                  onChange={(e) => setChaptersJson(e.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder='{ "1": [1, 50], "2": [51, 100] }'
+                  className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm font-mono"
+                />
+                {error && <p className="text-xs text-red-400">{error}</p>}
+                <button
+                  onClick={handleArchiveLinkCatalog}
+                  disabled={!title}
+                  className="w-full rounded-lg bg-white text-black py-2 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40"
+                >
+                  Add to catalog
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button onClick={reset} className="mt-2 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Start over</button>
         </div>
       ) : (
         <div className="space-y-4">

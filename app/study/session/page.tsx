@@ -491,8 +491,11 @@ function StudySessionInner() {
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;
     if (selectedDoc.type === "upload") {
-      // Prefer direct Blob URL if available (no redirect, no size limit)
-      if (selectedDoc.sourceUrl) return selectedDoc.sourceUrl;
+      if (selectedDoc.sourceUrl) {
+        const isExternal = !selectedDoc.sourceUrl.startsWith("/") && !selectedDoc.sourceUrl.includes("vercel-storage.com") && !selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
+        if (isExternal) return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
+        return selectedDoc.sourceUrl;
+      }
       return `/api/documents/${selectedDoc.documentId}/file`;
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
