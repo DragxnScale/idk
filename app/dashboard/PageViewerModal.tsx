@@ -7,6 +7,29 @@ import "react-pdf/dist/Page/TextLayer.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+function normalizeText(s: string): string {
+  return s.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function mapNormalizedIndex(original: string, normIdx: number): number {
+  let ni = 0;
+  let inSpace = false;
+  for (let i = 0; i < original.length; i++) {
+    if (/\s/.test(original[i])) {
+      if (!inSpace && ni > 0) {
+        inSpace = true;
+        if (ni >= normIdx) return i;
+        ni++;
+      }
+    } else {
+      inSpace = false;
+      if (ni >= normIdx) return i;
+      ni++;
+    }
+  }
+  return original.length;
+}
+
 interface BookmarkItem {
   id: string;
   pageNumber: number;
@@ -16,6 +39,13 @@ interface BookmarkItem {
   docTitle: string | null;
   pdfUrl: string | null;
 }
+
+const HL_COLORS: Record<string, string> = {
+  yellow: "rgba(250, 204, 21, 0.4)",
+  green: "rgba(52, 211, 153, 0.4)",
+  blue: "rgba(96, 165, 250, 0.4)",
+  pink: "rgba(244, 114, 182, 0.4)",
+};
 
 export default function PageViewerModal({
   item,
@@ -30,6 +60,7 @@ export default function PageViewerModal({
   const [pageNum, setPageNum] = useState(item.pageNumber);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pageWrapRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -48,7 +79,6 @@ export default function PageViewerModal({
     return () => window.removeEventListener("resize", measureWidth);
   }, [measureWidth]);
 
-  // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -57,10 +87,68 @@ export default function PageViewerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Apply highlight overlay after page renders
+  const applyHighlight = useCallback(() => {
+    const container = pageWrapRef.current;
+    if (!container || item.type !== "highlight" || !item.highlightText) return;
+    if (pageNum !== item.pageNumber) return;
+
+    const textLayer = container.querySelector(".react-pdf__Page__textContent");
+    if (!textLayer) return;
+
+    const needle = normalizeText(item.highlightText);
+    if (!needle) return;
+
+    const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+    const textNodes: { node: Text; start: number; text: string }[] = [];
+    let fullText = "";
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const t = node.textContent ?? "";
+      textNodes.push({ node, start: fullText.length, text: t });
+      fullText += t;
+    }
+
+    const normalizedFull = normalizeText(fullText);
+    const idx = normalizedFull.indexOf(needle);
+    if (idx === -1) return;
+
+    const origStart = mapNormalizedIndex(fullText, idx);
+    const origEnd = mapNormalizedIndex(fullText, idx + needle.length);
+
+    for (const tn of textNodes) {
+      const tnEnd = tn.start + tn.text.length;
+      const overlapStart = Math.max(origStart, tn.start);
+      const overlapEnd = Math.min(origEnd, tnEnd);
+      if (overlapStart >= overlapEnd) continue;
+
+      const localStart = overlapStart - tn.start;
+      const localEnd = overlapEnd - tn.start;
+
+      try {
+        const range = document.createRange();
+        range.setStart(tn.node, localStart);
+        range.setEnd(tn.node, localEnd);
+
+        const mark = document.createElement("mark");
+        mark.setAttribute("data-hl", item.id);
+        mark.style.backgroundColor = HL_COLORS[item.color ?? "yellow"] ?? HL_COLORS.yellow;
+        mark.style.borderRadius = "2px";
+        mark.style.padding = "1px 0";
+        range.surroundContents(mark);
+      } catch {
+        // surroundContents can fail if range crosses element boundaries
+      }
+    }
+
+    // Scroll the first mark into view
+    const firstMark = container.querySelector(`mark[data-hl="${item.id}"]`);
+    firstMark?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [item, pageNum]);
+
   if (!item.pdfUrl) return null;
 
   const renderWidth = containerWidth || 600;
-  // Proxy external URLs to avoid CORS; keep blob/local URLs as-is
   const isExternal = item.pdfUrl.startsWith("http");
   const proxiedUrl = isExternal
     ? `/api/proxy/pdf?url=${encodeURIComponent(item.pdfUrl)}`
@@ -134,30 +222,33 @@ export default function PageViewerModal({
 
         {/* PDF viewer */}
         <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-950 flex justify-center p-2">
-          <Document
-            file={proxiedUrl}
-            onLoadSuccess={({ numPages: total }) => setNumPages(total)}
-            loading={
-              <div className="flex min-h-[300px] items-center justify-center">
-                <div className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white" />
-              </div>
-            }
-            error={
-              <div className="flex min-h-[200px] items-center justify-center p-6">
-                <p className="text-sm text-red-600 dark:text-red-400">Failed to load PDF</p>
-              </div>
-            }
-          >
-            <Page
-              pageNumber={pageNum}
-              width={Math.min(renderWidth - 16, 800)}
+          <div ref={pageWrapRef}>
+            <Document
+              file={proxiedUrl}
+              onLoadSuccess={({ numPages: total }) => setNumPages(total)}
               loading={
                 <div className="flex min-h-[300px] items-center justify-center">
                   <div className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white" />
                 </div>
               }
-            />
-          </Document>
+              error={
+                <div className="flex min-h-[200px] items-center justify-center p-6">
+                  <p className="text-sm text-red-600 dark:text-red-400">Failed to load PDF</p>
+                </div>
+              }
+            >
+              <Page
+                pageNumber={pageNum}
+                width={Math.min(renderWidth - 16, 800)}
+                onRenderSuccess={applyHighlight}
+                loading={
+                  <div className="flex min-h-[300px] items-center justify-center">
+                    <div className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white" />
+                  </div>
+                }
+              />
+            </Document>
+          </div>
         </div>
       </div>
     </div>

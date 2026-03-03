@@ -70,6 +70,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [savingBookmark, setSavingBookmark] = useState(false);
+  const [hlPopover, setHlPopover] = useState<{ id: string; x: number; y: number; text: string; color: string } | null>(null);
 
   const pdfDocRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
   const extractedPagesRef = useRef<Set<number>>(new Set());
@@ -427,6 +428,18 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
           mark.style.backgroundColor = hlColorMap[hl.color ?? "yellow"] ?? hlColorMap.yellow;
           mark.style.borderRadius = "2px";
           mark.style.padding = "0";
+          mark.style.cursor = "pointer";
+          mark.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const rect = mark.getBoundingClientRect();
+            setHlPopover({
+              id: hl.id,
+              x: rect.left + rect.width / 2,
+              y: rect.top,
+              text: hl.highlightText?.slice(0, 60) ?? "",
+              color: hl.color ?? "yellow",
+            });
+          });
           range.surroundContents(mark);
         } catch {
           // surroundContents can fail if range crosses element boundaries
@@ -445,6 +458,20 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
       return () => clearTimeout(t);
     }
   }, [highlightsOnPage, applyHighlightOverlays]);
+
+  // Dismiss highlight popover on click outside or page change
+  useEffect(() => {
+    if (!hlPopover) return;
+    function dismiss() { setHlPopover(null); }
+    window.addEventListener("click", dismiss);
+    return () => window.removeEventListener("click", dismiss);
+  }, [hlPopover]);
+  useEffect(() => { setHlPopover(null); }, [pageNumber]);
+
+  const removeHighlight = useCallback(async (id: string) => {
+    setHlPopover(null);
+    await deleteItem(id);
+  }, [deleteItem]);
 
   return (
     <div ref={containerRef} className="flex flex-col items-center gap-2 w-full">
@@ -674,6 +701,28 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
 
       {loading && !error && (
         <p className="text-sm text-gray-500 animate-pulse">Loading document…</p>
+      )}
+
+      {/* Highlight tap popover */}
+      {hlPopover && (
+        <div
+          className="fixed z-[60] -translate-x-1/2 -translate-y-full animate-in fade-in"
+          style={{ left: hlPopover.x, top: hlPopover.y - 8 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-xl dark:border-gray-700 dark:bg-gray-800 flex items-center gap-2.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-[150px] truncate">
+              &ldquo;{hlPopover.text}&rdquo;
+            </p>
+            <button
+              onClick={() => removeHighlight(hlPopover.id)}
+              className="rounded-md border border-red-200 dark:border-red-800 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition whitespace-nowrap"
+            >
+              Remove
+            </button>
+          </div>
+          <div className="mx-auto w-2.5 h-2.5 rotate-45 bg-white border-b border-r border-gray-200 dark:border-gray-700 dark:bg-gray-800 -mt-[5px]" />
+        </div>
       )}
     </div>
   );
