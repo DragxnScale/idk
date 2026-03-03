@@ -65,6 +65,7 @@ function StudySessionInner() {
   const [musicDuration, setMusicDuration] = useState(0);
   const ytPlayerRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ytKickedRef = useRef(false);
 
   const focusedMinutesRef = useRef(0);
   const lastSavedRef = useRef(0);
@@ -167,9 +168,27 @@ function StudySessionInner() {
         height: "1",
         width: "1",
         videoId: ytId,
-        playerVars: { autoplay: musicPlaying ? 1 : 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
-          onReady: () => setMusicReady(true),
+          onReady: () => {
+            setMusicReady(true);
+            // Auto-kick: mute → play → quickly seek to wake the player up
+            const p = ytPlayerRef.current;
+            if (p && !ytKickedRef.current) {
+              ytKickedRef.current = true;
+              try {
+                p.mute?.();
+                p.playVideo?.();
+                setTimeout(() => {
+                  try {
+                    p.seekTo?.(0, true);
+                    p.unMute?.();
+                    if (!musicPlaying) p.pauseVideo?.();
+                  } catch {}
+                }, 300);
+              } catch {}
+            }
+          },
           onStateChange: (e: any) => {
             if (e.data === (window as any).YT.PlayerState.ENDED) {
               handleTrackEnd();
@@ -236,8 +255,14 @@ function StudySessionInner() {
     setMusicPlaying(next);
     if (currentIsYt && ytPlayerRef.current) {
       try {
-        if (next) ytPlayerRef.current.playVideo?.();
-        else ytPlayerRef.current.pauseVideo?.();
+        const p = ytPlayerRef.current;
+        if (next) {
+          p.unMute?.();
+          p.setVolume?.(100);
+          p.playVideo?.();
+        } else {
+          p.pauseVideo?.();
+        }
       } catch {}
     } else if (audioRef.current && currentTrack) {
       if (next) audioRef.current.play().catch(() => {});
