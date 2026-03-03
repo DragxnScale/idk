@@ -497,7 +497,7 @@ function StudySessionInner() {
                             disabled={isFull}
                             className={`rounded-md border px-3 py-1.5 text-sm transition ${
                               isSelected
-                                ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                                ? "btn-primary border-black dark:border-white"
                                 : isFull
                                 ? "border-gray-200 text-gray-300 cursor-not-allowed dark:border-gray-700 dark:text-gray-600"
                                 : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
@@ -533,7 +533,7 @@ function StudySessionInner() {
             <button
               type="submit"
               disabled={!selectedDoc}
-              className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40"
             >
               Start session
             </button>
@@ -689,7 +689,7 @@ function StudySessionInner() {
                   setInactivityPrompt(false);
                   setIsPaused(false);
                 }}
-                className="w-full rounded-lg bg-black px-4 py-3 text-sm font-medium text-white dark:bg-white dark:text-black"
+                className="btn-primary w-full rounded-lg px-4 py-3 text-sm font-medium"
               >
                 Yes, I&apos;m here!
               </button>

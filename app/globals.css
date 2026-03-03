@@ -45,6 +45,58 @@ body {
   }
 }
 
+/* Themed utility classes */
+.btn-primary {
+  background-color: var(--theme-primary);
+  color: var(--theme-primary-fg);
+}
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+}
+
+.text-accent {
+  color: var(--theme-accent);
+}
+
+.border-accent {
+  border-color: var(--theme-accent) !important;
+}
+
+.bg-accent {
+  background-color: var(--theme-accent) !important;
+}
+
+.ring-accent\/20 {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent) 20%, transparent);
+}
+
+/* Active/selected states for theme */
+.btn-primary-outline {
+  border: 1px solid var(--theme-primary);
+  color: var(--theme-primary);
+  background: transparent;
+}
+.btn-primary-outline:hover {
+  background-color: var(--theme-primary);
+  color: var(--theme-primary-fg);
+}
+
+/* Stat card accent border on hover */
+.card-themed:hover {
+  border-color: var(--theme-accent);
+}
+
+/* Override dark mode defaults when theme is active */
+@media (prefers-color-scheme: dark) {
+  [data-theme]:not([data-theme="default"]):not([data-theme="midnight"]) {
+    --foreground: #ededed;
+    --background: #0a0a0a;
+  }
+}
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;

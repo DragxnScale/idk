@@ -49,7 +49,7 @@ export default function HistoryPage() {
           </div>
           <Link
             href="/study/session"
-            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
           >
             New session
           </Link>
@@ -74,7 +74,7 @@ export default function HistoryPage() {
             </p>
             <Link
               href="/study/session"
-              className="inline-block rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              className="btn-primary inline-block rounded-lg px-5 py-2.5 text-sm font-medium"
             >
               Start studying
             </Link>

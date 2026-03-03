@@ -120,7 +120,7 @@ export function QuizView({ questions, onComplete }: QuizViewProps) {
       {revealed && (
         <button
           onClick={handleNext}
-          className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+          className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium"
         >
           {currentIndex + 1 >= questions.length ? "See results" : "Next question"}
         </button>

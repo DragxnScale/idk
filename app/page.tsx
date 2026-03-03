@@ -18,7 +18,7 @@ export default function HomePage() {
             </Link>
             <Link
               href="/auth/signup"
-              className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              className="btn-primary rounded-lg px-4 py-1.5 text-sm font-medium"
             >
               Get started
             </Link>
@@ -42,7 +42,7 @@ export default function HomePage() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/auth/signup"
-              className="rounded-lg bg-black px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+              className="btn-primary rounded-lg px-6 py-3 text-sm font-medium shadow-sm transition"
             >
               Start studying free
             </Link>
@@ -106,7 +106,7 @@ export default function HomePage() {
           </p>
           <Link
             href="/auth/signup"
-            className="inline-block rounded-lg bg-black px-8 py-3 text-sm font-medium text-white shadow-sm dark:bg-white dark:text-black"
+            className="btn-primary inline-block rounded-lg px-8 py-3 text-sm font-medium shadow-sm"
           >
             Get started
           </Link>

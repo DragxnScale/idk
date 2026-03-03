@@ -222,7 +222,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={goalsStatus === "loading"}
-              className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
             >
               {goalsStatus === "loading" ? "Saving…" : "Save goals"}
             </button>
@@ -244,7 +244,7 @@ export default function SettingsPage() {
                 onClick={() => handleZoomChange(preset.value)}
                 className={`rounded-lg border py-3 text-sm font-medium transition ${
                   zoom === preset.value
-                    ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                    ? "btn-primary border-accent"
                     : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
                 }`}
               >
@@ -360,7 +360,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={pwStatus === "loading"}
-              className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
             >
               {pwStatus === "loading" ? "Saving…" : "Save exit password"}
             </button>
@@ -397,7 +397,7 @@ export default function SettingsPage() {
                   disabled={themeSaving}
                   className={`rounded-lg border py-2.5 text-xs font-medium transition ${
                     isActive
-                      ? "border-black ring-2 ring-black/20 dark:border-white dark:ring-white/20"
+                      ? "border-accent ring-2 ring-accent/20"
                       : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
                   }`}
                 >

@@ -52,7 +52,7 @@ export function VisibilityGuard({
             <button
               type="button"
               onClick={handleResume}
-              className="mt-5 w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              className="btn-primary mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-medium"
             >
               Resume
             </button>

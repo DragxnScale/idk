@@ -750,7 +750,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
               autoFocus
               className="flex-1 rounded-md border border-gray-300 bg-transparent px-2.5 py-1.5 text-sm dark:border-gray-600"
             />
-            <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">
+            <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="btn-primary rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40">
               {searchLoading ? "…" : "Search"}
             </button>
           </form>

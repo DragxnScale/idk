@@ -249,7 +249,7 @@ function DrivePanel({
             type="button"
             onClick={handleImport}
             disabled={importing || !importUrl.trim()}
-            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+            className="btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
           >
             {importing ? "Importing…" : "Import"}
           </button>
@@ -487,7 +487,7 @@ function UploadPanel({
         <button
           type="button"
           onClick={uploadAll}
-          className="w-full rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+          className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium"
         >
           Upload {pending.length} PDF{pending.length !== 1 ? "s" : ""}
         </button>
@@ -657,7 +657,7 @@ function TextbookPanel({
                             extracting
                               ? "border-gray-200 text-gray-400 cursor-wait dark:border-gray-700 dark:text-gray-600"
                               : selectedChapter === ch
-                                ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                                ? "btn-primary border-accent"
                                 : isRead
                                   ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                                   : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
@@ -740,7 +740,7 @@ function TextbookPanel({
                               chapterPageRanges: activeRanges,
                             });
                           }}
-                          className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                          className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium"
                         >
                           Read p. {startPage}–{endPage}
                         </button>
@@ -790,7 +790,7 @@ function TextbookPanel({
                             sourceUrl: selectedBook.sourceUrl ?? undefined,
                           });
                         }}
-                        className="w-full rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+                        className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium"
                       >
                         Read p. {customStart ?? 1}–{customEnd ?? 50}
                       </button>

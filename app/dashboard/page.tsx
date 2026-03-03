@@ -186,7 +186,7 @@ export default function DashboardPage() {
           </pre>
           <button
             onClick={() => window.location.reload()}
-            className="inline-block rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="btn-primary inline-block rounded-lg px-5 py-2.5 text-sm font-medium"
           >
             Retry
           </button>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
           </p>
           <Link
             href="/auth/signin"
-            className="inline-block rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="btn-primary inline-block rounded-lg px-5 py-2.5 text-sm font-medium"
           >
             Sign in
           </Link>
@@ -244,7 +244,7 @@ export default function DashboardPage() {
             </Link>
             <Link
               href="/study/session"
-              className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium"
             >
               New session
             </Link>
@@ -363,7 +363,7 @@ export default function DashboardPage() {
                     <div
                       className={`w-full max-w-[2rem] rounded-t-md transition-all ${
                         isToday
-                          ? "bg-black dark:bg-white"
+                          ? "bg-accent"
                           : "bg-gray-300 dark:bg-gray-700"
                       }`}
                       style={{ height: `${Math.max(height, 4)}%` }}
@@ -543,7 +543,7 @@ export default function DashboardPage() {
               <div className="flex gap-1 flex-wrap">
                 <button
                   onClick={() => setTagFilter(null)}
-                  className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${!tagFilter ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-300 dark:border-gray-600"}`}
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] border transition ${!tagFilter ? "btn-primary border-black dark:border-white" : "border-gray-300 dark:border-gray-600"}`}
                 >
                   All
                 </button>
@@ -742,7 +742,7 @@ function AddPlanModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item: P
           </div>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
-            <button type="submit" disabled={saving} className="flex-1 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">{saving ? "Adding…" : "Add"}</button>
+            <button type="submit" disabled={saving} className="btn-primary flex-1 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Adding…" : "Add"}</button>
           </div>
         </form>
       </div>
@@ -795,7 +795,7 @@ function AddCountdownModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it
           </div>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
-            <button type="submit" disabled={saving || !title || !examDate} className="flex-1 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">{saving ? "Adding…" : "Add"}</button>
+            <button type="submit" disabled={saving || !title || !examDate} className="btn-primary flex-1 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">{saving ? "Adding…" : "Add"}</button>
           </div>
         </form>
       </div>
@@ -805,7 +805,7 @@ function AddCountdownModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900">
+    <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900 card-themed transition">
       <p className="text-2xl font-bold">{value}</p>
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
     </div>
@@ -862,7 +862,7 @@ function MessageModal({
                 <div
                   className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
                     isMe
-                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      ? "btn-primary"
                       : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
                   }`}
                 >
@@ -899,7 +899,7 @@ function MessageModal({
               <button
                 onClick={onSend}
                 disabled={msgSending || !msgText.trim()}
-                className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+                className="btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
               >
                 {msgSending ? "…" : "Send"}
               </button>
@@ -935,7 +935,7 @@ function GoalBar({
       </div>
       <div className="h-2 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${done ? "bg-green-500" : "bg-black dark:bg-white"}`}
+          className={`h-full rounded-full transition-all duration-500 ${done ? "bg-green-500" : "bg-accent"}`}
           style={{ width: `${pct}%` }}
         />
       </div>

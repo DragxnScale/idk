@@ -302,7 +302,7 @@ export default function SessionSummaryPage() {
                 <button
                   onClick={generateQuiz}
                   disabled={quizLoading}
-                  className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+                  className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-50"
                 >
                   {quizLoading ? "Generating…" : "Generate Quiz & Review"}
                 </button>
@@ -467,7 +467,7 @@ export default function SessionSummaryPage() {
                 <button
                   onClick={generateQuiz}
                   disabled={quizLoading}
-                  className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+                  className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-50"
                 >
                   {quizLoading ? "Generating…" : "Generate Quiz"}
                 </button>
@@ -502,7 +502,7 @@ export default function SessionSummaryPage() {
         <div className="mt-10 flex flex-wrap gap-4 text-sm border-t border-gray-200 pt-6 dark:border-gray-800">
           <Link
             href="/study/session"
-            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
           >
             New session
           </Link>
