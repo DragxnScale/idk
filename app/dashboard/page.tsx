@@ -103,17 +103,31 @@ export default function DashboardPage() {
   const [unreadMsgCount, setUnreadMsgCount] = useState(0);
 
   useEffect(() => {
-    fetch("/api/study/stats")
-      .then(async (r) => {
-        if (r.ok) return r.json();
-        if (r.status === 401) return null;
-        const body = await r.text().catch(() => "");
-        setFetchError(`Server error (${r.status}): ${body.slice(0, 300)}`);
-        return null;
-      })
-      .then(setStats)
-      .catch((e) => setFetchError(`Fetch failed: ${e}`))
-      .finally(() => setLoading(false));
+    async function fetchStats(retries = 3): Promise<StatsData | null> {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const r = await fetch("/api/study/stats");
+          if (r.ok) return r.json();
+          if (r.status === 401) return null;
+          if (i < retries - 1 && r.status >= 500) {
+            await new Promise((ok) => setTimeout(ok, 1000 * (i + 1)));
+            continue;
+          }
+          const body = await r.text().catch(() => "");
+          setFetchError(`Server error (${r.status}): ${body.slice(0, 300)}`);
+          return null;
+        } catch (e) {
+          if (i < retries - 1) {
+            await new Promise((ok) => setTimeout(ok, 1000 * (i + 1)));
+            continue;
+          }
+          setFetchError(`Fetch failed: ${e}`);
+          return null;
+        }
+      }
+      return null;
+    }
+    fetchStats().then(setStats).finally(() => setLoading(false));
 
     fetch("/api/bookmarks/all")
       .then((r) => (r.ok ? r.json() : []))
