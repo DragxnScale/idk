@@ -721,39 +721,31 @@ function UploadTab() {
     if (title) setIdentifier(`bowlbeacon-${slugify(title)}`);
   }, [title]);
 
-  async function handleArchiveLinkPaste() {
+  async function handleLinkImport() {
     const url = archiveLink.trim();
     if (!url) return;
     setArchiveLinkError(null);
 
-    const isArchiveUrl = url.includes("archive.org/");
-    if (!isArchiveUrl) {
-      setArchiveLinkError("Paste an archive.org link (e.g. https://archive.org/download/identifier/file.pdf)");
-      return;
-    }
-
     const archiveMatch = url.match(/archive\.org\/download\/([^/]+)\/([^/?#]+)/);
-    let archId = "";
-    let archTitle = "";
-
     if (archiveMatch) {
-      archId = archiveMatch[1];
-      archTitle = decodeURIComponent(archiveMatch[2]).replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+      if (!identifier) setIdentifier(archiveMatch[1]);
+      const archTitle = decodeURIComponent(archiveMatch[2]).replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+      if (archTitle && !title) setTitle(archTitle);
     } else {
       const detailsMatch = url.match(/archive\.org\/details\/([^/?#]+)/);
-      if (detailsMatch) archId = detailsMatch[1];
+      if (detailsMatch && !identifier) setIdentifier(detailsMatch[1]);
+      const filename = decodeURIComponent(url.split("/").pop() ?? "").replace(/\.pdf$/i, "").replace(/[-_]/g, " ");
+      if (filename && !title) setTitle(filename);
     }
-
-    if (archId) setIdentifier(archId);
-    if (archTitle && !title) setTitle(archTitle);
 
     setArchiveDownloading(true);
 
     try {
+      const slug = identifier || `bowlbeacon-${slugify(title || "import")}`;
       const res = await fetch("/api/admin/download-store", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, identifier: archId }),
+        body: JSON.stringify({ url, identifier: slug }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Download failed");
@@ -771,8 +763,9 @@ function UploadTab() {
     }
   }
 
-  async function handleArchiveLinkCatalog() {
-    if (!archiveUrl || !title || !identifier) return;
+  async function handleAddToCatalog() {
+    if (!archiveUrl || !title) return;
+    const slug = identifier || `bowlbeacon-${slugify(title)}`;
     let parsedChapters: Record<string, [number, number]> | null = null;
     try {
       parsedChapters = JSON.parse(chaptersJson);
@@ -785,12 +778,12 @@ function UploadTab() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: identifier,
+        id: slug,
         title,
         edition: edition || null,
         isbn: isbn || null,
         sourceType: "oer",
-        sourceUrl: archiveUrl, // now a Blob URL, permanently stored
+        sourceUrl: archiveUrl,
         chapterPageRanges: parsedChapters,
       }),
     });
@@ -802,7 +795,7 @@ function UploadTab() {
   }
 
   async function handleUpload() {
-    if (!file || !title || !identifier) {
+    if (!file || !title) {
       setError("Please fill in Title and select a PDF file.");
       return;
     }
@@ -823,75 +816,52 @@ function UploadTab() {
     setDebugLog([]);
 
     const filename = file.name.replace(/\s+/g, "_");
-    const blobPathname = `admin-staging/${identifier}/${filename}`;
+    const slug = identifier || `bowlbeacon-${slugify(title)}`;
+    const blobPathname = `public/${slug}/${filename}`;
 
-    // Step 1: Upload PDF directly from browser to Vercel Blob CDN.
-    // The upload() SDK sends the file browser→CDN, bypassing all functions.
-    // Our /api/admin/blob-token endpoint generates the token and short-circuits
-    // the completion callback with an immediate 200.
     setStatusLabel("Uploading to storage…");
     addLog(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
-    addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      addLog("Uploading via Vercel Blob SDK…");
       const blob = await upload(blobPathname, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-token",
         multipart: true,
         onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage * 0.7));
+          setProgress(Math.round(percentage * 0.9));
           if (percentage % 25 === 0) addLog(`Progress: ${percentage}%`);
         },
       });
       blobUrl = blob.url;
-      setProgress(70);
-      addLog(`Upload complete! URL: ${blobUrl}`);
+      setProgress(90);
+      addLog(`Stored: ${blobUrl}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload to storage failed";
       addLog(`UPLOAD ERROR: ${msg}`);
-      if (e instanceof Error && e.stack) addLog(`Stack: ${e.stack.split("\n").slice(0, 3).join(" | ")}`);
       setError(msg);
       setStatus("error");
       return;
     }
 
-    // Step 2: Server fetches from Vercel Blob and streams to archive.org (server-to-server)
-    setStatusLabel("Transferring to Archive.org…");
-    setProgress(75);
-    const archiveRes = await fetch("/api/admin/archive-upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ blobUrl, identifier, filename, title, edition, isbn }),
-    });
-
-    if (!archiveRes.ok) {
-      const data = await archiveRes.json().catch(() => ({}));
-      setError(data.error ?? `Archive.org transfer failed (${archiveRes.status})`);
-      setStatus("error");
-      return;
-    }
-
-    setProgress(95);
-    const publicUrl = `https://archive.org/download/${identifier}/${filename}`;
-    setArchiveUrl(publicUrl);
+    setArchiveUrl(blobUrl);
 
     if (addToCatalog && parsedChapters) {
+      setStatusLabel("Adding to catalog…");
       const catalogRes = await fetch("/api/admin/catalog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: identifier,
+          id: slug,
           title,
           edition: edition || null,
           isbn: isbn || null,
           sourceType: "oer",
-          sourceUrl: publicUrl,
+          sourceUrl: blobUrl,
           chapterPageRanges: parsedChapters,
         }),
       });
       if (!catalogRes.ok) {
-        setError("Uploaded to archive.org but failed to add to textbook catalog.");
+        setError("Uploaded but failed to add to textbook catalog.");
         setStatus("error");
         return;
       }
@@ -921,30 +891,30 @@ function UploadTab() {
   return (
     <div className="max-w-2xl">
       <p className="text-sm text-gray-400 mb-6">
-        Upload a PDF to your Archive.org account and optionally add it to the public textbook catalog.
-        Or paste an existing Archive.org link to skip the upload.
+        Upload a PDF to permanent storage and optionally add it to the public textbook catalog.
+        Or paste a link to import an existing PDF.
       </p>
 
-      {/* Archive.org link paste */}
+      {/* Import from URL */}
       {status === "idle" && (
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-6 space-y-3">
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-            Already on Archive.org?
+            Import from link
           </p>
           <p className="text-xs text-gray-500">
-            Paste the download link — the PDF will be downloaded and stored permanently
+            Paste any PDF link (archive.org, direct URL, etc.) — the file will be downloaded and stored permanently
           </p>
           <div className="flex gap-2">
             <input
               type="url"
               value={archiveLink}
               onChange={(e) => { setArchiveLink(e.target.value); setArchiveLinkError(null); }}
-              onKeyDown={(e) => e.key === "Enter" && handleArchiveLinkPaste()}
-              placeholder="https://archive.org/download/identifier/file.pdf"
+              onKeyDown={(e) => e.key === "Enter" && handleLinkImport()}
+              placeholder="https://example.com/textbook.pdf"
               className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm placeholder-gray-600 focus:outline-none focus:border-gray-500"
             />
             <button
-              onClick={handleArchiveLinkPaste}
+              onClick={handleLinkImport}
               disabled={!archiveLink.trim() || archiveDownloading}
               className="rounded-lg bg-white text-black px-4 py-2 text-sm font-medium hover:bg-gray-200 transition disabled:opacity-40"
             >
@@ -953,15 +923,15 @@ function UploadTab() {
           </div>
           {archiveLinkError && <p className="text-xs text-red-400">{archiveLinkError}</p>}
           <div className="border-t border-gray-800 pt-3 mt-3">
-            <p className="text-xs text-gray-500 text-center">— or upload a new file below —</p>
+            <p className="text-xs text-gray-500 text-center">— or upload a file below —</p>
           </div>
         </div>
       )}
 
       {status === "done" ? (
         <div className="rounded-xl border border-green-700 bg-green-900/20 p-6 space-y-3">
-          <p className="text-green-400 font-semibold text-base">Ready!</p>
-          <p className="text-sm text-gray-300">Archive.org link:</p>
+          <p className="text-green-400 font-semibold text-base">Stored!</p>
+          <p className="text-sm text-gray-300">Permanent storage link:</p>
           <a href={archiveUrl!} target="_blank" rel="noopener noreferrer" className="block text-sm text-blue-400 underline break-all">{archiveUrl}</a>
           {addToCatalog && <p className="text-sm text-gray-400">Also added to the textbook catalog — users can now find it in the document picker.</p>}
 
@@ -985,7 +955,7 @@ function UploadTab() {
                 />
                 {error && <p className="text-xs text-red-400">{error}</p>}
                 <button
-                  onClick={handleArchiveLinkCatalog}
+                  onClick={handleAddToCatalog}
                   disabled={!title}
                   className="w-full rounded-lg bg-white text-black py-2 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40"
                 >
@@ -1064,7 +1034,7 @@ function UploadTab() {
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">Archive.org Identifier *</label>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">Storage Identifier</label>
               <input
                 type="text"
                 value={identifier}
@@ -1072,7 +1042,7 @@ function UploadTab() {
                 placeholder="auto-generated from title"
                 className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm placeholder-gray-600 focus:outline-none focus:border-gray-500 font-mono"
               />
-              <p className="text-xs text-gray-600 mt-1">Must be unique on archive.org. Auto-generated but you can edit it.</p>
+              <p className="text-xs text-gray-600 mt-1">Used to organize files in storage. Auto-generated but you can edit it.</p>
             </div>
           </div>
 
@@ -1139,10 +1109,10 @@ function UploadTab() {
 
           <button
             onClick={handleUpload}
-            disabled={status === "uploading" || !file || !title || !identifier}
+            disabled={status === "uploading" || !file || !title}
             className="w-full rounded-lg bg-white text-black py-2.5 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {status === "uploading" ? `${statusLabel || "Uploading…"} ${progress}%` : "Upload to Archive.org"}
+            {status === "uploading" ? `${statusLabel || "Uploading…"} ${progress}%` : "Upload & store"}
           </button>
         </div>
       )}
