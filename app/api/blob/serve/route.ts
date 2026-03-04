@@ -2,6 +2,8 @@ import { head } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
+export const maxDuration = 120;
+
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -16,7 +18,19 @@ export async function GET(request: Request) {
 
   try {
     const blob = await head(url);
-    return NextResponse.redirect(blob.downloadUrl);
+    const pdfRes = await fetch(blob.downloadUrl);
+    if (!pdfRes.ok) {
+      return NextResponse.json({ error: `Blob CDN returned ${pdfRes.status}` }, { status: 502 });
+    }
+
+    return new Response(pdfRes.body, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Length": pdfRes.headers.get("Content-Length") || "",
+        "Cache-Control": "private, max-age=3600",
+        "Accept-Ranges": "bytes",
+      },
+    });
   } catch (e) {
     console.error("[blob/serve] error:", e);
     return NextResponse.json(
