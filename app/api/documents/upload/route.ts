@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   const filename = `${session.user.id}/${id}.pdf`;
 
-  const blob = await put(filename, file, { access: "public" });
+  const blob = await put(filename, file, { access: "private", contentType: "application/pdf" });
 
   const now = new Date();
   await db.insert(documents).values({

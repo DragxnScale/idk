@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     const filename = `${session.user.id}/${id}.pdf`;
 
     const blob = await put(filename, fetchRes.body!, {
-      access: "public",
+      access: "private",
       contentType: "application/pdf",
     });
 
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
       const id = crypto.randomUUID();
       const title = titleFromUrl(url);
       const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(rawBytes), {
-        access: "public",
+        access: "private",
         contentType: "application/pdf",
       });
       const now = new Date();
@@ -169,7 +169,7 @@ export async function POST(request: Request) {
       const id = crypto.randomUUID();
       const title = titleFromUrl(url, name.split("/").pop());
       const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(bytes), {
-        access: "public",
+        access: "private",
         contentType: "application/pdf",
       });
       await db.insert(documents).values({

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -815,24 +814,67 @@ function UploadTab() {
     setProgress(0);
     setDebugLog([]);
 
+    const CHUNK_SIZE = 4 * 1024 * 1024;
     const filename = file.name.replace(/\s+/g, "_");
     const slug = identifier || `bowlbeacon-${slugify(title)}`;
     const blobPathname = `public/${slug}/${filename}`;
 
-    setStatusLabel("Uploading to storage…");
+    setStatusLabel("Starting upload…");
     addLog(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+
     let blobUrl: string;
     try {
-      const blob = await upload(blobPathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/admin/blob-token",
-        multipart: true,
-        onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage * 0.9));
-          if (percentage % 25 === 0) addLog(`Progress: ${percentage}%`);
-        },
-      });
-      blobUrl = blob.url;
+      const createRes = await fetch(
+        `/api/blob/multipart?action=create&pathname=${encodeURIComponent(blobPathname)}`,
+        { method: "POST" }
+      );
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error(err.error || `Create failed (${createRes.status})`);
+      }
+      const { uploadId, key } = await createRes.json();
+
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const parts: { etag: string; partNumber: number }[] = [];
+
+      for (let chunk = 0; chunk < totalChunks; chunk++) {
+        const start = chunk * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const blob = file.slice(start, end);
+        const partNumber = chunk + 1;
+        const pct = Math.round(((chunk + 0.5) / totalChunks) * 85);
+        setProgress(pct);
+        setStatusLabel(`Uploading… ${pct}% (part ${partNumber}/${totalChunks})`);
+        if (partNumber % 5 === 1) addLog(`Uploading part ${partNumber}/${totalChunks}`);
+
+        const partRes = await fetch(
+          `/api/blob/multipart?action=upload-part&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}&partNumber=${partNumber}`,
+          { method: "POST", body: blob }
+        );
+        if (!partRes.ok) {
+          const err = await partRes.json().catch(() => ({}));
+          throw new Error(err.error || `Part ${partNumber} failed (${partRes.status})`);
+        }
+        const partData = await partRes.json();
+        parts.push({ etag: partData.etag, partNumber: partData.partNumber });
+      }
+
+      setProgress(88);
+      setStatusLabel("Finishing upload…");
+      const completeRes = await fetch(
+        `/api/blob/multipart?action=complete&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parts }),
+        }
+      );
+      if (!completeRes.ok) {
+        const err = await completeRes.json().catch(() => ({}));
+        throw new Error(err.error || `Complete failed (${completeRes.status})`);
+      }
+      const completeData = await completeRes.json();
+      blobUrl = completeData.url;
       setProgress(90);
       addLog(`Stored: ${blobUrl}`);
     } catch (e) {
@@ -847,6 +889,7 @@ function UploadTab() {
 
     if (addToCatalog && parsedChapters) {
       setStatusLabel("Adding to catalog…");
+      setProgress(95);
       const catalogRes = await fetch("/api/admin/catalog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

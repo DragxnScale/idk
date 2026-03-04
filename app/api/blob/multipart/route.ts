@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     try {
       const mpu = await createMultipartUpload(pathname, {
-        access: "public",
+        access: "private",
         contentType: "application/pdf",
       });
       return NextResponse.json({
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     try {
       const part = await uploadPart(key, request.body, {
-        access: "public",
+        access: "private",
         uploadId,
         key,
         partNumber,
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      const blob = await completeMultipartUpload(key, parts, { access: "public", uploadId, key });
+      const blob = await completeMultipartUpload(key, parts, { access: "private", uploadId, key });
       return NextResponse.json({ url: blob.url, pathname: blob.pathname });
     } catch (e) {
       console.error("[multipart] complete error:", e);
