@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { upload } from "@vercel/blob/client";
+// Vercel Blob client SDK removed — using direct server upload instead
 import Link from "next/link";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -814,21 +814,38 @@ function UploadTab() {
     addLog(`Pathname: ${blobPathname}`);
     let blobUrl: string;
     try {
-      addLog("Uploading via Vercel Blob SDK…");
-      const uploadPromise = upload(blobPathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/admin/blob-token",
-        multipart: true,
-        onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage * 0.7));
-          if (percentage % 25 === 0) addLog(`Progress: ${percentage}%`);
-        },
+      addLog("Uploading via direct stream…");
+      const streamUrl = `/api/admin/blob-stream?pathname=${encodeURIComponent(blobPathname)}`;
+
+      blobUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 70);
+            setProgress(pct);
+            if (pct % 20 === 0) addLog(`Progress: ${pct}%`);
+          }
+        };
+        xhr.onload = () => {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && data.url) {
+              resolve(data.url);
+            } else {
+              reject(new Error(data.error || `Upload failed (${xhr.status})`));
+            }
+          } catch {
+            reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText.slice(0, 200)}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.ontimeout = () => reject(new Error("Upload timed out. Try the archive.org link paste."));
+        xhr.timeout = 300_000;
+        xhr.open("POST", streamUrl);
+        xhr.setRequestHeader("Content-Type", "application/pdf");
+        xhr.send(file);
       });
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Upload timed out after 2 minutes. Try using the archive.org link paste option above instead.")), 120_000)
-      );
-      const blob = await Promise.race([uploadPromise, timeout]);
-      blobUrl = blob.url;
+
       setProgress(70);
       addLog(`Upload complete! URL: ${blobUrl}`);
     } catch (e) {
