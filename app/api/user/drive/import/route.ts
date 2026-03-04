@@ -7,8 +7,29 @@ import { documents } from "@/lib/db/schema";
 
 export const maxDuration = 120;
 
-// ZIP files must fit in memory to be unzipped — cap at 500 MB
 const ZIP_MAX_BYTES = 500 * 1024 * 1024;
+
+async function resolveArchiveUrl(url: string): Promise<string> {
+  const detailsMatch = url.match(/archive\.org\/details\/([^/?#]+)/);
+  if (!detailsMatch) return url;
+
+  const identifier = detailsMatch[1];
+  try {
+    const metaRes = await fetch(
+      `https://archive.org/metadata/${identifier}/files`,
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; BowlBeacon/1.0)" } }
+    );
+    if (!metaRes.ok) return url;
+    const meta = await metaRes.json();
+    const pdfFile = (meta.result ?? []).find(
+      (f: { name: string }) => f.name.toLowerCase().endsWith(".pdf")
+    );
+    if (pdfFile) {
+      return `https://archive.org/download/${identifier}/${encodeURIComponent(pdfFile.name)}`;
+    }
+  } catch { /* fall through */ }
+  return url;
+}
 
 interface ImportedDoc {
   id: string;
@@ -30,10 +51,12 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const url: string = (body.url ?? "").trim();
+  let url: string = (body.url ?? "").trim();
   if (!url) {
     return NextResponse.json({ error: "url is required" }, { status: 400 });
   }
+
+  url = await resolveArchiveUrl(url);
 
   let fetchRes: Response;
   try {
@@ -59,7 +82,11 @@ export async function POST(request: Request) {
   const lowerUrl = url.toLowerCase();
 
   const looksLikeZip = contentType.includes("zip") || lowerUrl.endsWith(".zip");
-  const looksLikePdf = contentType.includes("pdf") || lowerUrl.endsWith(".pdf");
+  const isOctetStream = contentType.includes("octet-stream");
+  const looksLikePdf =
+    contentType.includes("pdf") ||
+    lowerUrl.endsWith(".pdf") ||
+    (isOctetStream && lowerUrl.includes("archive.org/"));
 
   // ── Direct PDF: stream response body straight to Vercel Blob ──────────
   // No buffering — the file never sits in server memory.

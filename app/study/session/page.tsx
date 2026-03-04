@@ -499,6 +499,8 @@ function StudySessionInner() {
       return `/api/documents/${selectedDoc.documentId}/file`;
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
+      const isBlob = selectedDoc.sourceUrl.includes("vercel-storage.com") || selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
+      if (isBlob) return selectedDoc.sourceUrl;
       return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
     }
     return null;

@@ -197,9 +197,7 @@ function DrivePanel({
     setImporting(true);
     setImportError(null);
     try {
-      const isArchiveOrg = url.includes("archive.org/");
-      const endpoint = isArchiveOrg ? "/api/user/drive/link" : "/api/user/drive/import";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/user/drive/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -237,7 +235,7 @@ function DrivePanel({
           Import from link
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-500">
-          Paste an archive.org link, PDF URL, or ZIP file — archive.org links work instantly
+          Paste an archive.org link, PDF URL, or ZIP file — files are downloaded and stored permanently
         </p>
         <div className="flex gap-2">
           <input
@@ -345,25 +343,23 @@ function UploadPanel({
     setLinking(true);
     setLinkError(null);
     try {
-      const res = await fetch("/api/user/drive/link", {
+      const res = await fetch("/api/user/drive/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, title: linkTitle.trim() || undefined }),
+        body: JSON.stringify({ url }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setLinkError(data.error ?? "Failed to add link");
+        setLinkError(data.error ?? "Failed to import");
         return;
       }
-      const isExternal = !url.includes("vercel-storage.com");
-      const sourceUrl = isExternal
-        ? `/api/proxy/pdf?url=${encodeURIComponent(url)}`
-        : url;
+      const imported = data.imported?.[0];
+      if (!imported) { setLinkError("No PDF found at that URL"); return; }
       onSelect({
         type: "upload",
-        documentId: data.id,
-        title: data.title,
-        sourceUrl,
+        documentId: imported.id,
+        title: linkTitle.trim() || imported.title,
+        sourceUrl: imported.fileUrl,
       });
     } catch {
       setLinkError("Network error. Please try again.");
@@ -534,7 +530,7 @@ function UploadPanel({
           Or paste a PDF link
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-500">
-          Paste an archive.org link or any direct PDF URL — no upload needed
+          Paste an archive.org link or any direct PDF URL — the file is downloaded and stored permanently
         </p>
         <input
           type="url"
@@ -556,7 +552,7 @@ function UploadPanel({
           disabled={linking || !linkUrl.trim()}
           className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
         >
-          {linking ? "Adding…" : "Use this link"}
+          {linking ? "Downloading & storing…" : "Download & use"}
         </button>
         {linkError && <p className="text-xs text-red-500">{linkError}</p>}
       </div>

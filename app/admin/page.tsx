@@ -714,13 +714,14 @@ function UploadTab() {
   // Archive.org link paste state
   const [archiveLink, setArchiveLink] = useState("");
   const [archiveLinkError, setArchiveLinkError] = useState<string | null>(null);
+  const [archiveDownloading, setArchiveDownloading] = useState(false);
 
   // Auto-generate identifier from title
   useEffect(() => {
     if (title) setIdentifier(`bowlbeacon-${slugify(title)}`);
   }, [title]);
 
-  function handleArchiveLinkPaste() {
+  async function handleArchiveLinkPaste() {
     const url = archiveLink.trim();
     if (!url) return;
     setArchiveLinkError(null);
@@ -745,10 +746,29 @@ function UploadTab() {
 
     if (archId) setIdentifier(archId);
     if (archTitle && !title) setTitle(archTitle);
-    setArchiveUrl(url);
-    setAddToCatalog(false);
-    setProgress(100);
-    setStatus("done");
+
+    setArchiveDownloading(true);
+
+    try {
+      const res = await fetch("/api/admin/download-store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, identifier: archId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Download failed");
+
+      setArchiveUrl(data.blobUrl);
+      setAddToCatalog(false);
+      setProgress(100);
+      setStatus("done");
+      addLog(`Downloaded & stored: ${data.blobUrl}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Download failed";
+      setArchiveLinkError(msg);
+    } finally {
+      setArchiveDownloading(false);
+    }
   }
 
   async function handleArchiveLinkCatalog() {
@@ -770,7 +790,7 @@ function UploadTab() {
         edition: edition || null,
         isbn: isbn || null,
         sourceType: "oer",
-        sourceUrl: archiveUrl,
+        sourceUrl: archiveUrl, // now a Blob URL, permanently stored
         chapterPageRanges: parsedChapters,
       }),
     });
@@ -893,6 +913,7 @@ function UploadTab() {
     setError(null);
     setArchiveLink("");
     setArchiveLinkError(null);
+    setArchiveDownloading(false);
     setAddToCatalog(true);
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -911,7 +932,7 @@ function UploadTab() {
             Already on Archive.org?
           </p>
           <p className="text-xs text-gray-500">
-            Paste the download link and skip the upload step entirely
+            Paste the download link — the PDF will be downloaded and stored permanently
           </p>
           <div className="flex gap-2">
             <input
@@ -924,10 +945,10 @@ function UploadTab() {
             />
             <button
               onClick={handleArchiveLinkPaste}
-              disabled={!archiveLink.trim()}
+              disabled={!archiveLink.trim() || archiveDownloading}
               className="rounded-lg bg-white text-black px-4 py-2 text-sm font-medium hover:bg-gray-200 transition disabled:opacity-40"
             >
-              Use link
+              {archiveDownloading ? "Downloading…" : "Download & store"}
             </button>
           </div>
           {archiveLinkError && <p className="text-xs text-red-400">{archiveLinkError}</p>}
