@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-// Vercel Blob client SDK removed — using direct server upload instead
+import { upload } from "@vercel/blob/client";
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -398,44 +398,33 @@ function UploadPanel({
         prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
       );
       try {
-        const filename = encodeURIComponent(file.name);
-        const encodedTitle = encodeURIComponent(title);
-        const url = `/api/blob/upload-direct?title=${encodedTitle}&filename=${filename}`;
-
-        const xhr = new XMLHttpRequest();
-        const uploadResult = await new Promise<{ id: string; title: string; fileUrl: string }>((resolve, reject) => {
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const pct = Math.round((e.loaded / e.total) * 100);
+        const blob = await upload(
+          `${encodeURIComponent(title)}.pdf`,
+          file,
+          {
+            access: "public",
+            handleUploadUrl: "/api/blob/token",
+            multipart: true,
+            onUploadProgress: ({ percentage }) => {
               setItems((prev) =>
-                prev.map((it, idx) => (idx === i ? { ...it, progress: pct } : it))
+                prev.map((it, idx) => (idx === i ? { ...it, progress: percentage } : it))
               );
-            }
-          };
-          xhr.onload = () => {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              if (xhr.status >= 200 && xhr.status < 300) {
-                resolve(data);
-              } else {
-                reject(new Error(data.error || `Upload failed (${xhr.status})`));
-              }
-            } catch {
-              reject(new Error(`Upload failed (${xhr.status})`));
-            }
-          };
-          xhr.onerror = () => reject(new Error("Network error during upload"));
-          xhr.ontimeout = () => reject(new Error("Upload timed out. Try the link paste option."));
-          xhr.timeout = 120_000;
-          xhr.open("POST", url);
-          xhr.setRequestHeader("Content-Type", "application/pdf");
-          xhr.send(file);
+            },
+          }
+        );
+
+        const reg = await fetch("/api/documents/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, fileUrl: blob.url }),
         });
+        const data = await reg.json();
+        if (!reg.ok) throw new Error(data.error || "Failed to register document");
 
         setItems((prev) =>
           prev.map((it, idx) =>
             idx === i
-              ? { ...it, status: "done", progress: 100, result: { id: uploadResult.id, title: uploadResult.title, fileUrl: uploadResult.fileUrl } }
+              ? { ...it, status: "done", progress: 100, result: { id: data.id, title, fileUrl: blob.url } }
               : it
           )
         );
