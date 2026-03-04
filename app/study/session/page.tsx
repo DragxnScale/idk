@@ -490,17 +490,27 @@ function StudySessionInner() {
 
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;
+
+    function serveBlobUrl(url: string): string {
+      if (url.includes(".private.blob.vercel-storage.com")) {
+        return `/api/blob/serve?url=${encodeURIComponent(url)}`;
+      }
+      return url;
+    }
+
     if (selectedDoc.type === "upload") {
       if (selectedDoc.sourceUrl) {
-        const isExternal = !selectedDoc.sourceUrl.startsWith("/") && !selectedDoc.sourceUrl.includes("vercel-storage.com") && !selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
+        const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
+        if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
+        const isExternal = !selectedDoc.sourceUrl.startsWith("/");
         if (isExternal) return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
         return selectedDoc.sourceUrl;
       }
       return `/api/documents/${selectedDoc.documentId}/file`;
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
-      const isBlob = selectedDoc.sourceUrl.includes("vercel-storage.com") || selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-      if (isBlob) return selectedDoc.sourceUrl;
+      const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
+      if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
       return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
     }
     return null;
