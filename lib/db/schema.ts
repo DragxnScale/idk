@@ -104,6 +104,7 @@ export const textbookCatalog = sqliteTable("textbook_catalog", {
   sourceType: text("source_type").notNull(), // "oer" | "user_upload"
   sourceUrl: text("source_url"),
   chapterPageRanges: text("chapter_page_ranges"), // JSON string
+  pageOffset: integer("page_offset").default(0), // book page 1 = PDF page (1 + offset)
   hidden: integer("hidden", { mode: "boolean" }).default(false),
   visibleToUserIds: text("visible_to_user_ids"), // JSON array of user ids who can see when hidden
   createdAt: integer("created_at", { mode: "timestamp" }),

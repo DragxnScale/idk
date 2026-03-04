@@ -24,6 +24,7 @@ export async function GET() {
       sourceType: b.sourceType,
       sourceUrl: b.sourceUrl ?? null,
       chapterPageRanges: b.chapterPageRanges ? JSON.parse(b.chapterPageRanges) : {},
+      pageOffset: b.pageOffset ?? 0,
       hidden: b.hidden ?? false,
       visibleToUserIds: b.visibleToUserIds ? JSON.parse(b.visibleToUserIds) : [],
       createdAt: b.createdAt?.toISOString() ?? null,
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const { id, title, edition, isbn, sourceType, sourceUrl, chapterPageRanges } = body;
+  const { id, title, edition, isbn, sourceType, sourceUrl, chapterPageRanges, pageOffset } = body;
 
   if (!id || !title || !sourceType) {
     return NextResponse.json({ error: "id, title and sourceType are required" }, { status: 400 });
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
       sourceType,
       sourceUrl: sourceUrl || null,
       chapterPageRanges: chapterPageRanges ? JSON.stringify(chapterPageRanges) : null,
+      pageOffset: typeof pageOffset === "number" ? pageOffset : 0,
       createdAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
         sourceType,
         sourceUrl: sourceUrl || null,
         chapterPageRanges: chapterPageRanges ? JSON.stringify(chapterPageRanges) : null,
+        pageOffset: typeof pageOffset === "number" ? pageOffset : 0,
       },
     });
 
@@ -74,19 +77,36 @@ export async function PATCH(request: Request) {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const { id, hidden, visibleToUserIds } = body;
-  if (!id || typeof hidden !== "boolean") {
-    return NextResponse.json({ error: "id and hidden (boolean) required" }, { status: 400 });
+  const { id } = body;
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  // Build a partial update object from whatever fields are provided
+  const updates: Record<string, unknown> = {};
+
+  if (typeof body.hidden === "boolean") {
+    updates.hidden = body.hidden;
+    updates.visibleToUserIds = Array.isArray(body.visibleToUserIds)
+      ? JSON.stringify(body.visibleToUserIds)
+      : "[]";
+  }
+  if (body.chapterPageRanges !== undefined) {
+    updates.chapterPageRanges = body.chapterPageRanges
+      ? JSON.stringify(body.chapterPageRanges)
+      : null;
+  }
+  if (typeof body.pageOffset === "number") {
+    updates.pageOffset = body.pageOffset;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   await db
     .update(textbookCatalog)
-    .set({
-      hidden,
-      visibleToUserIds: Array.isArray(visibleToUserIds)
-        ? JSON.stringify(visibleToUserIds)
-        : "[]",
-    })
+    .set(updates)
     .where(eq(textbookCatalog.id, id));
 
   return NextResponse.json({ ok: true });
