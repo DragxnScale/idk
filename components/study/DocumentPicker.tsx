@@ -427,39 +427,42 @@ function UploadPanel({
         // Step 2: upload directly to Vercel Blob API
         setStatus({ error: "Step 2/3: Uploading to storage…", progress: 5 });
         const blobApiUrl = `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`;
+        const reqId = `upload:${Date.now()}:${Math.random().toString(16).slice(2)}`;
 
-        const blobUrl = await new Promise<string>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const pct = Math.round((e.loaded / e.total) * 90) + 5;
-              setStatus({ progress: pct, error: `Step 2/3: Uploading… ${pct}%` });
-            }
-          };
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const data = JSON.parse(xhr.responseText);
-                resolve(data.url);
-              } catch {
-                reject(new Error(`Upload response parse error: ${xhr.responseText.slice(0, 200)}`));
-              }
-            } else {
-              reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText.slice(0, 200)}`));
-            }
-          };
-          xhr.onerror = () => reject(new Error("Network error during upload to storage"));
-          xhr.ontimeout = () => reject(new Error("Upload timed out"));
-          xhr.timeout = 300_000;
-          xhr.open("PUT", blobApiUrl);
-          xhr.setRequestHeader("authorization", `Bearer ${clientToken}`);
-          xhr.setRequestHeader("x-api-version", "12");
-          xhr.setRequestHeader("x-content-length", String(file.size));
-          xhr.setRequestHeader("x-mpu-action", "create");
-          xhr.setRequestHeader("access", "public");
-          xhr.setRequestHeader("content-type", "application/pdf");
-          xhr.send(file);
-        });
+        let blobUrl: string;
+        try {
+          const uploadRes = await fetch(blobApiUrl, {
+            method: "PUT",
+            headers: {
+              "authorization": `Bearer ${clientToken}`,
+              "x-api-version": "12",
+              "x-api-blob-request-id": reqId,
+              "x-api-blob-request-attempt": "0",
+              "x-content-length": String(file.size),
+              "x-add-random-suffix": "1",
+              "access": "public",
+              "content-type": "application/pdf",
+            },
+            body: file,
+          });
+
+          setStatus({ progress: 90, error: "Step 2/3: Processing…" });
+
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text().catch(() => "");
+            throw new Error(`Blob API ${uploadRes.status}: ${errText.slice(0, 200)}`);
+          }
+
+          const uploadData = await uploadRes.json();
+          blobUrl = uploadData.url;
+          if (!blobUrl) throw new Error(`No URL in response: ${JSON.stringify(uploadData).slice(0, 200)}`);
+        } catch (fetchErr) {
+          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("CORS")) {
+            throw new Error(`CORS/network error uploading to Vercel Blob. Details: ${msg}`);
+          }
+          throw fetchErr;
+        }
 
         // Step 3: register in DB
         setStatus({ progress: 95, error: "Step 3/3: Saving…" });
