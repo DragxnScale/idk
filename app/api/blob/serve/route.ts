@@ -1,10 +1,34 @@
-import { head } from "@vercel/blob";
+import { getDownloadUrl } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { decode } from "next-auth/jwt";
+
+const SESSION_COOKIE = "sf.session-token";
+
+export const runtime = "edge";
+
+async function getUserId(request: Request): Promise<string | null> {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = cookieHeader
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+  const raw = match?.slice(SESSION_COOKIE.length + 1);
+  if (!raw) return null;
+  try {
+    const token = await decode({
+      token: decodeURIComponent(raw),
+      secret: process.env.NEXTAUTH_SECRET!,
+      salt: "",
+    });
+    return token?.sub ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const userId = await getUserId(request);
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -15,8 +39,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const blob = await head(url);
-    return NextResponse.json({ downloadUrl: blob.downloadUrl });
+    const signedUrl = await getDownloadUrl(url);
+    return NextResponse.json({ downloadUrl: signedUrl });
   } catch (e) {
     console.error("[blob/serve] error:", e);
     return NextResponse.json(
