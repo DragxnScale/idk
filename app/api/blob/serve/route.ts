@@ -1,10 +1,10 @@
-import { getDownloadUrl } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { decode } from "next-auth/jwt";
 
 const SESSION_COOKIE = "sf.session-token";
 
 export const runtime = "edge";
+export const maxDuration = 300;
 
 async function getUserId(request: Request): Promise<string | null> {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -38,9 +38,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
   }
 
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobToken) {
+    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
+  }
+
   try {
-    const signedUrl = await getDownloadUrl(url);
-    return NextResponse.json({ downloadUrl: signedUrl });
+    const blobRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${blobToken}` },
+    });
+    if (!blobRes.ok) {
+      return NextResponse.json(
+        { error: `Blob CDN returned ${blobRes.status}` },
+        { status: blobRes.status }
+      );
+    }
+
+    return new Response(blobRes.body, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Length": blobRes.headers.get("Content-Length") || "",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
   } catch (e) {
     console.error("[blob/serve] error:", e);
     return NextResponse.json(
