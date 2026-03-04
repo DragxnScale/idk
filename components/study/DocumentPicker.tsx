@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createMultipartUploader } from "@vercel/blob/client";
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -383,33 +384,50 @@ function UploadPanel({
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   }
 
-  function streamUpload(file: File, pathname: string, onProgress: (pct: number) => void): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `/api/blob/stream-upload?pathname=${encodeURIComponent(pathname)}`);
-      xhr.setRequestHeader("Content-Type", "application/pdf");
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90));
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            if (data.url) resolve(data.url);
-            else reject(new Error(data.error || "No URL in response"));
-          } catch { reject(new Error("Invalid response")); }
-        } else {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            reject(new Error(data.error || `Upload failed (${xhr.status})`));
-          } catch { reject(new Error(`Upload failed (${xhr.status})`)); }
-        }
-      };
-      xhr.onerror = () => reject(new Error("Network error during upload"));
-      xhr.ontimeout = () => reject(new Error("Upload timed out"));
-      xhr.timeout = 10 * 60 * 1000;
-      xhr.send(file);
+  const PART_SIZE = 8 * 1024 * 1024; // 8MB parts (above Vercel Blob's 5MB minimum)
+
+  async function directUpload(
+    file: File,
+    pathname: string,
+    onProgress: (pct: number, label: string) => void
+  ): Promise<string> {
+    onProgress(0, "Getting upload token…");
+    const tokenRes = await fetch("/api/blob/client-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pathname }),
     });
+    if (!tokenRes.ok) {
+      const err = await tokenRes.json().catch(() => ({}));
+      throw new Error(err.error || `Token request failed (${tokenRes.status})`);
+    }
+    const { clientToken } = await tokenRes.json();
+
+    onProgress(2, "Starting upload…");
+    const uploader = await createMultipartUploader(pathname, {
+      access: "private",
+      token: clientToken,
+      contentType: "application/pdf",
+    });
+
+    const totalParts = Math.ceil(file.size / PART_SIZE);
+    const parts: { etag: string; partNumber: number }[] = [];
+
+    for (let i = 0; i < totalParts; i++) {
+      const start = i * PART_SIZE;
+      const end = Math.min(start + PART_SIZE, file.size);
+      const chunk = file.slice(start, end);
+      const partNumber = i + 1;
+      const pct = Math.round(((i + 0.5) / totalParts) * 88) + 2;
+      onProgress(pct, `Uploading… ${pct}% (part ${partNumber}/${totalParts})`);
+
+      const part = await uploader.uploadPart(partNumber, chunk);
+      parts.push(part);
+    }
+
+    onProgress(92, "Finishing upload…");
+    const blob = await uploader.complete(parts);
+    return blob.url;
   }
 
   async function uploadAll() {
@@ -426,9 +444,8 @@ function UploadPanel({
       setStatus({ status: "uploading", progress: 0, error: undefined });
 
       try {
-        setStatus({ error: "Uploading…" });
-        const blobUrl = await streamUpload(file, pathname, (pct) => {
-          setStatus({ progress: pct, error: `Uploading… ${pct}%` });
+        const blobUrl = await directUpload(file, pathname, (pct, label) => {
+          setStatus({ progress: pct, error: label });
         });
 
         setStatus({ progress: 95, error: "Saving to library…" });
