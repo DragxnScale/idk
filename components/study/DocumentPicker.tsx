@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
+// Manual Vercel Blob upload — SDK was hanging client-side
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -394,49 +394,87 @@ function UploadPanel({
       if (items[i].status !== "pending") continue;
       const file = items[i].file;
       const title = file.name.replace(/\.pdf$/i, "");
-      setItems((prev) =>
-        prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
-      );
-      try {
-        const blob = await upload(
-          `${encodeURIComponent(title)}.pdf`,
-          file,
-          {
-            access: "public",
-            handleUploadUrl: "/api/blob/token",
-            multipart: true,
-            onUploadProgress: ({ percentage }) => {
-              setItems((prev) =>
-                prev.map((it, idx) => (idx === i ? { ...it, progress: percentage } : it))
-              );
-            },
-          }
-        );
+      const pathname = `${encodeURIComponent(title)}.pdf`;
 
+      const setStatus = (patch: Partial<FileItem>) =>
+        setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+
+      setStatus({ status: "uploading", progress: 0, error: undefined });
+
+      try {
+        // Step 1: get client token
+        setStatus({ error: "Step 1/3: Getting upload token…" });
+        const tokenCtrl = new AbortController();
+        const tokenTimer = setTimeout(() => tokenCtrl.abort(), 15_000);
+        const tokenRes = await fetch("/api/blob/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "blob.generate-client-token",
+            payload: { pathname, callbackUrl: `${location.origin}/api/blob/token`, multipart: false },
+          }),
+          signal: tokenCtrl.signal,
+        });
+        clearTimeout(tokenTimer);
+
+        if (!tokenRes.ok) {
+          const err = await tokenRes.json().catch(() => ({}));
+          throw new Error(err.error || `Token request failed (${tokenRes.status})`);
+        }
+        const { clientToken } = await tokenRes.json();
+        if (!clientToken) throw new Error("Server returned empty token");
+
+        // Step 2: upload directly to Vercel Blob API
+        setStatus({ error: "Step 2/3: Uploading to storage…", progress: 5 });
+        const blobApiUrl = `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`;
+
+        const blobUrl = await new Promise<string>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 90) + 5;
+              setStatus({ progress: pct, error: `Step 2/3: Uploading… ${pct}%` });
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                resolve(data.url);
+              } catch {
+                reject(new Error(`Upload response parse error: ${xhr.responseText.slice(0, 200)}`));
+              }
+            } else {
+              reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText.slice(0, 200)}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error("Network error during upload to storage"));
+          xhr.ontimeout = () => reject(new Error("Upload timed out"));
+          xhr.timeout = 300_000;
+          xhr.open("PUT", blobApiUrl);
+          xhr.setRequestHeader("authorization", `Bearer ${clientToken}`);
+          xhr.setRequestHeader("x-api-version", "12");
+          xhr.setRequestHeader("x-content-length", String(file.size));
+          xhr.setRequestHeader("x-mpu-action", "create");
+          xhr.setRequestHeader("access", "public");
+          xhr.setRequestHeader("content-type", "application/pdf");
+          xhr.send(file);
+        });
+
+        // Step 3: register in DB
+        setStatus({ progress: 95, error: "Step 3/3: Saving…" });
         const reg = await fetch("/api/documents/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, fileUrl: blob.url }),
+          body: JSON.stringify({ title, fileUrl: blobUrl }),
         });
         const data = await reg.json();
         if (!reg.ok) throw new Error(data.error || "Failed to register document");
 
-        setItems((prev) =>
-          prev.map((it, idx) =>
-            idx === i
-              ? { ...it, status: "done", progress: 100, result: { id: data.id, title, fileUrl: blob.url } }
-              : it
-          )
-        );
+        setStatus({ status: "done", progress: 100, error: undefined, result: { id: data.id, title, fileUrl: blobUrl } });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Upload failed";
-        setItems((prev) =>
-          prev.map((it, idx) =>
-            idx === i
-              ? { ...it, status: "error", error: msg }
-              : it
-          )
-        );
+        setStatus({ status: "error", error: msg });
       }
     }
     setRunning(false);
@@ -546,14 +584,14 @@ function UploadPanel({
               )}
               {it.status === "uploading" && (
                 <span className="text-xs text-blue-500 shrink-0">
-                  {it.progress !== undefined && it.progress > 0 ? `${it.progress}%` : "Uploading…"}
+                  {it.error || (it.progress !== undefined && it.progress > 0 ? `${it.progress}%` : "Starting…")}
                 </span>
               )}
               {it.status === "done" && (
                 <span className="text-xs text-green-600 dark:text-green-400">✓ Done</span>
               )}
               {it.status === "error" && (
-                <span className="text-xs text-red-500" title={it.error}>✗ Failed</span>
+                <span className="text-xs text-red-500 max-w-[200px] truncate" title={it.error}>✗ {it.error || "Failed"}</span>
               )}
             </li>
           ))}
