@@ -48,6 +48,7 @@ function StudySessionInner() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<SelectedDocument | null>(null);
+  const [resolvedPdfUrl, setResolvedPdfUrl] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [pageTexts, setPageTexts] = useState<Map<number, string>>(new Map());
   const [visitedPageCount, setVisitedPageCount] = useState(0);
@@ -488,20 +489,13 @@ function StudySessionInner() {
     }
   }, [goalType, selectedChapters, selectedDoc?.chapterPageRanges, handleEnd]);
 
-  function getPdfUrl(): string | null {
+  function getRawPdfUrl(): string | null {
     if (!selectedDoc) return null;
-
-    function serveBlobUrl(url: string): string {
-      if (url.includes(".private.blob.vercel-storage.com")) {
-        return `/api/blob/serve?url=${encodeURIComponent(url)}`;
-      }
-      return url;
-    }
 
     if (selectedDoc.type === "upload") {
       if (selectedDoc.sourceUrl) {
         const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-        if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
+        if (isBlob) return selectedDoc.sourceUrl;
         const isExternal = !selectedDoc.sourceUrl.startsWith("/");
         if (isExternal) return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
         return selectedDoc.sourceUrl;
@@ -510,11 +504,28 @@ function StudySessionInner() {
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
       const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-      if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
+      if (isBlob) return selectedDoc.sourceUrl;
       return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
     }
     return null;
   }
+
+  const rawPdfUrl = getRawPdfUrl();
+
+  useEffect(() => {
+    if (!rawPdfUrl) { setResolvedPdfUrl(null); return; }
+    if (!rawPdfUrl.includes(".private.blob.vercel-storage.com")) {
+      setResolvedPdfUrl(rawPdfUrl);
+      return;
+    }
+    let cancelled = false;
+    setResolvedPdfUrl(null);
+    fetch(`/api/blob/serve?url=${encodeURIComponent(rawPdfUrl)}`)
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled && data.downloadUrl) setResolvedPdfUrl(data.downloadUrl); })
+      .catch(() => { if (!cancelled) setResolvedPdfUrl(null); });
+    return () => { cancelled = true; };
+  }, [rawPdfUrl]);
 
   function getStartPage(): number {
     if (goalType === "chapter" && selectedChapters.length > 0 && selectedDoc?.chapterPageRanges) {
@@ -787,7 +798,7 @@ function StudySessionInner() {
   }
 
   /* ── Active session ────────────────────────────────────────────── */
-  const pdfUrl = getPdfUrl();
+  const pdfUrl = resolvedPdfUrl;
   const startPage = getStartPage();
 
   return (
