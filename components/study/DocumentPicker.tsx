@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-// Manual Vercel Blob upload — SDK was hanging client-side
+// Chunked multipart upload through our server (avoids CORS + body limits)
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -388,13 +388,15 @@ function UploadPanel({
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   }
 
+  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (under Vercel's 4.5MB limit)
+
   async function uploadAll() {
     setRunning(true);
     for (let i = 0; i < items.length; i++) {
       if (items[i].status !== "pending") continue;
       const file = items[i].file;
       const title = file.name.replace(/\.pdf$/i, "");
-      const pathname = `${encodeURIComponent(title)}.pdf`;
+      const pathname = `uploads/${crypto.randomUUID()}/${encodeURIComponent(title)}.pdf`;
 
       const setStatus = (patch: Partial<FileItem>) =>
         setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -402,77 +404,65 @@ function UploadPanel({
       setStatus({ status: "uploading", progress: 0, error: undefined });
 
       try {
-        // Step 1: get client token
-        setStatus({ error: "Step 1/3: Getting upload token…" });
-        const tokenCtrl = new AbortController();
-        const tokenTimer = setTimeout(() => tokenCtrl.abort(), 15_000);
-        const tokenRes = await fetch("/api/blob/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "blob.generate-client-token",
-            payload: { pathname, callbackUrl: `${location.origin}/api/blob/token`, multipart: false },
-          }),
-          signal: tokenCtrl.signal,
-        });
-        clearTimeout(tokenTimer);
-
-        if (!tokenRes.ok) {
-          const err = await tokenRes.json().catch(() => ({}));
-          throw new Error(err.error || `Token request failed (${tokenRes.status})`);
+        // Step 1: create multipart upload
+        setStatus({ error: "Starting upload…" });
+        const createRes = await fetch(`/api/blob/multipart?action=create&pathname=${encodeURIComponent(pathname)}`
+          , { method: "POST" });
+        if (!createRes.ok) {
+          const err = await createRes.json().catch(() => ({}));
+          throw new Error(err.error || `Create failed (${createRes.status})`);
         }
-        const { clientToken } = await tokenRes.json();
-        if (!clientToken) throw new Error("Server returned empty token");
+        const { uploadId, key } = await createRes.json();
 
-        // Step 2: upload directly to Vercel Blob API
-        setStatus({ error: "Step 2/3: Uploading to storage…", progress: 5 });
-        const blobApiUrl = `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`;
-        const reqId = `upload:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        // Step 2: upload chunks
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const parts: { etag: string; partNumber: number }[] = [];
 
-        let blobUrl: string;
-        try {
-          const uploadRes = await fetch(blobApiUrl, {
-            method: "PUT",
-            headers: {
-              "authorization": `Bearer ${clientToken}`,
-              "x-api-version": "12",
-              "x-api-blob-request-id": reqId,
-              "x-api-blob-request-attempt": "0",
-              "x-content-length": String(file.size),
-              "x-add-random-suffix": "1",
-              "access": "public",
-              "content-type": "application/pdf",
-            },
-            body: file,
-          });
+        for (let chunk = 0; chunk < totalChunks; chunk++) {
+          const start = chunk * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const blob = file.slice(start, end);
+          const partNumber = chunk + 1;
+          const pct = Math.round(((chunk + 0.5) / totalChunks) * 90);
+          setStatus({ progress: pct, error: `Uploading… ${pct}% (part ${partNumber}/${totalChunks})` });
 
-          setStatus({ progress: 90, error: "Step 2/3: Processing…" });
-
-          if (!uploadRes.ok) {
-            const errText = await uploadRes.text().catch(() => "");
-            throw new Error(`Blob API ${uploadRes.status}: ${errText.slice(0, 200)}`);
+          const partRes = await fetch(
+            `/api/blob/multipart?action=upload-part&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}&partNumber=${partNumber}`,
+            { method: "POST", body: blob }
+          );
+          if (!partRes.ok) {
+            const err = await partRes.json().catch(() => ({}));
+            throw new Error(err.error || `Part ${partNumber} failed (${partRes.status})`);
           }
-
-          const uploadData = await uploadRes.json();
-          blobUrl = uploadData.url;
-          if (!blobUrl) throw new Error(`No URL in response: ${JSON.stringify(uploadData).slice(0, 200)}`);
-        } catch (fetchErr) {
-          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-          if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("CORS")) {
-            throw new Error(`CORS/network error uploading to Vercel Blob. Details: ${msg}`);
-          }
-          throw fetchErr;
+          const partData = await partRes.json();
+          parts.push({ etag: partData.etag, partNumber: partData.partNumber });
         }
 
-        // Step 3: register in DB
-        setStatus({ progress: 95, error: "Step 3/3: Saving…" });
+        // Step 3: complete multipart upload
+        setStatus({ progress: 92, error: "Finishing upload…" });
+        const completeRes = await fetch(
+          `/api/blob/multipart?action=complete&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parts }),
+          }
+        );
+        if (!completeRes.ok) {
+          const err = await completeRes.json().catch(() => ({}));
+          throw new Error(err.error || `Complete failed (${completeRes.status})`);
+        }
+        const { url: blobUrl } = await completeRes.json();
+
+        // Step 4: register in DB
+        setStatus({ progress: 96, error: "Saving to library…" });
         const reg = await fetch("/api/documents/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title, fileUrl: blobUrl }),
         });
         const data = await reg.json();
-        if (!reg.ok) throw new Error(data.error || "Failed to register document");
+        if (!reg.ok) throw new Error(data.error || "Failed to save document");
 
         setStatus({ status: "done", progress: 100, error: undefined, result: { id: data.id, title, fileUrl: blobUrl } });
       } catch (e) {
