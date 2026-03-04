@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-// Chunked multipart upload through our server (avoids CORS + body limits)
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -384,7 +383,34 @@ function UploadPanel({
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   }
 
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (under Vercel's 4.5MB limit)
+  function streamUpload(file: File, pathname: string, onProgress: (pct: number) => void): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/blob/stream-upload?pathname=${encodeURIComponent(pathname)}`);
+      xhr.setRequestHeader("Content-Type", "application/pdf");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data.url) resolve(data.url);
+            else reject(new Error(data.error || "No URL in response"));
+          } catch { reject(new Error("Invalid response")); }
+        } else {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            reject(new Error(data.error || `Upload failed (${xhr.status})`));
+          } catch { reject(new Error(`Upload failed (${xhr.status})`)); }
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.ontimeout = () => reject(new Error("Upload timed out"));
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(file);
+    });
+  }
 
   async function uploadAll() {
     setRunning(true);
@@ -400,58 +426,12 @@ function UploadPanel({
       setStatus({ status: "uploading", progress: 0, error: undefined });
 
       try {
-        // Step 1: create multipart upload
-        setStatus({ error: "Starting upload…" });
-        const createRes = await fetch(`/api/blob/multipart?action=create&pathname=${encodeURIComponent(pathname)}`
-          , { method: "POST" });
-        if (!createRes.ok) {
-          const err = await createRes.json().catch(() => ({}));
-          throw new Error(err.error || `Create failed (${createRes.status})`);
-        }
-        const { uploadId, key } = await createRes.json();
+        setStatus({ error: "Uploading…" });
+        const blobUrl = await streamUpload(file, pathname, (pct) => {
+          setStatus({ progress: pct, error: `Uploading… ${pct}%` });
+        });
 
-        // Step 2: upload chunks
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        const parts: { etag: string; partNumber: number }[] = [];
-
-        for (let chunk = 0; chunk < totalChunks; chunk++) {
-          const start = chunk * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
-          const blob = file.slice(start, end);
-          const partNumber = chunk + 1;
-          const pct = Math.round(((chunk + 0.5) / totalChunks) * 90);
-          setStatus({ progress: pct, error: `Uploading… ${pct}% (part ${partNumber}/${totalChunks})` });
-
-          const partRes = await fetch(
-            `/api/blob/multipart?action=upload-part&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}&partNumber=${partNumber}`,
-            { method: "POST", body: blob }
-          );
-          if (!partRes.ok) {
-            const err = await partRes.json().catch(() => ({}));
-            throw new Error(err.error || `Part ${partNumber} failed (${partRes.status})`);
-          }
-          const partData = await partRes.json();
-          parts.push({ etag: partData.etag, partNumber: partData.partNumber });
-        }
-
-        // Step 3: complete multipart upload
-        setStatus({ progress: 92, error: "Finishing upload…" });
-        const completeRes = await fetch(
-          `/api/blob/multipart?action=complete&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ parts }),
-          }
-        );
-        if (!completeRes.ok) {
-          const err = await completeRes.json().catch(() => ({}));
-          throw new Error(err.error || `Complete failed (${completeRes.status})`);
-        }
-        const { url: blobUrl } = await completeRes.json();
-
-        // Step 4: register in DB
-        setStatus({ progress: 96, error: "Saving to library…" });
+        setStatus({ progress: 95, error: "Saving to library…" });
         const reg = await fetch("/api/documents/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

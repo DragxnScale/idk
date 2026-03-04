@@ -814,69 +814,46 @@ function UploadTab() {
     setProgress(0);
     setDebugLog([]);
 
-    const CHUNK_SIZE = 4 * 1024 * 1024;
     const filename = file.name.replace(/\s+/g, "_");
     const slug = identifier || `bowlbeacon-${slugify(title)}`;
     const blobPathname = `public/${slug}/${filename}`;
 
-    setStatusLabel("Starting upload…");
+    setStatusLabel("Uploading to storage…");
     addLog(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
 
     let blobUrl: string;
     try {
-      const createRes = await fetch(
-        `/api/blob/multipart?action=create&pathname=${encodeURIComponent(blobPathname)}`,
-        { method: "POST" }
-      );
-      if (!createRes.ok) {
-        const err = await createRes.json().catch(() => ({}));
-        throw new Error(err.error || `Create failed (${createRes.status})`);
-      }
-      const { uploadId, key } = await createRes.json();
-
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      const parts: { etag: string; partNumber: number }[] = [];
-
-      for (let chunk = 0; chunk < totalChunks; chunk++) {
-        const start = chunk * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const blob = file.slice(start, end);
-        const partNumber = chunk + 1;
-        const pct = Math.round(((chunk + 0.5) / totalChunks) * 85);
-        setProgress(pct);
-        setStatusLabel(`Uploading… ${pct}% (part ${partNumber}/${totalChunks})`);
-        if (partNumber % 5 === 1) addLog(`Uploading part ${partNumber}/${totalChunks}`);
-
-        const partRes = await fetch(
-          `/api/blob/multipart?action=upload-part&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}&partNumber=${partNumber}`,
-          { method: "POST", body: blob }
-        );
-        if (!partRes.ok) {
-          const err = await partRes.json().catch(() => ({}));
-          throw new Error(err.error || `Part ${partNumber} failed (${partRes.status})`);
-        }
-        const partData = await partRes.json();
-        parts.push({ etag: partData.etag, partNumber: partData.partNumber });
-      }
-
-      setProgress(88);
-      setStatusLabel("Finishing upload…");
-      const completeRes = await fetch(
-        `/api/blob/multipart?action=complete&uploadId=${encodeURIComponent(uploadId)}&key=${encodeURIComponent(key)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parts }),
-        }
-      );
-      if (!completeRes.ok) {
-        const err = await completeRes.json().catch(() => ({}));
-        throw new Error(err.error || `Complete failed (${completeRes.status})`);
-      }
-      const completeData = await completeRes.json();
-      blobUrl = completeData.url;
+      blobUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/blob/stream-upload?pathname=${encodeURIComponent(blobPathname)}`);
+        xhr.setRequestHeader("Content-Type", "application/pdf");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 90);
+            setProgress(pct);
+            setStatusLabel(`Uploading… ${pct}%`);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data.url) { addLog(`Stored: ${data.url}`); resolve(data.url); }
+              else reject(new Error(data.error || "No URL in response"));
+            } catch { reject(new Error("Invalid response")); }
+          } else {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              reject(new Error(data.error || `Upload failed (${xhr.status})`));
+            } catch { reject(new Error(`Upload failed (${xhr.status})`)); }
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.timeout = 10 * 60 * 1000;
+        xhr.ontimeout = () => reject(new Error("Upload timed out"));
+        xhr.send(file);
+      });
       setProgress(90);
-      addLog(`Stored: ${blobUrl}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload to storage failed";
       addLog(`UPLOAD ERROR: ${msg}`);
