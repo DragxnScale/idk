@@ -45,6 +45,7 @@ function StudySessionInner() {
   const [targetValue, setTargetValue] = useState(25);
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
+  const [docReady, setDocReady] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<SelectedDocument | null>(null);
@@ -782,6 +783,11 @@ function StudySessionInner() {
   const pdfUrl = getPdfUrl();
   const startPage = getStartPage();
 
+  // If there's no PDF to load, the timer can start immediately
+  useEffect(() => {
+    if (!pdfUrl) setDocReady(true);
+  }, [pdfUrl]);
+
   return (
     <VisibilityGuard
       onTabReturn={() => setIsPaused(true)}
@@ -884,7 +890,7 @@ function StudySessionInner() {
             <Timer
               goalType={goalType}
               targetValue={targetValue}
-              isPaused={isPaused}
+              isPaused={isPaused || !docReady}
               onTick={(mins) => {
                 focusedMinutesRef.current = mins;
                 saveProgress(mins);
@@ -912,6 +918,9 @@ function StudySessionInner() {
                   })}
                 </div>
               )}
+              {!docReady && !isPaused && (
+                <p className="text-amber-600 dark:text-amber-400 animate-pulse">Loading document…</p>
+              )}
               <p>Stay on this tab to keep the timer running.</p>
             </div>
           </aside>
@@ -928,6 +937,7 @@ function StudySessionInner() {
                 chapterPageRanges={selectedDoc?.chapterPageRanges}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
+                onLoad={() => setDocReady(true)}
               />
             ) : (
               <div className="flex flex-col items-center justify-center text-center max-w-md py-20">

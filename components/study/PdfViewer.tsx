@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -61,9 +61,10 @@ interface PdfViewerProps {
   chapterPageRanges?: Record<string, [number, number]>;
   onPageChange?: (page: number) => void;
   onPageText?: (page: number, text: string) => void;
+  onLoad?: () => void;
 }
 
-export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, chapterPageRanges, onPageChange, onPageText }: PdfViewerProps) {
+export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, chapterPageRanges, onPageChange, onPageText, onLoad }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -98,6 +99,11 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageWrapRef = useRef<HTMLDivElement>(null);
   const [innerHeight, setInnerHeight] = useState(800);
+
+  const pdfOptions = useMemo(() => ({
+    disableAutoFetch: true,
+    disableStream: true,
+  }), []);
 
   const effectiveZoom = baseZoom * localZoom;
   const renderWidth = containerWidth || 600;
@@ -207,9 +213,14 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     };
   }, [flashZoomBadge]);
 
-  const onDocumentLoadSuccess = useCallback(({ numPages: total }: { numPages: number }) => {
-    setNumPages(total);
+  const onLoadRef = useRef(onLoad);
+  useEffect(() => { onLoadRef.current = onLoad; }, [onLoad]);
+
+  const onDocumentLoadSuccess = useCallback((pdf: { numPages: number }) => {
+    setNumPages(pdf.numPages);
     setLoading(false);
+    pdfDocRef.current = pdf as unknown as pdfjs.PDFDocumentProxy;
+    onLoadRef.current?.();
   }, []);
 
   const onDocumentLoadError = useCallback((err: Error) => {
@@ -325,15 +336,6 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpToPage, numPages]);
-
-  useEffect(() => {
-    if (!url || !onPageText) return;
-    let cancelled = false;
-    pdfjs.getDocument(url).promise.then((doc) => {
-      if (!cancelled) pdfDocRef.current = doc;
-    });
-    return () => { cancelled = true; };
-  }, [url, onPageText]);
 
   useEffect(() => {
     if (!pdfDocRef.current || !onPageText) return;
@@ -937,6 +939,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
             >
               <Document
                 file={url}
+                options={pdfOptions}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={onDocumentLoadError}
                 loading={<div className="flex min-h-[300px] items-center justify-center"><div className="spinner" /></div>}
