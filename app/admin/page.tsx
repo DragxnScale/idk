@@ -130,7 +130,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white">
+    <main className="min-h-screen bg-gray-950 text-white overflow-x-hidden">
       <div className="mx-auto max-w-6xl px-6 py-10">
 
         {/* Header */}
@@ -148,20 +148,22 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-gray-800 mb-6">
-          {(["users", "upload", "catalog", "messages", "storage"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-5 py-2.5 text-sm font-medium capitalize transition rounded-t-lg -mb-px border-b-2 ${
-                tab === t
-                  ? "border-white text-white"
-                  : "border-transparent text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : t === "storage" ? "Blob Storage" : "Users"}
-            </button>
-          ))}
+        <div className="overflow-x-auto -mx-6 px-6">
+          <div className="flex gap-1 border-b border-gray-800 mb-6 min-w-max">
+            {(["users", "upload", "catalog", "messages", "storage"] as Tab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-5 py-2.5 text-sm font-medium capitalize transition rounded-t-lg -mb-px border-b-2 whitespace-nowrap ${
+                  tab === t
+                    ? "border-white text-white"
+                    : "border-transparent text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : t === "storage" ? "Blob Storage" : "Users"}
+              </button>
+            ))}
+          </div>
         </div>
 
         {tab === "users" && <UsersTab />}
@@ -407,7 +409,7 @@ function UsersTab() {
         {visits.length > 0 && (
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
             <h3 className="text-sm font-semibold mb-2">Visit Timeline</h3>
-            <div className="space-y-0.5 max-h-[40vh] overflow-y-auto pr-1 text-xs font-mono">
+            <div className="space-y-0.5 max-h-[40vh] overflow-auto pr-1 text-xs font-mono">
               {visits.map((v, i) => {
                 const ch = getChapterForPage(v.pageNumber);
                 return (
@@ -646,12 +648,12 @@ function UsersTab() {
         className="w-full mb-4 rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm placeholder-gray-500 focus:outline-none focus:border-gray-500"
       />
 
-      <div className="rounded-xl border border-gray-800 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-xl border border-gray-800 overflow-x-auto">
+        <table className="w-full text-sm min-w-[700px]">
           <thead className="bg-gray-900 border-b border-gray-800">
             <tr>
               {["User", "Role", "Joined", "Sessions", "Study Time", "Last Active", ""].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
+                <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
@@ -903,9 +905,9 @@ function TocEditor({
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="rounded-xl border border-gray-800 overflow-hidden">
+            <div className="rounded-xl border border-gray-800 overflow-x-auto">
               {/* Column headers */}
-              <div className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-2 bg-gray-800/50 text-xs text-gray-500 uppercase tracking-wide">
+              <div className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-2 bg-gray-800/50 text-xs text-gray-500 uppercase tracking-wide min-w-[350px]">
                 <span>Chapter</span>
                 <span>Start pg</span>
                 <span>End pg</span>
@@ -913,7 +915,7 @@ function TocEditor({
               </div>
               <div className="divide-y divide-gray-800">
                 {rows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-1.5 items-center">
+                  <div key={idx} className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-1.5 items-center min-w-[350px]">
                     <input
                       type="text"
                       value={row.label}
@@ -1605,7 +1607,7 @@ function CatalogTab() {
         {filtered.map((entry) => {
           const chapterCount = Object.keys(entry.chapterPageRanges).length;
           return (
-            <div key={entry.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-start justify-between gap-4">
+            <div key={entry.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   {renamingId === entry.id ? (
@@ -1663,16 +1665,16 @@ function CatalogTab() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-shrink-0 items-center gap-2">
+              <div className="flex items-center gap-2 mt-2 overflow-x-auto">
                 <button
                   onClick={() => startRename(entry)}
-                  className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition"
+                  className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition whitespace-nowrap"
                 >
                   Rename
                 </button>
                 <button
                   onClick={() => openTocEditor(entry)}
-                  className="rounded-md border border-blue-800 px-3 py-1 text-xs text-blue-400 hover:bg-blue-900/30 transition"
+                  className="rounded-md border border-blue-800 px-3 py-1 text-xs text-blue-400 hover:bg-blue-900/30 transition whitespace-nowrap"
                 >
                   Edit TOC
                 </button>
@@ -1680,7 +1682,7 @@ function CatalogTab() {
                   <button
                     onClick={() => unhideEntry(entry)}
                     disabled={patching === entry.id}
-                    className="rounded-md border border-amber-700 px-3 py-1 text-xs text-amber-400 hover:bg-amber-900/30 transition disabled:opacity-40"
+                    className="rounded-md border border-amber-700 px-3 py-1 text-xs text-amber-400 hover:bg-amber-900/30 transition disabled:opacity-40 whitespace-nowrap"
                   >
                     {patching === entry.id ? "…" : "Unhide"}
                   </button>
@@ -1688,7 +1690,7 @@ function CatalogTab() {
                   <button
                     onClick={() => openHideModal(entry)}
                     disabled={patching === entry.id}
-                    className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition disabled:opacity-40"
+                    className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition disabled:opacity-40 whitespace-nowrap"
                   >
                     Hide
                   </button>
@@ -1696,7 +1698,7 @@ function CatalogTab() {
                 <button
                   onClick={() => setConfirmDelete(entry)}
                   disabled={deleting === entry.id}
-                  className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                  className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40 whitespace-nowrap"
                 >
                   Remove
                 </button>
@@ -1949,7 +1951,7 @@ function StorageTab() {
               <div key={blob.url} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate" title={name}>{name}</p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                  <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
                     <span className={`px-1.5 py-0.5 rounded font-medium ${isUserUpload(blob) ? "bg-blue-900/50 text-blue-400" : "bg-green-900/50 text-green-400"}`}>
                       {isUserUpload(blob) ? "User" : "Catalog"}
                     </span>
