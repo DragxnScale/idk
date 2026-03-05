@@ -746,9 +746,18 @@ function TocEditor({
     onChange(rows.filter((_, i) => i !== idx));
   }
 
-  function addRow() {
-    const lastEnd = rows.length > 0 ? rows[rows.length - 1].endPage : 0;
-    onChange([...rows, { label: String(rows.length + 1), startPage: lastEnd + 1, endPage: lastEnd + 50 }]);
+  function addRowAfter(idx?: number) {
+    const ref = idx !== undefined ? rows[idx] : rows[rows.length - 1];
+    const prevEnd = ref?.endPage || 0;
+    const nextLabel = String((idx !== undefined ? idx : rows.length) + 2);
+    const newRow: TocRow = { label: nextLabel, startPage: prevEnd ? prevEnd + 1 : 0, endPage: 0 };
+    if (idx !== undefined) {
+      const next = [...rows];
+      next.splice(idx + 1, 0, newRow);
+      onChange(next);
+    } else {
+      onChange([...rows, newRow]);
+    }
   }
 
   function openJsonView() {
@@ -784,10 +793,10 @@ function TocEditor({
             Page Offset
           </label>
           <input
-            type="number"
-            min={0}
-            value={pageOffset}
-            onChange={(e) => onPageOffsetChange(Math.max(0, Number(e.target.value) || 0))}
+            type="text"
+            inputMode="numeric"
+            value={pageOffset || ""}
+            onChange={(e) => onPageOffsetChange(Math.max(0, parseInt(e.target.value) || 0))}
             className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-500"
           />
           <p className="text-xs text-gray-600 mt-1">
@@ -854,18 +863,19 @@ function TocEditor({
                       className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm focus:outline-none focus:border-gray-500"
                     />
                     <input
-                      type="number"
-                      min={0}
+                      type="text"
+                      inputMode="numeric"
                       value={row.startPage || ""}
-                      onChange={(e) => updateRow(idx, { startPage: Number(e.target.value) || 0 })}
+                      onChange={(e) => updateRow(idx, { startPage: parseInt(e.target.value) || 0 })}
                       placeholder="start"
                       className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
                     />
                     <input
-                      type="number"
-                      min={0}
+                      type="text"
+                      inputMode="numeric"
                       value={row.endPage || ""}
-                      onChange={(e) => updateRow(idx, { endPage: Number(e.target.value) || 0 })}
+                      onChange={(e) => updateRow(idx, { endPage: parseInt(e.target.value) || 0 })}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRowAfter(idx); } }}
                       placeholder="end"
                       className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
                     />
@@ -887,7 +897,7 @@ function TocEditor({
 
           <button
             type="button"
-            onClick={addRow}
+            onClick={() => addRowAfter()}
             className="w-full rounded-lg border border-dashed border-gray-700 px-4 py-2 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition"
           >
             + Add chapter
