@@ -855,16 +855,18 @@ function TocEditor({
                     />
                     <input
                       type="number"
-                      min={1}
-                      value={row.startPage}
-                      onChange={(e) => updateRow(idx, { startPage: Number(e.target.value) || 1 })}
+                      min={0}
+                      value={row.startPage || ""}
+                      onChange={(e) => updateRow(idx, { startPage: Number(e.target.value) || 0 })}
+                      placeholder="start"
                       className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
                     />
                     <input
                       type="number"
-                      min={1}
-                      value={row.endPage}
-                      onChange={(e) => updateRow(idx, { endPage: Number(e.target.value) || 1 })}
+                      min={0}
+                      value={row.endPage || ""}
+                      onChange={(e) => updateRow(idx, { endPage: Number(e.target.value) || 0 })}
+                      placeholder="end"
                       className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
                     />
                     <button

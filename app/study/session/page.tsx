@@ -173,22 +173,6 @@ function StudySessionInner() {
         events: {
           onReady: () => {
             setMusicReady(true);
-            // Auto-kick: mute → play → quickly seek to wake the player up
-            const p = ytPlayerRef.current;
-            if (p && !ytKickedRef.current) {
-              ytKickedRef.current = true;
-              try {
-                p.mute?.();
-                p.playVideo?.();
-                setTimeout(() => {
-                  try {
-                    p.seekTo?.(0, true);
-                    p.unMute?.();
-                    if (!musicPlaying) p.pauseVideo?.();
-                  } catch {}
-                }, 300);
-              } catch {}
-            }
           },
           onStateChange: (e: any) => {
             if (e.data === (window as any).YT.PlayerState.ENDED) {
@@ -260,6 +244,14 @@ function StudySessionInner() {
           p.unMute?.();
           p.setVolume?.(100);
           p.playVideo?.();
+          // Retry after a short delay in case the player wasn't ready
+          setTimeout(() => {
+            try {
+              if (p.getPlayerState?.() !== 1) {
+                p.playVideo?.();
+              }
+            } catch {}
+          }, 500);
         } else {
           p.pauseVideo?.();
         }
