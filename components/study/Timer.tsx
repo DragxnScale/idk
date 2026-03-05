@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type GoalType = "time" | "chapter";
 
@@ -34,14 +34,10 @@ export function Timer({
 }: TimerProps) {
   const [elapsed, setElapsed] = useState(initialElapsedSeconds);
 
-  const stableOnTick = useCallback(
-    (mins: number) => onTick?.(mins),
-    [onTick]
-  );
-  const stableOnGoalReached = useCallback(
-    () => onGoalReached?.(),
-    [onGoalReached]
-  );
+  const onTickRef = useRef(onTick);
+  const onGoalReachedRef = useRef(onGoalReached);
+  useEffect(() => { onTickRef.current = onTick; }, [onTick]);
+  useEffect(() => { onGoalReachedRef.current = onGoalReached; }, [onGoalReached]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -52,16 +48,16 @@ export function Timer({
     const id = setInterval(() => {
       setElapsed((prev) => {
         const next = prev + 1;
-        stableOnTick(Math.floor(next / 60));
+        onTickRef.current?.(Math.floor(next / 60));
         if (goalType === "time" && prev < targetSec && next >= targetSec) {
-          stableOnGoalReached();
+          onGoalReachedRef.current?.();
         }
         return next;
       });
     }, 1000);
 
     return () => clearInterval(id);
-  }, [isPaused, goalType, targetValue, stableOnTick, stableOnGoalReached]);
+  }, [isPaused, goalType, targetValue]);
 
   if (goalType === "chapter") {
     return (
