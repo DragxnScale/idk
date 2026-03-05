@@ -540,6 +540,14 @@ function StudySessionInner() {
     setShowAbandonConfirm(false);
   }
 
+  const pdfUrl = getPdfUrl();
+  const startPage = getStartPage();
+
+  // If there's no PDF to load, the timer can start immediately
+  useEffect(() => {
+    if (!pdfUrl) setDocReady(true);
+  }, [pdfUrl]);
+
   /* ── Loading check ───────────────────────────────────────────── */
   if (checkingActive) {
     return (
@@ -780,13 +788,6 @@ function StudySessionInner() {
   }
 
   /* ── Active session ────────────────────────────────────────────── */
-  const pdfUrl = getPdfUrl();
-  const startPage = getStartPage();
-
-  // If there's no PDF to load, the timer can start immediately
-  useEffect(() => {
-    if (!pdfUrl) setDocReady(true);
-  }, [pdfUrl]);
 
   return (
     <VisibilityGuard
