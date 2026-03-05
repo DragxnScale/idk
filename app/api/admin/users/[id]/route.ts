@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdmin, isAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users, studySessions, pageVisits } from "@/lib/db/schema";
-import { isAdminEmail } from "@/lib/admin";
 
 export async function GET(
   request: Request,
@@ -121,7 +120,7 @@ export async function DELETE(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  if (isAdminEmail(target.email)) {
+  if (await isAdmin(target.email)) {
     return NextResponse.json({ error: "Cannot ban admin account" }, { status: 400 });
   }
 

@@ -10,6 +10,8 @@ interface UserRow {
   id: string;
   email: string;
   name: string | null;
+  isAdmin?: boolean;
+  isSuperAdmin?: boolean;
   createdAt: string | null;
   sessionCount: number;
   totalMinutes: number;
@@ -187,6 +189,26 @@ function UsersTab() {
   const [savingInactivity, setSavingInactivity] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
+
+  async function toggleAdmin(user: UserRow) {
+    setTogglingAdmin(user.id);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, isAdmin: !user.isAdmin }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev?.map((u) => u.id === user.id ? { ...u, isAdmin: !u.isAdmin } : u) ?? null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Failed to update admin role");
+      }
+    } finally {
+      setTogglingAdmin(null);
+    }
+  }
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -627,14 +649,14 @@ function UsersTab() {
         <table className="w-full text-sm">
           <thead className="bg-gray-900 border-b border-gray-800">
             <tr>
-              {["User", "Joined", "Sessions", "Study Time", "Last Active", ""].map((h) => (
+              {["User", "Role", "Joined", "Sessions", "Study Time", "Last Active", ""].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No users found.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No users found.</td></tr>
             )}
             {filtered.map((user) => (
               <tr key={user.id} className="bg-gray-950 hover:bg-gray-900 transition">
@@ -646,6 +668,29 @@ function UsersTab() {
                     </div>
                     {user.hasActiveSession && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-medium">Active</span>}
                   </div>
+                </td>
+                <td className="px-4 py-3">
+                  {user.isSuperAdmin ? (
+                    <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-900/50 text-purple-400">Owner</span>
+                  ) : user.isAdmin ? (
+                    <button
+                      onClick={() => toggleAdmin(user)}
+                      disabled={togglingAdmin === user.id}
+                      className="text-xs px-1.5 py-0.5 rounded font-medium bg-blue-900/50 text-blue-400 hover:bg-blue-800/50 transition disabled:opacity-40"
+                      title="Click to remove admin"
+                    >
+                      {togglingAdmin === user.id ? "…" : "Admin"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => toggleAdmin(user)}
+                      disabled={togglingAdmin === user.id}
+                      className="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-gray-300 transition disabled:opacity-40"
+                      title="Click to make admin"
+                    >
+                      {togglingAdmin === user.id ? "…" : "User"}
+                    </button>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-400">
                   {user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
@@ -736,6 +781,16 @@ function TocEditor({
   const [showJson, setShowJson] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [focusIdx, setFocusIdx] = useState<number | null>(null);
+  const endPageRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+
+  useEffect(() => {
+    if (focusIdx !== null) {
+      const el = endPageRefs.current.get(focusIdx);
+      if (el) el.focus();
+      setFocusIdx(null);
+    }
+  }, [focusIdx, rows.length]);
 
   function updateRow(idx: number, patch: Partial<TocRow>) {
     const next = rows.map((r, i) => (i === idx ? { ...r, ...patch } : r));
@@ -743,6 +798,7 @@ function TocEditor({
   }
 
   function removeRow(idx: number) {
+    endPageRefs.current.delete(idx);
     onChange(rows.filter((_, i) => i !== idx));
   }
 
@@ -755,8 +811,10 @@ function TocEditor({
       const next = [...rows];
       next.splice(idx + 1, 0, newRow);
       onChange(next);
+      setFocusIdx(idx + 1);
     } else {
       onChange([...rows, newRow]);
+      setFocusIdx(rows.length);
     }
   }
 
@@ -873,6 +931,7 @@ function TocEditor({
                     <input
                       type="text"
                       inputMode="numeric"
+                      ref={(el) => { if (el) endPageRefs.current.set(idx, el); else endPageRefs.current.delete(idx); }}
                       value={row.endPage || ""}
                       onChange={(e) => updateRow(idx, { endPage: parseInt(e.target.value) || 0 })}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRowAfter(idx); } }}
@@ -1382,6 +1441,10 @@ function CatalogTab() {
   const [editPageOffset, setEditPageOffset] = useState(0);
   const [savingToc, setSavingToc] = useState(false);
 
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/catalog");
     if (res.ok) setEntries(await res.json());
@@ -1489,6 +1552,30 @@ function CatalogTab() {
     setSavingToc(false);
   }
 
+  function startRename(entry: CatalogEntry) {
+    setRenamingId(entry.id);
+    setRenameValue(entry.title);
+  }
+
+  async function saveRename() {
+    if (!renamingId || !renameValue.trim()) return;
+    setSavingRename(true);
+    const res = await fetch("/api/admin/catalog", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: renamingId, title: renameValue.trim() }),
+    });
+    if (res.ok) {
+      setEntries((prev) =>
+        prev?.map((e) => e.id === renamingId ? { ...e, title: renameValue.trim() } : e) ?? null
+      );
+      setRenamingId(null);
+    } else {
+      alert("Failed to rename");
+    }
+    setSavingRename(false);
+  }
+
   const filtered = (entries ?? []).filter(
     (e) =>
       e.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -1520,7 +1607,37 @@ function CatalogTab() {
             <div key={entry.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium text-sm">{entry.title}</p>
+                  {renamingId === entry.id ? (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); saveRename(); }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Escape") setRenamingId(null); }}
+                        className="rounded border border-gray-600 bg-gray-950 px-2 py-0.5 text-sm font-medium focus:outline-none focus:border-gray-400"
+                      />
+                      <button
+                        type="submit"
+                        disabled={savingRename || !renameValue.trim()}
+                        className="rounded bg-white text-black px-2 py-0.5 text-xs font-medium hover:bg-gray-200 transition disabled:opacity-40"
+                      >
+                        {savingRename ? "…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRenamingId(null)}
+                        className="text-xs text-gray-500 hover:text-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="font-medium text-sm cursor-pointer hover:text-gray-300 transition" onClick={() => startRename(entry)} title="Click to rename">{entry.title}</p>
+                  )}
                   {entry.edition && <span className="text-xs text-gray-500">{entry.edition} ed.</span>}
                   {entry.hidden && (
                     <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-900/50 text-amber-400">
@@ -1546,6 +1663,12 @@ function CatalogTab() {
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-2">
+                <button
+                  onClick={() => startRename(entry)}
+                  className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition"
+                >
+                  Rename
+                </button>
                 <button
                   onClick={() => openTocEditor(entry)}
                   className="rounded-md border border-blue-800 px-3 py-1 text-xs text-blue-400 hover:bg-blue-900/30 transition"

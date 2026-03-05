@@ -85,6 +85,9 @@ export async function PATCH(request: Request) {
   // Build a partial update object from whatever fields are provided
   const updates: Record<string, unknown> = {};
 
+  if (typeof body.title === "string" && body.title.trim()) {
+    updates.title = body.title.trim();
+  }
   if (typeof body.hidden === "boolean") {
     updates.hidden = body.hidden;
     updates.visibleToUserIds = Array.isArray(body.visibleToUserIds)

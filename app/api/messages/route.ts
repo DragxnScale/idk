@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireAdmin, isAdminEmail } from "@/lib/admin";
+import { requireAdmin, isAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { messages, users } from "@/lib/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
@@ -21,9 +21,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const isAdmin = isAdminEmail(session.user.email ?? "");
+  const admin = await isAdmin(session.user.email ?? "");
 
-  if (isAdmin) {
+  if (admin) {
     const userId = req.nextUrl.searchParams.get("userId");
     if (userId) {
       const rows = await db.query.messages.findMany({
@@ -168,10 +168,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const isAdmin = isAdminEmail(session.user.email ?? "");
+  const admin = await isAdmin(session.user.email ?? "");
   let targetUserId: string;
 
-  if (isAdmin && toUserId) {
+  if (admin && toUserId) {
     targetUserId = toUserId;
   } else {
     const adminId = await getAdminUserId();

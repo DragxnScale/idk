@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdmin } from "@/lib/admin";
 
 export async function GET() {
   let session;
@@ -99,7 +99,7 @@ export async function GET() {
   const todayPages = todaySessions.reduce((s, r) => s + (r.pagesVisited ?? 0), 0);
 
   return NextResponse.json({
-    isAdmin: isAdminEmail(session.user.email ?? ""),
+    isAdmin: await isAdmin(session.user.email ?? ""),
     totalSessions: completed.length,
     totalMinutes,
     totalPages,

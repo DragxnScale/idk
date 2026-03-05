@@ -15,6 +15,7 @@ export const users = sqliteTable("users", {
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   mutedUntil: integer("muted_until", { mode: "timestamp" }),
+  isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
   blocked: integer("blocked", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
