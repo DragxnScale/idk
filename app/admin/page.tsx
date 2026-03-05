@@ -69,7 +69,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "upload" | "catalog" | "messages";
+type Tab = "users" | "upload" | "catalog" | "messages" | "storage";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -149,7 +149,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-800 mb-6">
-          {(["users", "upload", "catalog", "messages"] as Tab[]).map((t) => (
+          {(["users", "upload", "catalog", "messages", "storage"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -159,7 +159,7 @@ export default function AdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-300"
               }`}
             >
-              {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : "Users"}
+              {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : t === "storage" ? "Blob Storage" : "Users"}
             </button>
           ))}
         </div>
@@ -168,6 +168,7 @@ export default function AdminPage() {
         {tab === "upload" && <UploadTab />}
         {tab === "catalog" && <CatalogTab />}
         {tab === "messages" && <MessagesTab />}
+        {tab === "storage" && <StorageTab />}
       </div>
     </main>
   );
@@ -1816,6 +1817,181 @@ interface ChatMsg {
   content: string;
   createdAt: string | null;
 }
+
+// ── Storage Tab ───────────────────────────────────────────────────────────
+
+interface BlobItem {
+  url: string;
+  pathname: string;
+  size: number;
+  uploadedAt: string;
+}
+
+function StorageTab() {
+  const [blobs, setBlobs] = useState<BlobItem[]>([]);
+  const [totalSize, setTotalSize] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<BlobItem | null>(null);
+  const [filter, setFilter] = useState<"all" | "user" | "admin">("all");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/admin/blobs");
+    if (res.ok) {
+      const data = await res.json();
+      setBlobs(data.blobs);
+      setTotalSize(data.totalSize);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function deleteBlob(blob: BlobItem) {
+    setDeleting(blob.url);
+    const res = await fetch(`/api/admin/blobs?url=${encodeURIComponent(blob.url)}`, { method: "DELETE" });
+    if (res.ok) {
+      setBlobs((prev) => prev.filter((b) => b.url !== blob.url));
+      setTotalSize((prev) => prev - blob.size);
+    } else {
+      alert("Failed to delete blob");
+    }
+    setDeleting(null);
+    setConfirmDelete(null);
+  }
+
+  const fmtSize = (bytes: number) => {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
+
+  const isUserUpload = (b: BlobItem) => b.pathname.startsWith("uploads/");
+  const isAdminUpload = (b: BlobItem) => b.pathname.startsWith("public/");
+
+  const filtered = blobs.filter((b) => {
+    if (filter === "user") return isUserUpload(b);
+    if (filter === "admin") return isAdminUpload(b);
+    return true;
+  });
+
+  const userBlobs = blobs.filter(isUserUpload);
+  const adminBlobs = blobs.filter(isAdminUpload);
+  const quotaGB = 1;
+  const usedPct = Math.min(100, (totalSize / (quotaGB * 1024 * 1024 * 1024)) * 100);
+
+  if (loading) {
+    return <p className="text-gray-400 animate-pulse py-8 text-center text-sm">Loading blob storage…</p>;
+  }
+
+  return (
+    <>
+      {/* Usage overview */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold">Storage Usage</h2>
+          <button onClick={load} className="rounded-lg border border-gray-700 px-3 py-1 text-xs hover:bg-gray-800 transition">Refresh</button>
+        </div>
+        <div className="h-3 rounded-full bg-gray-800 overflow-hidden mb-2">
+          <div
+            className={`h-full rounded-full transition-all ${usedPct > 90 ? "bg-red-500" : usedPct > 70 ? "bg-amber-500" : "bg-blue-500"}`}
+            style={{ width: `${usedPct}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-gray-400">
+          <span>{fmtSize(totalSize)} used</span>
+          <span>{quotaGB} GB limit ({usedPct.toFixed(1)}%)</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="rounded-lg border border-gray-800 p-3 text-center">
+            <p className="text-lg font-bold">{blobs.length}</p>
+            <p className="text-xs text-gray-500">Total files</p>
+          </div>
+          <div className="rounded-lg border border-gray-800 p-3 text-center">
+            <p className="text-lg font-bold">{adminBlobs.length}</p>
+            <p className="text-xs text-gray-500">Catalog ({fmtSize(adminBlobs.reduce((s, b) => s + b.size, 0))})</p>
+          </div>
+          <div className="rounded-lg border border-gray-800 p-3 text-center">
+            <p className="text-lg font-bold">{userBlobs.length}</p>
+            <p className="text-xs text-gray-500">User uploads ({fmtSize(userBlobs.reduce((s, b) => s + b.size, 0))})</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2 mb-4">
+        {(["all", "user", "admin"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              filter === f ? "bg-white text-black" : "border border-gray-700 text-gray-400 hover:bg-gray-800"
+            }`}
+          >
+            {f === "all" ? `All (${blobs.length})` : f === "user" ? `User uploads (${userBlobs.length})` : `Catalog (${adminBlobs.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Blob list */}
+      <div className="space-y-2">
+        {filtered.length === 0 && (
+          <p className="text-center text-gray-500 py-8 text-sm">No blobs found.</p>
+        )}
+        {filtered
+          .sort((a, b) => b.size - a.size)
+          .map((blob) => {
+            const name = decodeURIComponent(blob.pathname.split("/").pop() ?? blob.pathname);
+            const folder = blob.pathname.substring(0, blob.pathname.lastIndexOf("/"));
+            return (
+              <div key={blob.url} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate" title={name}>{name}</p>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                    <span className={`px-1.5 py-0.5 rounded font-medium ${isUserUpload(blob) ? "bg-blue-900/50 text-blue-400" : "bg-green-900/50 text-green-400"}`}>
+                      {isUserUpload(blob) ? "User" : "Catalog"}
+                    </span>
+                    <span className="font-mono">{fmtSize(blob.size)}</span>
+                    <span>{new Date(blob.uploadedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="truncate max-w-[200px] text-gray-600" title={folder}>{folder}/</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfirmDelete(blob)}
+                  disabled={deleting === blob.url}
+                  className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40 flex-shrink-0"
+                >
+                  {deleting === blob.url ? "…" : "Delete"}
+                </button>
+              </div>
+            );
+          })}
+      </div>
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
+            <h2 className="text-base font-semibold mb-1">Delete this blob?</h2>
+            <p className="text-sm text-gray-400 mb-1 truncate">{decodeURIComponent(confirmDelete.pathname)}</p>
+            <p className="text-sm text-gray-500 mb-1">{fmtSize(confirmDelete.size)}</p>
+            <p className="text-sm text-red-400 mb-5">This will permanently delete the file from Vercel Blob storage. Any sessions or documents referencing it will break.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
+              <button onClick={() => deleteBlob(confirmDelete)} disabled={deleting === confirmDelete.url} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
+                {deleting === confirmDelete.url ? "Deleting…" : "Yes, delete it"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Messages Tab ──────────────────────────────────────────────────────────
 
 function MessagesTab() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
