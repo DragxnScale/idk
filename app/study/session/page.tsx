@@ -98,7 +98,7 @@ function StudySessionInner() {
           if (active.documentJson) {
             try { setSelectedDoc(JSON.parse(active.documentJson)); } catch {}
           }
-          document.documentElement.requestFullscreen().catch(() => {});
+          try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch {}
           setCheckingActive(false);
         } else {
           // There's an active session but user didn't click resume
@@ -321,8 +321,10 @@ function StudySessionInner() {
       }
       if (e.key === "F11" || (e.key === "f" && e.shiftKey)) {
         e.preventDefault();
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-        else document.documentElement.requestFullscreen().catch(() => {});
+        try {
+          if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
+          else document.documentElement.requestFullscreen?.()?.catch?.(() => {});
+        } catch {}
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -648,8 +650,7 @@ function StudySessionInner() {
                 setError(`Select exactly ${targetValue} chapter${targetValue !== 1 ? "s" : ""}`);
                 return;
               }
-              // Request fullscreen here — must be inside a user-gesture handler
-              document.documentElement.requestFullscreen().catch(() => {});
+              try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch {}
               handleStart();
             }}
             className="space-y-5"
