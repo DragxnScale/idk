@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdmin, isSuperAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -13,6 +13,14 @@ export async function POST(req: NextRequest) {
   const { userId, action, durationMinutes } = await req.json();
   if (!userId || !action) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  }
+
+  const target = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { email: true },
+  });
+  if (target && isSuperAdmin(target.email)) {
+    return NextResponse.json({ error: "Cannot modify the owner account" }, { status: 400 });
   }
 
   switch (action) {

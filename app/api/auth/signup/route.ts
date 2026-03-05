@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, bannedEmails } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/password";
+import { eq } from "drizzle-orm";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -23,8 +24,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const banned = await db.query.bannedEmails.findFirst({
+    where: eq(bannedEmails.email, email),
+  });
+  if (banned) {
+    return NextResponse.json(
+      { error: "This email has been suspended." },
+      { status: 403 }
+    );
+  }
+
   const existing = await db.query.users.findFirst({
-    where: (u, { eq }) => eq(u.email, email),
+    where: (u, { eq: e }) => e(u.email, email),
   });
 
   if (existing) {

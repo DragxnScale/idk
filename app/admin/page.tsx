@@ -220,19 +220,59 @@ function UsersTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [banBlacklist, setBanBlacklist] = useState(true);
+  const [bannedList, setBannedList] = useState<{ email: string; reason: string | null; bannedBy: string | null; bannedAt: string | null }[]>([]);
+  const [showBanned, setShowBanned] = useState(false);
+  const [newBanEmail, setNewBanEmail] = useState("");
+  const [addingBan, setAddingBan] = useState(false);
+
   async function banUser(user: UserRow) {
     setBanning(user.id);
-    const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+    const params = new URLSearchParams();
+    if (!banBlacklist) params.set("blacklist", "false");
+    const res = await fetch(`/api/admin/users/${user.id}?${params}`, { method: "DELETE" });
     if (res.ok) {
       setUsers((prev) => prev?.filter((u) => u.id !== user.id) ?? null);
       if (selectedUser?.id === user.id) { setSelectedUser(null); setUserSessions(null); }
+      if (banBlacklist) loadBannedList();
     } else {
       const data = await res.json().catch(() => ({}));
       alert(data.error ?? "Failed to ban user");
     }
     setBanning(null);
     setConfirmBan(null);
+    setBanBlacklist(true);
   }
+
+  async function loadBannedList() {
+    const res = await fetch("/api/admin/banned-emails");
+    if (res.ok) setBannedList(await res.json());
+  }
+
+  async function addBannedEmail() {
+    if (!newBanEmail.trim()) return;
+    setAddingBan(true);
+    const res = await fetch("/api/admin/banned-emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: newBanEmail.trim() }),
+    });
+    if (res.ok) {
+      setNewBanEmail("");
+      loadBannedList();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Failed to add banned email");
+    }
+    setAddingBan(false);
+  }
+
+  async function removeBannedEmail(email: string) {
+    await fetch(`/api/admin/banned-emails?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+    setBannedList((prev) => prev.filter((b) => b.email !== email));
+  }
+
+  useEffect(() => { if (showBanned) loadBannedList(); }, [showBanned]);
 
   async function openUserDetail(user: UserRow) {
     setSelectedUser(user);
@@ -455,12 +495,14 @@ function UsersTab() {
                 {selectedUser.hasActiveSession && <span className="text-amber-400 font-medium">Active session</span>}
               </div>
             </div>
-            <button
-              onClick={() => setConfirmBan(selectedUser)}
-              className="rounded-md border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30 transition"
-            >
-              Ban user
-            </button>
+            {!selectedUser.isSuperAdmin && (
+              <button
+                onClick={() => setConfirmBan(selectedUser)}
+                className="rounded-md border border-red-800 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30 transition"
+              >
+                Ban user
+              </button>
+            )}
           </div>
         </div>
 
@@ -606,19 +648,7 @@ function UsersTab() {
         )}
 
         {confirmBan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
-              <h2 className="text-base font-semibold mb-1">Ban this user?</h2>
-              <p className="text-sm text-gray-400 mb-1"><span className="text-white font-medium">{confirmBan.email}</span></p>
-              <p className="text-sm text-gray-500 mb-5">This will permanently delete their account, sessions, notes, and quiz data. Cannot be undone.</p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmBan(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
-                <button onClick={() => banUser(confirmBan)} disabled={banning === confirmBan.id} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
-                  {banning === confirmBan.id ? "Banning…" : "Yes, ban them"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <BanModal user={confirmBan} banning={banning} banBlacklist={banBlacklist} setBanBlacklist={setBanBlacklist} onCancel={() => { setConfirmBan(null); setBanBlacklist(true); }} onConfirm={() => banUser(confirmBan)} />
         )}
       </>
     );
@@ -711,13 +741,15 @@ function UsersTab() {
                     >
                       Manage
                     </button>
-                    <button
-                      onClick={() => setConfirmBan(user)}
-                      disabled={banning === user.id}
-                      className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
-                    >
-                      Ban
-                    </button>
+                    {!user.isSuperAdmin && (
+                      <button
+                        onClick={() => setConfirmBan(user)}
+                        disabled={banning === user.id}
+                        className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                      >
+                        Ban
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -725,24 +757,97 @@ function UsersTab() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-gray-600 text-center">Banning permanently deletes all account data.</p>
+      <p className="mt-3 text-xs text-gray-600 text-center">Banning permanently deletes all account data and blacklists the email.</p>
 
-      {confirmBan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
-            <h2 className="text-base font-semibold mb-1">Ban this user?</h2>
-            <p className="text-sm text-gray-400 mb-1"><span className="text-white font-medium">{confirmBan.email}</span></p>
-            <p className="text-sm text-gray-500 mb-5">This will permanently delete their account, sessions, notes, and quiz data. Cannot be undone.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmBan(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
-              <button onClick={() => banUser(confirmBan)} disabled={banning === confirmBan.id} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
-                {banning === confirmBan.id ? "Banning…" : "Yes, ban them"}
+      {/* Banned emails section */}
+      <div className="mt-6">
+        <button
+          onClick={() => setShowBanned((v) => !v)}
+          className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-4 transition"
+        >
+          {showBanned ? "Hide" : "Show"} banned emails ({bannedList.length})
+        </button>
+
+        {showBanned && (
+          <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900 p-4">
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                placeholder="Add email to blacklist…"
+                value={newBanEmail}
+                onChange={(e) => setNewBanEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addBannedEmail()}
+                className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-1.5 text-sm placeholder-gray-600 focus:outline-none focus:border-gray-500"
+              />
+              <button
+                onClick={addBannedEmail}
+                disabled={addingBan || !newBanEmail.trim()}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium hover:bg-red-700 transition disabled:opacity-40"
+              >
+                {addingBan ? "…" : "Blacklist"}
               </button>
             </div>
+            {bannedList.length === 0 ? (
+              <p className="text-xs text-gray-600 text-center py-2">No banned emails.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-auto">
+                {bannedList.map((b) => (
+                  <div key={b.email} className="flex items-center justify-between gap-2 rounded-lg bg-gray-950 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{b.email}</p>
+                      <p className="text-[10px] text-gray-600">
+                        {b.bannedAt ? new Date(b.bannedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : ""}
+                        {b.bannedBy ? ` by ${b.bannedBy}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => removeBannedEmail(b.email)}
+                      className="flex-shrink-0 rounded-md border border-gray-700 px-2 py-1 text-[10px] text-gray-500 hover:text-white hover:border-gray-500 transition"
+                    >
+                      Unban
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        )}
+      </div>
+
+      {confirmBan && (
+        <BanModal user={confirmBan} banning={banning} banBlacklist={banBlacklist} setBanBlacklist={setBanBlacklist} onCancel={() => { setConfirmBan(null); setBanBlacklist(true); }} onConfirm={() => banUser(confirmBan)} />
       )}
     </>
+  );
+}
+
+function BanModal({ user, banning, banBlacklist, setBanBlacklist, onCancel, onConfirm }: {
+  user: UserRow; banning: string | null; banBlacklist: boolean;
+  setBanBlacklist: (v: boolean) => void; onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
+        <h2 className="text-base font-semibold mb-1">Ban this user?</h2>
+        <p className="text-sm text-gray-400 mb-1"><span className="text-white font-medium">{user.email}</span></p>
+        <p className="text-sm text-gray-500 mb-4">This will permanently delete their account, sessions, notes, and quiz data. Cannot be undone.</p>
+        <label className="flex items-center gap-2 mb-5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={banBlacklist}
+            onChange={(e) => setBanBlacklist(e.target.checked)}
+            className="rounded border-gray-600"
+          />
+          <span className="text-sm text-gray-400">Blacklist email (prevent re-signup)</span>
+        </label>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
+          <button onClick={onConfirm} disabled={banning === user.id} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
+            {banning === user.id ? "Banning…" : "Yes, ban them"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

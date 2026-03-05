@@ -2,8 +2,9 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { decode } from "next-auth/jwt";
 import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, bannedEmails } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/password";
 
 const SESSION_COOKIE = "sf.session-token";
@@ -38,8 +39,13 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) return null;
         const email = credentials.email.toLowerCase().trim();
 
+        const banned = await db.query.bannedEmails.findFirst({
+          where: eq(bannedEmails.email, email),
+        });
+        if (banned) return null;
+
         const user = await db.query.users.findFirst({
-          where: (u, { eq }) => eq(u.email, email),
+          where: (u, { eq: e }) => e(u.email, email),
         });
 
         if (!user || !user.passwordHash) return null;

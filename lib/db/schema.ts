@@ -63,6 +63,15 @@ export const verificationTokens = sqliteTable(
   })
 );
 
+// ── Email blacklist ──────────────────────────────────────────────────
+
+export const bannedEmails = sqliteTable("banned_emails", {
+  email: text("email").primaryKey(),
+  reason: text("reason"),
+  bannedBy: text("banned_by"),
+  bannedAt: integer("banned_at", { mode: "timestamp" }),
+});
+
 // ── Study app tables ─────────────────────────────────────────────────
 
 export const studySessions = sqliteTable("study_sessions", {

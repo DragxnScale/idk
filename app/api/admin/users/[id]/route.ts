@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
-import { requireAdmin, isAdmin } from "@/lib/admin";
+import { requireAdmin, isAdmin, isSuperAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
-import { users, studySessions, pageVisits } from "@/lib/db/schema";
+import { users, studySessions, pageVisits, bannedEmails } from "@/lib/db/schema";
 
 export async function GET(
   request: Request,
@@ -120,8 +120,26 @@ export async function DELETE(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  if (isSuperAdmin(target.email)) {
+    return NextResponse.json({ error: "Cannot ban the owner account" }, { status: 400 });
+  }
+
   if (await isAdmin(target.email)) {
-    return NextResponse.json({ error: "Cannot ban admin account" }, { status: 400 });
+    return NextResponse.json({ error: "Cannot ban an admin. Remove admin role first." }, { status: 400 });
+  }
+
+  const adminSession = await requireAdmin();
+  const { searchParams: sp } = new URL(request.url);
+  const blacklist = sp.get("blacklist") !== "false";
+  const reason = sp.get("reason") || null;
+
+  if (blacklist) {
+    await db.insert(bannedEmails).values({
+      email: target.email.toLowerCase(),
+      reason,
+      bannedBy: adminSession?.user?.email ?? "unknown",
+      bannedAt: new Date(),
+    }).onConflictDoNothing();
   }
 
   await db.delete(users).where(eq(users.id, params.id));
