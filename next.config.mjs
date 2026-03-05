@@ -3,6 +3,8 @@ import { execSync } from "child_process";
 
 let commitCount = 0;
 try {
+  // Vercel uses shallow clones; unshallow first if possible
+  try { execSync("git fetch --unshallow 2>/dev/null || true", { stdio: "ignore" }); } catch {}
   commitCount = parseInt(
     execSync("git rev-list --count HEAD").toString().trim(),
     10

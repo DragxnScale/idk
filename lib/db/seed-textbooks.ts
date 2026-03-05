@@ -306,12 +306,6 @@ export async function ensureSeeded() {
     await db
       .insert(textbookCatalog)
       .values({ ...book, createdAt: now })
-      .onConflictDoUpdate({
-        target: textbookCatalog.id,
-        set: {
-          chapterPageRanges: book.chapterPageRanges,
-          sourceUrl: book.sourceUrl,
-        },
-      });
+      .onConflictDoNothing();
   }
 }

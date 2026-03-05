@@ -232,20 +232,19 @@ function StudySessionInner() {
 
   // Poll music current time / duration for progress bar
   useEffect(() => {
-    if (!musicPlaying || musicTracks.length === 0) {
-      return;
-    }
+    if (musicTracks.length === 0) return;
     const iv = setInterval(() => {
       if (currentIsYt && ytPlayerRef.current) {
         try {
           const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
           const d = ytPlayerRef.current.getDuration?.() ?? 0;
-          setMusicTime(t);
-          setMusicDuration(d);
+          if (d > 0) setMusicDuration(d);
+          if (musicPlaying) setMusicTime(t);
         } catch {}
       } else if (audioRef.current) {
-        setMusicTime(audioRef.current.currentTime ?? 0);
-        setMusicDuration(audioRef.current.duration || 0);
+        const d = audioRef.current.duration;
+        if (d && !isNaN(d)) setMusicDuration(d);
+        if (musicPlaying) setMusicTime(audioRef.current.currentTime ?? 0);
       }
     }, 500);
     return () => clearInterval(iv);
