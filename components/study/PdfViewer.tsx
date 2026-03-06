@@ -100,10 +100,11 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const pageWrapRef = useRef<HTMLDivElement>(null);
   const [innerHeight, setInnerHeight] = useState(800);
 
-  const pdfOptions = useMemo(() => ({
-    disableAutoFetch: true,
-    disableStream: true,
-  }), []);
+  const isBlobServe = url.includes("/api/blob/serve");
+  const pdfOptions = useMemo(() =>
+    isBlobServe ? { disableAutoFetch: true, disableStream: true } : {},
+    [isBlobServe]
+  );
 
   const effectiveZoom = baseZoom * localZoom;
   const renderWidth = containerWidth || 600;
