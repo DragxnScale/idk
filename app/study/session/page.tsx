@@ -66,6 +66,7 @@ function StudySessionInner() {
   const [musicTime, setMusicTime] = useState(0);
   const [musicDuration, setMusicDuration] = useState(0);
   const ytIframeRef = useRef<HTMLIFrameElement>(null);
+  const musicTimeRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ytKickedRef = useRef(false);
 
@@ -173,7 +174,10 @@ function StudySessionInner() {
         const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
         if (data.event === "initialDelivery" || data.event === "infoDelivery") {
           const info = data.info;
-          if (info?.currentTime != null) setMusicTime(info.currentTime);
+          if (info?.currentTime != null) {
+            setMusicTime(info.currentTime);
+            musicTimeRef.current = info.currentTime;
+          }
           if (info?.duration != null && info.duration > 0) setMusicDuration(info.duration);
           if (info?.playerState === 0) handleTrackEnd();
           if (info?.playerState === 1 && !musicPlaying) setMusicPlaying(true);
@@ -281,7 +285,7 @@ function StudySessionInner() {
   }
   function musicSkip(seconds: number) {
     if (currentIsYt) {
-      ytCommand("seekTo", [Math.max(0, musicTime + seconds), true]);
+      ytCommand("seekTo", [Math.max(0, musicTimeRef.current + seconds), true]);
     } else if (audioRef.current) {
       audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + seconds);
     }
@@ -927,7 +931,7 @@ function StudySessionInner() {
                 <iframe
                   ref={ytIframeRef}
                   key={currentTrack.url}
-                  src={`https://www.youtube.com/embed/${parseYouTubeId(currentTrack.url)}?autoplay=0&enablejsapi=1&controls=1&modestbranding=1&rel=0&playsinline=1&origin=${typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : ""}`}
+                  src={`https://www.youtube.com/embed/${parseYouTubeId(currentTrack.url)}?autoplay=${musicPlaying ? 1 : 0}&enablejsapi=1&controls=1&modestbranding=1&rel=0&playsinline=1&origin=${typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : ""}`}
                   width="100%"
                   height="140"
                   allow="autoplay; encrypted-media"
