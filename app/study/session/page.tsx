@@ -810,9 +810,9 @@ function StudySessionInner() {
       onTabReturn={() => setIsPaused(true)}
       onResume={() => setIsPaused(false)}
     >
-      <main className="min-h-screen flex flex-col">
+      <main className="h-dvh flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 px-6 py-3 dark:border-gray-700">
+        <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2 sm:px-6 sm:py-3 sm:gap-4 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <h1 className="text-sm font-semibold">
               {selectedDoc?.title ?? "Study session"}
@@ -901,9 +901,9 @@ function StudySessionInner() {
         </header>
 
         {/* Body */}
-        <div className="flex flex-1 flex-col lg:flex-row">
+        <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
           {/* Timer sidebar */}
-          <aside className="flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 p-6 lg:w-64">
+          <aside className="flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 p-4 sm:p-6 lg:w-64 max-h-40 lg:max-h-none overflow-auto">
             <Timer
               goalType={goalType}
               targetValue={targetValue}
@@ -943,7 +943,7 @@ function StudySessionInner() {
           </aside>
 
           {/* Reader */}
-          <section className="flex-1 overflow-auto p-3 lg:p-4 flex justify-center">
+          <section className="flex-1 min-h-0 overflow-auto p-3 lg:p-4 flex justify-center">
             {pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
