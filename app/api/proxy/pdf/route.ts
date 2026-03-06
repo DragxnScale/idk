@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
+export const maxDuration = 60;
+
 const ALLOWED_HOSTS = [
   "archive.org",
   "openstax.org",
@@ -66,4 +68,31 @@ export async function GET(request: NextRequest) {
     status: upstream.status,
     headers: responseHeaders,
   });
+}
+
+export async function HEAD(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return new NextResponse(null, { status: 401 });
+  }
+
+  const url = request.nextUrl.searchParams.get("url");
+  if (!url) return new NextResponse(null, { status: 400 });
+
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return new NextResponse(null, { status: 400 }); }
+
+  if (!ALLOWED_HOSTS.some((h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`))) {
+    return new NextResponse(null, { status: 403 });
+  }
+
+  const upstream = await fetch(url, { method: "HEAD", headers: { "User-Agent": "BowlBeacon/1.0" } });
+  const h: Record<string, string> = {
+    "Content-Type": "application/pdf",
+    "Accept-Ranges": upstream.headers.get("accept-ranges") || "bytes",
+  };
+  const cl = upstream.headers.get("content-length");
+  if (cl) h["Content-Length"] = cl;
+
+  return new NextResponse(null, { status: 200, headers: h });
 }

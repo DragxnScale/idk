@@ -158,8 +158,10 @@ function StudySessionInner() {
     if (!currentTrack || !currentIsYt) return;
     const ytId = parseYouTubeId(currentTrack.url);
     if (!ytId) return;
+    let cancelled = false;
 
     function initPlayer() {
+      if (cancelled) return;
       if (ytPlayerRef.current) {
         try { ytPlayerRef.current.destroy(); } catch {}
         ytPlayerRef.current = null;
@@ -173,6 +175,7 @@ function StudySessionInner() {
         playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
           onReady: (e: any) => {
+            if (cancelled) return;
             setMusicReady(true);
             try {
               e.target.setVolume?.(100);
@@ -181,6 +184,7 @@ function StudySessionInner() {
             } catch {}
           },
           onStateChange: (e: any) => {
+            if (cancelled) return;
             if (e.data === (window as any).YT.PlayerState.ENDED) {
               handleTrackEnd();
             }
@@ -192,13 +196,25 @@ function StudySessionInner() {
       });
     }
 
-    if ((window as any).YT?.Player) {
-      initPlayer();
-    } else {
-      (window as any).onYouTubeIframeAPIReady = initPlayer;
+    function waitForApi() {
+      if (cancelled) return;
+      if ((window as any).YT?.Player) {
+        initPlayer();
+      } else {
+        (window as any).onYouTubeIframeAPIReady = () => { if (!cancelled) initPlayer(); };
+        // Fallback poll in case the callback was missed
+        const poll = setInterval(() => {
+          if (cancelled) { clearInterval(poll); return; }
+          if ((window as any).YT?.Player) { clearInterval(poll); initPlayer(); }
+        }, 300);
+        setTimeout(() => clearInterval(poll), 15000);
+      }
     }
 
+    waitForApi();
+
     return () => {
+      cancelled = true;
       if (ytPlayerRef.current) {
         try { ytPlayerRef.current.destroy(); } catch {}
         ytPlayerRef.current = null;
