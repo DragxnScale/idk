@@ -65,8 +65,7 @@ function StudySessionInner() {
   const [musicReady, setMusicReady] = useState(false);
   const [musicTime, setMusicTime] = useState(0);
   const [musicDuration, setMusicDuration] = useState(0);
-  const ytPlayerRef = useRef<any>(null);
-  const ytContainerRef = useRef<HTMLDivElement>(null);
+  const ytIframeRef = useRef<HTMLIFrameElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ytKickedRef = useRef(false);
 
@@ -144,106 +143,66 @@ function StudySessionInner() {
   const currentTrack = musicTracks[musicIdx] ?? null;
   const currentIsYt = currentTrack ? isYouTubeUrl(currentTrack.url) : false;
 
-  // YouTube IFrame API setup
-  useEffect(() => {
-    if (musicTracks.length === 0) return;
-    if (!(window as any).YT && !document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(tag);
-    }
-  }, [musicTracks.length]);
+  // Send a command to the YouTube iframe via postMessage
+  const ytCommand = useCallback((func: string, args: unknown[] = []) => {
+    ytIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ event: "command", func, args }),
+      "*"
+    );
+  }, []);
 
-  // Create / update YouTube player when current track changes
+  const handleTrackEnd = useCallback(() => {
+    if (musicTracks.length <= 1) {
+      if (currentIsYt) {
+        ytCommand("seekTo", [0, true]);
+        ytCommand("playVideo");
+      } else if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
+    } else {
+      setMusicIdx((prev) => (prev + 1) % musicTracks.length);
+    }
+  }, [musicTracks.length, currentIsYt, ytCommand]);
+
+  // Listen for YouTube iframe postMessage events (state, time, duration)
+  useEffect(() => {
+    function handleMsg(e: MessageEvent) {
+      if (!e.origin.includes("youtube.com")) return;
+      try {
+        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (data.event === "initialDelivery" || data.event === "infoDelivery") {
+          const info = data.info;
+          if (info?.currentTime != null) setMusicTime(info.currentTime);
+          if (info?.duration != null && info.duration > 0) setMusicDuration(info.duration);
+          if (info?.playerState === 0) handleTrackEnd();
+          if (info?.playerState === 1 && !musicPlaying) setMusicPlaying(true);
+        }
+        if (data.event === "onReady") {
+          setMusicReady(true);
+        }
+      } catch {}
+    }
+    window.addEventListener("message", handleMsg);
+    return () => window.removeEventListener("message", handleMsg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleTrackEnd, musicPlaying]);
+
+  // When the YouTube iframe loads, tell it we want to listen for events
   useEffect(() => {
     if (!currentTrack || !currentIsYt) return;
-    const ytId = parseYouTubeId(currentTrack.url);
-    if (!ytId) return;
-    let cancelled = false;
-
-    function initPlayer() {
-      if (cancelled) return;
-      if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch {}
-        ytPlayerRef.current = null;
-      }
-      const container = ytContainerRef.current;
-      if (!container) return;
-
-      // Create a fresh target div — YouTube API will replace it with an iframe.
-      // We do this imperatively so React doesn't conflict with the iframe.
-      container.innerHTML = "";
-      const target = document.createElement("div");
-      target.id = "yt-target-" + Date.now();
-      container.appendChild(target);
-
-      try {
-        ytPlayerRef.current = new (window as any).YT.Player(target, {
-          height: "140",
-          width: "240",
-          videoId: ytId,
-          playerVars: { autoplay: 1, controls: 1, modestbranding: 1, rel: 0, playsinline: 1 },
-          events: {
-            onReady: (e: any) => {
-              if (cancelled) return;
-              setMusicReady(true);
-              try {
-                e.target.setVolume?.(100);
-                e.target.unMute?.();
-                e.target.playVideo?.();
-              } catch {}
-            },
-            onStateChange: (e: any) => {
-              if (cancelled) return;
-              if (e.data === (window as any).YT.PlayerState.ENDED) {
-                handleTrackEnd();
-              }
-              if (e.data === (window as any).YT.PlayerState.PLAYING) {
-                setMusicPlaying(true);
-              }
-            },
-            onError: (e: any) => {
-              console.warn("[YT Player] error code:", e.data);
-            },
-          },
-        });
-      } catch (err) {
-        console.error("[YT Player] failed to create:", err);
-      }
+    const iframe = ytIframeRef.current;
+    if (!iframe) return;
+    function onLoad() {
+      iframe!.contentWindow?.postMessage(
+        JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
+        "*"
+      );
+      setMusicReady(true);
     }
-
-    function waitForApi() {
-      if (cancelled) return;
-      if ((window as any).YT?.Player) {
-        initPlayer();
-      } else {
-        (window as any).onYouTubeIframeAPIReady = () => { if (!cancelled) initPlayer(); };
-        // Fallback poll in case the callback was missed
-        const poll = setInterval(() => {
-          if (cancelled) { clearInterval(poll); return; }
-          if ((window as any).YT?.Player) { clearInterval(poll); initPlayer(); }
-        }, 300);
-        setTimeout(() => clearInterval(poll), 15000);
-      }
-    }
-
-    waitForApi();
-
-    return () => {
-      cancelled = true;
-      if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch {}
-        ytPlayerRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack?.url, currentIsYt]);
-
-  // When YouTube player becomes ready while musicPlaying is true, start playback
-  useEffect(() => {
-    if (!musicReady || !currentIsYt || !musicPlaying) return;
-    try { ytPlayerRef.current?.playVideo?.(); } catch {}
-  }, [musicReady, currentIsYt, musicPlaying]);
+    iframe.addEventListener("load", onLoad);
+    return () => iframe.removeEventListener("load", onLoad);
+  }, [currentTrack?.url, currentIsYt, currentTrack]);
 
   // Load audio src when track changes (non-YouTube)
   useEffect(() => {
@@ -255,18 +214,11 @@ function StudySessionInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.url, currentIsYt]);
 
-  // Poll music current time / duration for progress bar
+  // Poll music current time / duration for non-YouTube tracks
   useEffect(() => {
-    if (musicTracks.length === 0) return;
+    if (musicTracks.length === 0 || currentIsYt) return;
     const iv = setInterval(() => {
-      if (currentIsYt && ytPlayerRef.current) {
-        try {
-          const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
-          const d = ytPlayerRef.current.getDuration?.() ?? 0;
-          if (d > 0) setMusicDuration(d);
-          if (musicPlaying) setMusicTime(t);
-        } catch {}
-      } else if (audioRef.current) {
+      if (audioRef.current) {
         const d = audioRef.current.duration;
         if (d && !isNaN(d)) setMusicDuration(d);
         if (musicPlaying) setMusicTime(audioRef.current.currentTime ?? 0);
@@ -278,53 +230,17 @@ function StudySessionInner() {
   function toggleMusic() {
     const next = !musicPlaying;
     setMusicPlaying(next);
-    if (currentIsYt && ytPlayerRef.current) {
-      try {
-        const p = ytPlayerRef.current;
-        if (next) {
-          p.unMute?.();
-          p.setVolume?.(100);
-          p.playVideo?.();
-          const ytId = currentTrack ? parseYouTubeId(currentTrack.url) : null;
-          // Retry with escalating force if playback doesn't start
-          setTimeout(() => {
-            try {
-              if (p.getPlayerState?.() !== 1) {
-                p.playVideo?.();
-              }
-            } catch {}
-          }, 500);
-          setTimeout(() => {
-            try {
-              if (p.getPlayerState?.() !== 1 && ytId) {
-                p.loadVideoById?.(ytId);
-              }
-            } catch {}
-          }, 1500);
-        } else {
-          p.pauseVideo?.();
-        }
-      } catch {}
+    if (currentIsYt) {
+      ytCommand(next ? "playVideo" : "pauseVideo");
+      if (next) {
+        ytCommand("unMute");
+        ytCommand("setVolume", [100]);
+      }
     } else if (audioRef.current && currentTrack) {
       if (next) audioRef.current.play().catch(() => {});
       else audioRef.current.pause();
     }
   }
-
-  const handleTrackEnd = useCallback(() => {
-    if (musicTracks.length <= 1) {
-      // Loop single track
-      if (currentIsYt && ytPlayerRef.current) {
-        ytPlayerRef.current.seekTo?.(0);
-        ytPlayerRef.current.playVideo?.();
-      } else if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
-      }
-    } else {
-      setMusicIdx((prev) => (prev + 1) % musicTracks.length);
-    }
-  }, [musicTracks.length, currentIsYt]);
 
   function musicNext() {
     if (musicTracks.length <= 1) return;
@@ -335,9 +251,8 @@ function StudySessionInner() {
     setMusicIdx((prev) => (prev - 1 + musicTracks.length) % musicTracks.length);
   }
   function musicSkip(seconds: number) {
-    if (currentIsYt && ytPlayerRef.current) {
-      const cur = ytPlayerRef.current.getCurrentTime?.() ?? 0;
-      ytPlayerRef.current.seekTo?.(Math.max(0, cur + seconds), true);
+    if (currentIsYt) {
+      ytCommand("seekTo", [Math.max(0, musicTime + seconds), true]);
     } else if (audioRef.current) {
       audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + seconds);
     }
@@ -973,11 +888,21 @@ function StudySessionInner() {
               <p>Stay on this tab to keep the timer running.</p>
             </div>
 
-            {/* YouTube player — ref-based container; inner DOM managed imperatively */}
-            <div
-              ref={ytContainerRef}
-              className="mt-4 rounded-lg overflow-hidden"
-            />
+            {/* YouTube player — direct iframe embed, no API script needed */}
+            {currentTrack && currentIsYt && parseYouTubeId(currentTrack.url) && (
+              <div className="mt-4 rounded-lg overflow-hidden border border-gray-700">
+                <iframe
+                  ref={ytIframeRef}
+                  key={currentTrack.url}
+                  src={`https://www.youtube.com/embed/${parseYouTubeId(currentTrack.url)}?autoplay=1&enablejsapi=1&controls=1&modestbranding=1&rel=0&playsinline=1&origin=${typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : ""}`}
+                  width="100%"
+                  height="140"
+                  allow="autoplay; encrypted-media"
+                  style={{ border: 0, display: "block" }}
+                  title="Music player"
+                />
+              </div>
+            )}
           </aside>
 
           {/* Reader */}
