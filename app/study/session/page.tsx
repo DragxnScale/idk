@@ -169,8 +169,8 @@ function StudySessionInner() {
       const el = document.getElementById("yt-music-player");
       if (!el) return;
       ytPlayerRef.current = new (window as any).YT.Player("yt-music-player", {
-        height: "120",
-        width: "100%",
+        height: "140",
+        width: "240",
         videoId: ytId,
         playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
@@ -958,11 +958,13 @@ function StudySessionInner() {
             </div>
 
             {/* YouTube player — visible in sidebar so browsers allow playback */}
-            {musicTracks.length > 0 && currentIsYt && (
-              <div className="mt-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                <div id="yt-music-player" />
-              </div>
-            )}
+            <div
+              className={`mt-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 ${
+                musicTracks.length > 0 && currentIsYt ? "" : "hidden"
+              }`}
+            >
+              <div id="yt-music-player" style={{ width: "100%", maxWidth: 240 }} />
+            </div>
           </aside>
 
           {/* Reader */}
@@ -1022,12 +1024,6 @@ function StudySessionInner() {
           </div>
         )}
 
-        {/* Fallback: if no music tracks or non-YouTube, keep a placeholder for the player */}
-        {!(musicTracks.length > 0 && currentIsYt) && (
-          <div style={{ position: "fixed", top: -9999, left: -9999, width: 1, height: 1, pointerEvents: "none" }}>
-            <div id="yt-music-player" />
-          </div>
-        )}
         {/* Hidden HTML audio for non-YouTube tracks */}
         <audio
           ref={audioRef}
