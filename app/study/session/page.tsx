@@ -172,12 +172,20 @@ function StudySessionInner() {
         videoId: ytId,
         playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
-          onReady: () => {
+          onReady: (e: any) => {
             setMusicReady(true);
+            try {
+              e.target.setVolume?.(100);
+              e.target.unMute?.();
+              e.target.playVideo?.();
+            } catch {}
           },
           onStateChange: (e: any) => {
             if (e.data === (window as any).YT.PlayerState.ENDED) {
               handleTrackEnd();
+            }
+            if (e.data === (window as any).YT.PlayerState.PLAYING) {
+              setMusicPlaying(true);
             }
           },
         },
@@ -245,7 +253,8 @@ function StudySessionInner() {
           p.unMute?.();
           p.setVolume?.(100);
           p.playVideo?.();
-          // Retry after a short delay in case the player wasn't ready
+          const ytId = currentTrack ? parseYouTubeId(currentTrack.url) : null;
+          // Retry with escalating force if playback doesn't start
           setTimeout(() => {
             try {
               if (p.getPlayerState?.() !== 1) {
@@ -253,6 +262,13 @@ function StudySessionInner() {
               }
             } catch {}
           }, 500);
+          setTimeout(() => {
+            try {
+              if (p.getPlayerState?.() !== 1 && ytId) {
+                p.loadVideoById?.(ytId);
+              }
+            } catch {}
+          }, 1500);
         } else {
           p.pauseVideo?.();
         }
