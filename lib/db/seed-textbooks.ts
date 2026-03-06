@@ -18,7 +18,7 @@ export const seedTextbooks = [
     isbn: "978-0-618-52844-8",
     sourceType: "oer" as const,
     sourceUrl:
-      "https://dn790008.ca.archive.org/0/items/chem-7-zumdahl/Zumdahl_Text.pdf",
+      "https://2xck0j9fyjman2tw.private.blob.vercel-storage.com/public/zumdahl-chemistry-7e/Zumdahl_Text.pdf",
     chapterPageRanges: JSON.stringify({
       "1": [25, 62],
       "2": [63, 100],
