@@ -146,7 +146,7 @@ function StudySessionInner() {
   // YouTube IFrame API setup
   useEffect(() => {
     if (musicTracks.length === 0) return;
-    if (!(window as any).YT) {
+    if (!(window as any).YT && !document.querySelector('script[src*="youtube.com/iframe_api"]')) {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
       document.head.appendChild(tag);
@@ -172,7 +172,7 @@ function StudySessionInner() {
         height: "140",
         width: "240",
         videoId: ytId,
-        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
+        playerVars: { autoplay: 1, controls: 1, modestbranding: 1, rel: 0, playsinline: 1 },
         events: {
           onReady: (e: any) => {
             if (cancelled) return;
@@ -957,13 +957,9 @@ function StudySessionInner() {
               <p>Stay on this tab to keep the timer running.</p>
             </div>
 
-            {/* YouTube player — visible in sidebar so browsers allow playback */}
-            <div
-              className={`mt-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 ${
-                musicTracks.length > 0 && currentIsYt ? "" : "hidden"
-              }`}
-            >
-              <div id="yt-music-player" style={{ width: "100%", maxWidth: 240 }} />
+            {/* YouTube player — always in DOM, visible so browsers allow playback */}
+            <div className="mt-4 rounded-lg overflow-hidden">
+              <div id="yt-music-player" />
             </div>
           </aside>
 
