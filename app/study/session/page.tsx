@@ -166,21 +166,30 @@ function StudySessionInner() {
     }
   }, [musicTracks.length, currentIsYt, ytCommand]);
 
+  // Stable refs so the message handler never needs to re-attach
+  const handleTrackEndRef = useRef(handleTrackEnd);
+  useEffect(() => { handleTrackEndRef.current = handleTrackEnd; }, [handleTrackEnd]);
+  const musicDurationRef = useRef(0);
+
   // Listen for YouTube iframe postMessage events (state, time, duration)
+  // Runs once — uses refs for callbacks so dependencies never change
   useEffect(() => {
     function handleMsg(e: MessageEvent) {
-      if (!e.origin.includes("youtube.com")) return;
+      if (typeof e.data !== "string") return;
       try {
-        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        const data = JSON.parse(e.data);
         if (data.event === "initialDelivery" || data.event === "infoDelivery") {
           const info = data.info;
           if (info?.currentTime != null) {
             setMusicTime(info.currentTime);
             musicTimeRef.current = info.currentTime;
           }
-          if (info?.duration != null && info.duration > 0) setMusicDuration(info.duration);
-          if (info?.playerState === 0) handleTrackEnd();
-          if (info?.playerState === 1 && !musicPlaying) setMusicPlaying(true);
+          if (info?.duration != null && info.duration > 0) {
+            setMusicDuration(info.duration);
+            musicDurationRef.current = info.duration;
+          }
+          if (info?.playerState === 0) handleTrackEndRef.current();
+          if (info?.playerState === 1) setMusicPlaying(true);
         }
         if (data.event === "onReady") {
           setMusicReady(true);
@@ -189,14 +198,32 @@ function StudySessionInner() {
     }
     window.addEventListener("message", handleMsg);
     return () => window.removeEventListener("message", handleMsg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleTrackEnd, musicPlaying]);
+  }, []);
+
+  // Fallback: detect track end by checking if time is near duration
+  useEffect(() => {
+    if (!musicPlaying || !currentIsYt) return;
+    const iv = setInterval(() => {
+      const t = musicTimeRef.current;
+      const d = musicDurationRef.current;
+      if (d > 0 && t > 0 && t >= d - 1.5) {
+        handleTrackEndRef.current();
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [musicPlaying, currentIsYt]);
 
   // When the YouTube iframe loads, tell it we want to listen for events.
   // Retry the handshake several times to handle the race where the iframe
   // loads before the effect attaches the listener.
   useEffect(() => {
     if (!currentTrack || !currentIsYt) return;
+    // Reset time tracking for the new track
+    musicTimeRef.current = 0;
+    musicDurationRef.current = 0;
+    setMusicTime(0);
+    setMusicDuration(0);
+
     const iframe = ytIframeRef.current;
     if (!iframe) return;
     let done = false;
