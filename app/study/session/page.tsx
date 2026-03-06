@@ -66,6 +66,7 @@ function StudySessionInner() {
   const [musicTime, setMusicTime] = useState(0);
   const [musicDuration, setMusicDuration] = useState(0);
   const ytPlayerRef = useRef<any>(null);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ytKickedRef = useRef(false);
 
@@ -166,34 +167,49 @@ function StudySessionInner() {
         try { ytPlayerRef.current.destroy(); } catch {}
         ytPlayerRef.current = null;
       }
-      const el = document.getElementById("yt-music-player");
-      if (!el) return;
-      ytPlayerRef.current = new (window as any).YT.Player("yt-music-player", {
-        height: "140",
-        width: "240",
-        videoId: ytId,
-        playerVars: { autoplay: 1, controls: 1, modestbranding: 1, rel: 0, playsinline: 1 },
-        events: {
-          onReady: (e: any) => {
-            if (cancelled) return;
-            setMusicReady(true);
-            try {
-              e.target.setVolume?.(100);
-              e.target.unMute?.();
-              e.target.playVideo?.();
-            } catch {}
+      const container = ytContainerRef.current;
+      if (!container) return;
+
+      // Create a fresh target div — YouTube API will replace it with an iframe.
+      // We do this imperatively so React doesn't conflict with the iframe.
+      container.innerHTML = "";
+      const target = document.createElement("div");
+      target.id = "yt-target-" + Date.now();
+      container.appendChild(target);
+
+      try {
+        ytPlayerRef.current = new (window as any).YT.Player(target, {
+          height: "140",
+          width: "240",
+          videoId: ytId,
+          playerVars: { autoplay: 1, controls: 1, modestbranding: 1, rel: 0, playsinline: 1 },
+          events: {
+            onReady: (e: any) => {
+              if (cancelled) return;
+              setMusicReady(true);
+              try {
+                e.target.setVolume?.(100);
+                e.target.unMute?.();
+                e.target.playVideo?.();
+              } catch {}
+            },
+            onStateChange: (e: any) => {
+              if (cancelled) return;
+              if (e.data === (window as any).YT.PlayerState.ENDED) {
+                handleTrackEnd();
+              }
+              if (e.data === (window as any).YT.PlayerState.PLAYING) {
+                setMusicPlaying(true);
+              }
+            },
+            onError: (e: any) => {
+              console.warn("[YT Player] error code:", e.data);
+            },
           },
-          onStateChange: (e: any) => {
-            if (cancelled) return;
-            if (e.data === (window as any).YT.PlayerState.ENDED) {
-              handleTrackEnd();
-            }
-            if (e.data === (window as any).YT.PlayerState.PLAYING) {
-              setMusicPlaying(true);
-            }
-          },
-        },
-      });
+        });
+      } catch (err) {
+        console.error("[YT Player] failed to create:", err);
+      }
     }
 
     function waitForApi() {
@@ -957,10 +973,11 @@ function StudySessionInner() {
               <p>Stay on this tab to keep the timer running.</p>
             </div>
 
-            {/* YouTube player — always in DOM, visible so browsers allow playback */}
-            <div className="mt-4 rounded-lg overflow-hidden">
-              <div id="yt-music-player" />
-            </div>
+            {/* YouTube player — ref-based container; inner DOM managed imperatively */}
+            <div
+              ref={ytContainerRef}
+              className="mt-4 rounded-lg overflow-hidden"
+            />
           </aside>
 
           {/* Reader */}
