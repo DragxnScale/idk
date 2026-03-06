@@ -188,20 +188,44 @@ function StudySessionInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleTrackEnd, musicPlaying]);
 
-  // When the YouTube iframe loads, tell it we want to listen for events
+  // When the YouTube iframe loads, tell it we want to listen for events.
+  // Retry the handshake several times to handle the race where the iframe
+  // loads before the effect attaches the listener.
   useEffect(() => {
     if (!currentTrack || !currentIsYt) return;
     const iframe = ytIframeRef.current;
     if (!iframe) return;
-    function onLoad() {
-      iframe!.contentWindow?.postMessage(
-        JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
-        "*"
-      );
-      setMusicReady(true);
+    let done = false;
+
+    function sendListening() {
+      try {
+        iframe!.contentWindow?.postMessage(
+          JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
+          "*"
+        );
+      } catch {}
     }
+
+    function onLoad() {
+      sendListening();
+      setMusicReady(true);
+      done = true;
+    }
+
     iframe.addEventListener("load", onLoad);
-    return () => iframe.removeEventListener("load", onLoad);
+
+    // Retry in case the load event already fired before this effect ran
+    const retries = [300, 800, 1500, 3000];
+    const timers = retries.map((ms) =>
+      setTimeout(() => {
+        if (!done) sendListening();
+      }, ms)
+    );
+
+    return () => {
+      iframe.removeEventListener("load", onLoad);
+      timers.forEach(clearTimeout);
+    };
   }, [currentTrack?.url, currentIsYt, currentTrack]);
 
   // Load audio src when track changes (non-YouTube)
@@ -231,10 +255,15 @@ function StudySessionInner() {
     const next = !musicPlaying;
     setMusicPlaying(next);
     if (currentIsYt) {
-      ytCommand(next ? "playVideo" : "pauseVideo");
       if (next) {
         ytCommand("unMute");
         ytCommand("setVolume", [100]);
+        ytCommand("playVideo");
+        // Retry in case the iframe hasn't completed the listening handshake yet
+        setTimeout(() => ytCommand("playVideo"), 500);
+        setTimeout(() => ytCommand("playVideo"), 1500);
+      } else {
+        ytCommand("pauseVideo");
       }
     } else if (audioRef.current && currentTrack) {
       if (next) audioRef.current.play().catch(() => {});
