@@ -786,14 +786,18 @@ function StudySessionInner() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 w-full">
-                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">{fmtTime(musicTime)}</span>
+                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">
+                        {musicDuration > 0 ? fmtTime(musicTime) : "-:--"}
+                      </span>
                       <div className="flex-1 h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-accent transition-all duration-300"
                           style={{ width: musicDuration > 0 ? `${(musicTime / musicDuration) * 100}%` : "0%" }}
                         />
                       </div>
-                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">{fmtTime(musicDuration)}</span>
+                      <span className="text-[9px] tabular-nums text-gray-400 flex-shrink-0">
+                        {musicDuration > 0 ? fmtTime(musicDuration) : "-:--"}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -894,7 +898,7 @@ function StudySessionInner() {
                 <iframe
                   ref={ytIframeRef}
                   key={currentTrack.url}
-                  src={`https://www.youtube.com/embed/${parseYouTubeId(currentTrack.url)}?autoplay=1&enablejsapi=1&controls=1&modestbranding=1&rel=0&playsinline=1&origin=${typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : ""}`}
+                  src={`https://www.youtube.com/embed/${parseYouTubeId(currentTrack.url)}?autoplay=0&enablejsapi=1&controls=1&modestbranding=1&rel=0&playsinline=1&origin=${typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : ""}`}
                   width="100%"
                   height="140"
                   allow="autoplay; encrypted-media"
