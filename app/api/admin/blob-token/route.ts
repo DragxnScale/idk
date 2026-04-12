@@ -7,9 +7,13 @@ import { requireAdminEdge } from "@/lib/admin-edge";
 
 export const runtime = "edge";
 
-// Health check — visit /api/admin/blob-token in the browser to verify
-// the endpoint is reachable and env vars are set.
-export async function GET() {
+// Health check — admin session required (same as POST).
+export async function GET(request: Request) {
+  const session = await requireAdminEdge(request);
+  if (!session) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const hasBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
   const hasSecret = !!process.env.NEXTAUTH_SECRET;
   return NextResponse.json({

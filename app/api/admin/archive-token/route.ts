@@ -17,5 +17,6 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json({ accessKey, secretKey });
+  // Never return raw keys to the browser — archive uploads use server-side env only.
+  return NextResponse.json({ ok: true, configured: true });
 }

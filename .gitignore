@@ -5,6 +5,9 @@ out
 *.pem
 .env
 .env*.local
+.env.production
+.env.development
+*credentials*.json
 npm-debug.log*
 *.db
 *.db-journal

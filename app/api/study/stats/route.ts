@@ -8,7 +8,8 @@ export async function GET() {
   try {
     session = await auth();
   } catch (e) {
-    return NextResponse.json({ error: "Auth error", detail: (e as Error).message }, { status: 500 });
+    console.error("[study/stats] auth error:", e);
+    return NextResponse.json({ error: "Auth error" }, { status: 500 });
   }
 
   if (!session?.user?.id) {
@@ -28,12 +29,11 @@ export async function GET() {
       }),
     ]);
   } catch (dbErr) {
-    return NextResponse.json({
-      error: "Database error",
-      detail: (dbErr as Error).message,
-      dbUrl: process.env.DATABASE_URL ? "set" : "NOT SET",
-      dbAuth: process.env.DATABASE_AUTH_TOKEN ? "set" : "NOT SET",
-    }, { status: 500 });
+    console.error("[study/stats] database error:", dbErr);
+    return NextResponse.json(
+      { error: "Database error" },
+      { status: 500 }
+    );
   }
 
   const completed = rows.filter((r) => r.endedAt);
