@@ -3,6 +3,7 @@ import { generateText } from "ai";
 import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
+import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
 import { aiNotes } from "@/lib/db/schema";
 
@@ -30,11 +31,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "sessionId and pageText are required" }, { status: 400 });
   }
 
+  const ownerExtra = await getAiOwnerStyleExtra();
+  const baseSystem = `You are a study assistant. Given text from a textbook page, produce concise, well-organized study notes. Use bullet points. Highlight key terms in **bold**. Keep it under 300 words. Focus on the most important concepts, definitions, and formulas.
+
+Never use LaTeX or math typesetting: no \\( \\), \\[ \\], $ delimiters, \\text{}, \\frac, or similar. Write units and equations in plain text (e.g. "1 in = 2.54 cm", "F = ma").`;
+
   const { text: rawNotes } = await generateText({
     model: openai(MODEL),
-    system: `You are a study assistant. Given text from a textbook page, produce concise, well-organized study notes. Use bullet points. Highlight key terms in **bold**. Keep it under 300 words. Focus on the most important concepts, definitions, and formulas.
-
-Never use LaTeX or math typesetting: no \\( \\), \\[ \\], $ delimiters, \\text{}, \\frac, or similar. Write units and equations in plain text (e.g. "1 in = 2.54 cm", "F = ma").`,
+    system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
     prompt: `Page ${pageNumber}:\n\n${pageText.slice(0, 6000)}`,
   });
 

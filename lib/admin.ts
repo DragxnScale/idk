@@ -24,3 +24,11 @@ export async function isAdmin(email: string): Promise<boolean> {
 export function isSuperAdmin(email: string): boolean {
   return email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 }
+
+/** Super-owner only (hardcoded email) — not the same as DB `isAdmin`. */
+export async function requireSuperOwner() {
+  const session = await auth();
+  if (!session?.user?.email) return null;
+  if (!isSuperAdmin(session.user.email)) return null;
+  return session;
+}

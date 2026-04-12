@@ -232,3 +232,11 @@ export const quizzes = sqliteTable("quizzes", {
   totalQuestions: integer("total_questions"),
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
+
+// ── App-wide settings (key/value) — e.g. owner AI prompt extras ─────────
+
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull().default(""),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});

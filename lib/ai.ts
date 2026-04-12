@@ -4,7 +4,8 @@ const apiKey = process.env.OPENAI_API_KEY;
 
 export const openai = createOpenAI({ apiKey: apiKey ?? "" });
 
-export const MODEL = "gpt-4o-mini";
+/** OpenAI chat model for all AI features (notes, quiz, videos, owner chat). */
+export const MODEL = "gpt-5.4";
 
 export function isAiConfigured(): boolean {
   return Boolean(apiKey);

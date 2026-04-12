@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createMultipartUploader } from "@vercel/blob/client";
 import Link from "next/link";
+import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "upload" | "catalog" | "messages" | "storage";
+type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "owner";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -99,14 +100,22 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("users");
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
+  const [ownerTabVisible, setOwnerTabVisible] = useState(false);
 
-  // auth check on first load
+  // auth check on first load; owner tab only for super-owner (see lib/admin.ts)
   useEffect(() => {
-    fetch("/api/admin/users").then((r) => {
-      if (r.status === 403) setForbidden(true);
-      setLoading(false);
-    });
+    Promise.all([fetch("/api/admin/users"), fetch("/api/admin/owner-ai")]).then(
+      ([usersRes, ownerRes]) => {
+        if (usersRes.status === 403) setForbidden(true);
+        else setOwnerTabVisible(ownerRes.ok);
+        setLoading(false);
+      }
+    );
   }, []);
+
+  useEffect(() => {
+    if (!ownerTabVisible && tab === "owner") setTab("users");
+  }, [ownerTabVisible, tab]);
 
   if (loading) {
     return (
@@ -150,7 +159,16 @@ export default function AdminPage() {
         {/* Tabs */}
         <div className="overflow-x-auto -mx-6 px-6">
           <div className="flex gap-1 border-b border-gray-800 mb-6 min-w-max">
-            {(["users", "upload", "catalog", "messages", "storage"] as Tab[]).map((t) => (
+            {(
+              [
+                "users",
+                "upload",
+                "catalog",
+                "messages",
+                "storage",
+                ...(ownerTabVisible ? (["owner"] as const) : []),
+              ] as Tab[]
+            ).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -160,7 +178,17 @@ export default function AdminPage() {
                     : "border-transparent text-gray-500 hover:text-gray-300"
                 }`}
               >
-                {t === "upload" ? "Upload to Archive" : t === "catalog" ? "Textbook Catalog" : t === "messages" ? "Messages" : t === "storage" ? "Blob Storage" : "Users"}
+                {t === "upload"
+                  ? "Upload to Archive"
+                  : t === "catalog"
+                    ? "Textbook Catalog"
+                    : t === "messages"
+                      ? "Messages"
+                      : t === "storage"
+                        ? "Blob Storage"
+                        : t === "owner"
+                          ? "Owner AI"
+                          : "Users"}
               </button>
             ))}
           </div>
@@ -171,6 +199,7 @@ export default function AdminPage() {
         {tab === "catalog" && <CatalogTab />}
         {tab === "messages" && <MessagesTab />}
         {tab === "storage" && <StorageTab />}
+        {tab === "owner" && ownerTabVisible && <OwnerAiTab />}
       </div>
     </main>
   );

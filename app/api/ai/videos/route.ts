@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
 
@@ -83,17 +84,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ videos: JSON.parse(row.videosJson), cached: true });
   }
 
-  const { object } = await generateObject({
-    model: openai(MODEL),
-    schema: videoSchema,
-    system: `You are a study assistant. Given reading material from a textbook session, 
+  const ownerExtra = await getAiOwnerStyleExtra();
+  const baseVideoSystem = `You are a study assistant. Given reading material from a textbook session, 
 suggest 3-5 YouTube videos that would genuinely help the student understand the topics better.
 
 Rules:
 - Search queries must be highly specific — include subject area, concept name, and "explained" or "tutorial"
 - Prefer channels like Khan Academy, Professor Leonard, 3Blue1Brown, Crash Course, MIT OCW for academic topics
 - Each video should cover a DIFFERENT concept from the reading — don't repeat topics
-- The reason should be one crisp sentence explaining exactly what gap this video fills`,
+- The reason should be one crisp sentence explaining exactly what gap this video fills`;
+
+  const { object } = await generateObject({
+    model: openai(MODEL),
+    schema: videoSchema,
+    system: appendOwnerStyleToSystem(baseVideoSystem, ownerExtra),
     prompt: `Study session reading material (excerpt):\n\n${accumulatedText.slice(0, 8000)}`,
   });
 

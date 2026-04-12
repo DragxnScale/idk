@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
+import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { quizzes, aiNotes } from "@/lib/db/schema";
 
 const quizSchema = z.object({
@@ -57,11 +58,8 @@ export async function POST(request: Request) {
     where: (n, { eq }) => eq(n.sessionId, sessionId),
   });
   const notesContext = existingNotes.map((n) => n.content).join("\n\n");
-
-  const { object } = await generateObject({
-    model: openai(MODEL),
-    schema: quizSchema,
-    system: `You are a study assistant creating an end-of-session quiz and review material.
+  const ownerExtra = await getAiOwnerStyleExtra();
+  const baseQuizSystem = `You are a study assistant creating an end-of-session quiz and review material.
 
 Given the reading text and any notes, generate:
 1. 5-8 multiple choice questions testing comprehension of the key concepts.
@@ -69,7 +67,12 @@ Given the reading text and any notes, generate:
 2. Review material:
    - keyConcepts: 4-6 most important concepts from the reading
    - thingsToReview: 3-5 specific topics the student should review further
-   - videoSuggestions: 2-3 specific YouTube search queries (include subject + concept + "explained" or "tutorial", e.g. "covalent bonds chemistry tutorial Khan Academy") covering different topics from the reading`,
+   - videoSuggestions: 2-3 specific YouTube search queries (include subject + concept + "explained" or "tutorial", e.g. "covalent bonds chemistry tutorial Khan Academy") covering different topics from the reading`;
+
+  const { object } = await generateObject({
+    model: openai(MODEL),
+    schema: quizSchema,
+    system: appendOwnerStyleToSystem(baseQuizSystem, ownerExtra),
     prompt: `Reading material:\n${accumulatedText.slice(0, 10000)}\n\n${
       notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
     }`,

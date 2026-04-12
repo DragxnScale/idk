@@ -230,6 +230,8 @@ export default function DashboardPage() {
   }
 
   const maxMinutes = Math.max(...stats.weekDays.map((d) => d.minutes), 1);
+  const CHART_BAR_MAX_PX = 104;
+  const MIN_BAR_PX = 8;
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -360,9 +362,15 @@ export default function DashboardPage() {
         {/* Weekly chart */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
           <h2 className="text-sm font-semibold mb-4">This Week</h2>
-          <div className="flex items-end gap-2 h-32">
+          <div className="flex items-end gap-2">
             {stats.weekDays.map((day) => {
-              const height = maxMinutes > 0 ? (day.minutes / maxMinutes) * 100 : 0;
+              const barPx =
+                day.minutes > 0
+                  ? Math.max(
+                      (day.minutes / maxMinutes) * CHART_BAR_MAX_PX,
+                      MIN_BAR_PX
+                    )
+                  : 0;
               const dayLabel = new Date(day.date + "T12:00:00").toLocaleDateString(
                 undefined,
                 { weekday: "short" }
@@ -371,17 +379,20 @@ export default function DashboardPage() {
                 day.date === new Date().toISOString().slice(0, 10);
               return (
                 <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 min-h-[1rem]">
                     {day.minutes > 0 ? `${day.minutes}m` : ""}
                   </span>
-                  <div className="w-full flex justify-center">
+                  <div
+                    className="w-full flex justify-center items-end"
+                    style={{ height: CHART_BAR_MAX_PX }}
+                  >
                     <div
                       className={`w-full max-w-[2rem] rounded-t-md transition-all ${
                         isToday
                           ? "bg-accent"
                           : "bg-gray-300 dark:bg-gray-700"
                       }`}
-                      style={{ height: `${Math.max(height, 4)}%` }}
+                      style={{ height: barPx }}
                     />
                   </div>
                   <span
