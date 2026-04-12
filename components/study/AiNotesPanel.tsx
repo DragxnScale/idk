@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { aiNoteContentToHtml } from "@/lib/ai-notes-render";
 
 interface NoteEntry {
   id: string;
@@ -114,10 +115,7 @@ export function AiNotesPanel({ sessionId, pageTexts }: AiNotesPanelProps) {
             <div
               className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{
-                __html: note.content
-                  .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                  .replace(/\n- /g, "<br/>• ")
-                  .replace(/\n/g, "<br/>"),
+                __html: aiNoteContentToHtml(note.content),
               }}
             />
           </div>

@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
   try {
     const blob = await put(pathname, fetchRes.body!, {
-      access: "private",
+      access: "public",
       contentType: "application/pdf",
     });
     return NextResponse.json({ blobUrl: blob.url, pathname: blob.pathname });

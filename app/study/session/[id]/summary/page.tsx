@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { aiNoteContentToHtml, stripLatexForAiNotes } from "@/lib/ai-notes-render";
 import { QuizView } from "@/components/study/QuizView";
 import { ReviewPanel } from "@/components/study/ReviewPanel";
 
@@ -167,7 +168,9 @@ export default function SessionSummaryPage() {
   );
 
   const copyNotes = useCallback(() => {
-    const text = notes.map((n) => `Page ${n.pageNumber}:\n${n.content}`).join("\n\n---\n\n");
+    const text = notes
+      .map((n) => `Page ${n.pageNumber}:\n${stripLatexForAiNotes(n.content)}`)
+      .join("\n\n---\n\n");
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -423,10 +426,7 @@ export default function SessionSummaryPage() {
                 <div
                   className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none"
                   dangerouslySetInnerHTML={{
-                    __html: note.content
-                      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                      .replace(/\n- /g, "<br/>• ")
-                      .replace(/\n/g, "<br/>"),
+                    __html: aiNoteContentToHtml(note.content),
                   }}
                 />
               </div>

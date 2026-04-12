@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     console.log("[blob-upload-direct] uploading", pathname);
 
     const blob = await put(pathname, request.body, {
-      access: "private",
+      access: "public",
       contentType: "application/pdf",
       multipart: true,
     });
