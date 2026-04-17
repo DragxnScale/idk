@@ -275,7 +275,7 @@ All require admin session (Node: `requireAdmin`, Edge: `requireAdminEdge`). Supe
 | GET | `/api/admin/blob-write-token` | Write token exposure (guarded). |
 | POST | `/api/admin/blob-stream` | **Edge** stream upload to Blob. |
 | POST | `/api/admin/download-store` | Fetch remote PDF → Blob (catalog/archive flows). |
-| GET | `/api/admin/archive-token` | Archive.org S3 signing helper. |
+| GET | `/api/admin/archive-token` | Admin-only; returns `{ ok, configured }` — never raw Archive keys. |
 | POST | `/api/admin/archive-upload` | Upload to Archive. |
 | POST | `/api/admin/mute-block` | Moderation. |
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |

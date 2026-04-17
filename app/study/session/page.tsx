@@ -49,6 +49,10 @@ function StudySessionInner() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<SelectedDocument | null>(null);
+  // When a textbook with an external sourceUrl is picked, we import it to
+  // public Vercel Blob once so future reads skip the proxy entirely.
+  const [importingDoc, setImportingDoc] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [pageTexts, setPageTexts] = useState<Map<number, string>>(new Map());
   const [visitedPageCount, setVisitedPageCount] = useState(0);
@@ -368,6 +372,52 @@ function StudySessionInner() {
     return () => clearInterval(iv);
   }, [sessionId, isPaused, inactivityPrompt, inactivityTimeout]);
 
+  // Auto-import external textbook PDFs into public Blob the first time a user
+  // picks them, so all subsequent reads bypass /api/proxy/pdf entirely.
+  useEffect(() => {
+    if (!selectedDoc) return;
+    if (selectedDoc.type !== "textbook") return;
+    if (!selectedDoc.sourceUrl) return;
+    if (selectedDoc.sourceUrl.includes("blob.vercel-storage.com")) return; // already a blob
+
+    let cancelled = false;
+    setImportingDoc(true);
+    setImportError(null);
+
+    fetch("/api/documents/ensure-imported", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceUrl: selectedDoc.sourceUrl,
+        title: selectedDoc.title,
+        textbookCatalogId: selectedDoc.documentId,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data: { documentId?: string; fileUrl?: string; error?: string }) => {
+        if (cancelled) return;
+        if (data.error) {
+          setImportError(`Could not cache book: ${data.error}. Using fallback.`);
+          return;
+        }
+        if (data.fileUrl) {
+          // Replace sourceUrl with the stored blob URL so getPdfUrl() serves
+          // it directly — no proxy needed now or ever again for this book.
+          setSelectedDoc((prev) =>
+            prev ? { ...prev, sourceUrl: data.fileUrl } : prev
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setImportError("Could not cache book. Using fallback proxy.");
+      })
+      .finally(() => {
+        if (!cancelled) setImportingDoc(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedDoc?.documentId, selectedDoc?.sourceUrl, selectedDoc?.type]);
+
   const handlePageText = useCallback((page: number, text: string) => {
     setPageTexts((prev) => {
       if (prev.has(page)) return prev;
@@ -648,20 +698,31 @@ function StudySessionInner() {
         <section className="mb-8">
           <h2 className="text-lg font-semibold mb-3">1. Reading material</h2>
           {selectedDoc ? (
-            <div className="flex items-center gap-3 rounded-lg border border-green-300 bg-green-50 p-3 dark:border-green-700 dark:bg-green-900/20">
-              <span className="text-green-700 dark:text-green-400 text-sm font-medium flex-1">
-                {selectedDoc.title}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedDoc(null);
-                  setSelectedChapters([]);
-                }}
-                className="text-xs underline text-gray-500"
-              >
-                Change
-              </button>
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 rounded-lg border border-green-300 bg-green-50 p-3 dark:border-green-700 dark:bg-green-900/20">
+                <span className="text-green-700 dark:text-green-400 text-sm font-medium flex-1">
+                  {selectedDoc.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDoc(null);
+                    setSelectedChapters([]);
+                  }}
+                  className="text-xs underline text-gray-500"
+                >
+                  Change
+                </button>
+              </div>
+              {importingDoc && (
+                <p className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 pl-1">
+                  <span className="inline-block h-3 w-3 rounded-full border border-gray-400 border-t-transparent animate-spin" />
+                  Preparing your book for fast loading…
+                </p>
+              )}
+              {importError && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 pl-1">{importError}</p>
+              )}
             </div>
           ) : (
             <DocumentPicker onSelect={setSelectedDoc} />
