@@ -58,6 +58,7 @@ function StudySessionInner() {
   const [visitedPageCount, setVisitedPageCount] = useState(0);
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [activeSession, setActiveSession] = useState<{ id: string; goalType: string; targetValue: number; totalFocusedMinutes: number } | null>(null);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [checkingActive, setCheckingActive] = useState(true);
@@ -520,6 +521,7 @@ function StudySessionInner() {
 
   const handlePageChange = useCallback((page: number) => {
     currentPageRef.current = page;
+    setCurrentPage(page);
     if (!visitedPagesRef.current.has(page)) {
       visitedPagesRef.current.add(page);
       setVisitedPageCount(visitedPagesRef.current.size);
@@ -1056,12 +1058,10 @@ function StudySessionInner() {
             )}
           </section>
 
-          {/* AI Notes panel */}
-          {showNotes && (
-            <aside className="w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-              <AiNotesPanel sessionId={sessionId} pageTexts={pageTexts} />
-            </aside>
-          )}
+          {/* AI Notes panel — always mounted so notes state is preserved on hide/show */}
+          <aside className={`w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 h-[50dvh] lg:h-auto${showNotes ? "" : " hidden"}`}>
+            <AiNotesPanel sessionId={sessionId} pageTexts={pageTexts} currentPage={currentPage} />
+          </aside>
         </div>
 
         {/* Inactivity prompt overlay */}

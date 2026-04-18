@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { aiNoteContentToHtml } from "@/lib/ai-notes-render";
 
 interface NoteEntry {
@@ -12,13 +12,28 @@ interface NoteEntry {
 interface AiNotesPanelProps {
   sessionId: string | null;
   pageTexts: Map<number, string>;
+  currentPage?: number;
 }
 
-export function AiNotesPanel({ sessionId, pageTexts }: AiNotesPanelProps) {
+export function AiNotesPanel({ sessionId, pageTexts, currentPage }: AiNotesPanelProps) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedPages, setGeneratedPages] = useState<Set<number>>(new Set());
+
+  // Load any notes already saved in the DB (e.g. after hide/show or resume).
+  useEffect(() => {
+    if (!sessionId) return;
+    fetch(`/api/ai/notes?sessionId=${encodeURIComponent(sessionId)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((existing: NoteEntry[]) => {
+        if (existing.length > 0) {
+          setNotes(existing);
+          setGeneratedPages(new Set(existing.map((n) => n.pageNumber)));
+        }
+      })
+      .catch(() => {});
+  }, [sessionId]);
 
   const generateNotesForPage = useCallback(
     async (pageNumber: number) => {
@@ -68,17 +83,29 @@ export function AiNotesPanel({ sessionId, pageTexts }: AiNotesPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700 gap-2 flex-wrap">
         <h2 className="text-sm font-semibold">AI Notes</h2>
-        {newPagesAvailable > 0 && (
-          <button
-            onClick={generateAllNew}
-            disabled={generating}
-            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {generating ? "Generating…" : `Generate (${newPagesAvailable} pages)`}
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Note the current page the reader is on */}
+          {currentPage !== undefined && !generatedPages.has(currentPage) && pageTexts.has(currentPage) && (
+            <button
+              onClick={() => generateNotesForPage(currentPage)}
+              disabled={generating}
+              className="rounded-md border border-blue-400 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-500 dark:text-blue-300 dark:hover:bg-blue-900/20"
+            >
+              {generating ? "Generating…" : `Note p. ${currentPage}`}
+            </button>
+          )}
+          {newPagesAvailable > 0 && (
+            <button
+              onClick={generateAllNew}
+              disabled={generating}
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {generating ? "Generating…" : `Generate all (${newPagesAvailable})`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
