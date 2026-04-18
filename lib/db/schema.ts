@@ -11,6 +11,8 @@ export const users = sqliteTable("users", {
   dailyMinutesGoal: integer("daily_minutes_goal"),
   dailySessionsGoal: integer("daily_sessions_goal"),
   inactivityTimeout: integer("inactivity_timeout"), // minutes, null = default (3)
+  quizMinQuestions: integer("quiz_min_questions"), // null = default (3)
+  quizMaxQuestions: integer("quiz_max_questions"), // null = default (10)
   themeId: text("theme_id"), // custom theme color set id
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),

@@ -31,6 +31,8 @@ export default function SettingsPage() {
   const [minutesGoal, setMinutesGoal] = useState<string>("");
   const [sessionsGoal, setSessionsGoal] = useState<string>("");
   const [inactivityMin, setInactivityMin] = useState<string>("");
+  const [quizMin, setQuizMin] = useState<string>("");
+  const [quizMax, setQuizMax] = useState<string>("");
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
 
@@ -112,6 +114,8 @@ export default function SettingsPage() {
         setMinutesGoal(data.dailyMinutesGoal != null ? String(data.dailyMinutesGoal) : "");
         setSessionsGoal(data.dailySessionsGoal != null ? String(data.dailySessionsGoal) : "");
         setInactivityMin(data.inactivityTimeout != null ? String(data.inactivityTimeout) : "");
+        setQuizMin(data.quizMinQuestions != null ? String(data.quizMinQuestions) : "");
+        setQuizMax(data.quizMaxQuestions != null ? String(data.quizMaxQuestions) : "");
         if (data.themeId) setThemeId(data.themeId);
       });
   }, []);
@@ -128,6 +132,8 @@ export default function SettingsPage() {
           dailyMinutesGoal: minutesGoal === "" ? 0 : Number(minutesGoal),
           dailySessionsGoal: sessionsGoal === "" ? 0 : Number(sessionsGoal),
           inactivityTimeout: inactivityMin === "" ? 0 : Number(inactivityMin),
+          quizMinQuestions: quizMin === "" ? 0 : Number(quizMin),
+          quizMaxQuestions: quizMax === "" ? 0 : Number(quizMax),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -271,6 +277,46 @@ export default function SettingsPage() {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
                   min
                 </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Quiz question count
+              </label>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;20.
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="relative w-28">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={quizMin}
+                    onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }}
+                    placeholder="3"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                    min
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400">to</span>
+                <div className="relative w-28">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={quizMax}
+                    onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }}
+                    placeholder="10"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                    max
+                  </span>
+                </div>
               </div>
             </div>
 

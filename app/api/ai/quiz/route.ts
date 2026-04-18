@@ -5,28 +5,54 @@ import { auth } from "@/lib/auth";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
-import { quizzes, aiNotes } from "@/lib/db/schema";
+import { quizzes, aiNotes, users } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
-const quizSchema = z.object({
+// ── Constants ──────────────────────────────────────────────────────────
+/** Hard ceiling on question count to avoid burning excessive tokens. */
+const MAX_QUESTIONS = 20;
+const DEFAULT_MIN = 3;
+const DEFAULT_MAX = 10;
+
+/** Phase-1 schema: questions only. Review is generated separately after
+ *  the user completes the quiz so it can target wrong answers. */
+const questionsSchema = z.object({
   questions: z.array(
     z.object({
       question: z.string(),
       options: z.array(z.string()).length(4),
-      correctIndex: z.number().min(0).max(3),
+      correctIndex: z.number().int().min(0).max(3),
       explanation: z.string(),
     })
   ),
-  review: z.object({
-    keyConcepts: z.array(z.string()),
-    thingsToReview: z.array(z.string()),
-    videoSuggestions: z.array(
-      z.object({
-        title: z.string(),
-        searchQuery: z.string(),
-      })
-    ),
-  }),
 });
+
+/** Fisher-Yates shuffle — shuffles options and adjusts correctIndex. */
+function shuffleOptions(q: {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}) {
+  const indices = [0, 1, 2, 3];
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return {
+    question: q.question,
+    options: indices.map((i) => q.options[i]),
+    correctIndex: indices.indexOf(q.correctIndex),
+    explanation: q.explanation,
+  };
+}
+
+/** Count unique pages in the accumulated text (markers like "[Page 47]"). */
+function countPages(text: string): number {
+  const matches = text.match(/\[Page \d+\]/g);
+  if (!matches) return 1;
+  return new Set(matches).size;
+}
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -54,41 +80,58 @@ export async function POST(request: Request) {
     );
   }
 
+  // ── Load user quiz limits ────────────────────────────────────────────
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, session.user.id),
+  });
+  const userMin = Math.max(1, user?.quizMinQuestions ?? DEFAULT_MIN);
+  const userMax = Math.min(MAX_QUESTIONS, Math.max(userMin, user?.quizMaxQuestions ?? DEFAULT_MAX));
+
+  // ── Calculate question count from pages read ─────────────────────────
+  const pagesRead = countPages(accumulatedText);
+  // 1.5 questions per page, clamped within user limits
+  const targetQ = Math.max(userMin, Math.min(userMax, Math.round(pagesRead * 1.5)));
+
+  // ── Build prompt ─────────────────────────────────────────────────────
   const existingNotes = await db.query.aiNotes.findMany({
     where: (n, { eq }) => eq(n.sessionId, sessionId),
   });
   const notesContext = existingNotes.map((n) => n.content).join("\n\n");
   const ownerExtra = await getAiOwnerStyleExtra();
-  const baseQuizSystem = `You are a study assistant creating an end-of-session quiz and review material.
 
-Given the reading text and any notes, generate:
-1. 5-8 multiple choice questions testing comprehension of the key concepts.
-   Each question has exactly 4 options, one correct answer (correctIndex 0-3), and a brief explanation.
-2. Review material:
-   - keyConcepts: 4-6 most important concepts from the reading
-   - thingsToReview: 3-5 specific topics the student should review further
-   - videoSuggestions: 2-3 specific YouTube search queries (include subject + concept + "explained" or "tutorial", e.g. "covalent bonds chemistry tutorial Khan Academy") covering different topics from the reading`;
+  const baseSystem = `You are a study assistant creating an end-of-session quiz.
+
+Generate exactly ${targetQ} multiple-choice questions testing comprehension of the reading material.
+- Each question must have exactly 4 answer options.
+- Vary the correct answer position across questions — do NOT always put the correct answer first.
+- Include one correct answer (correctIndex 0-3) and a brief explanation for each question.
+- Distribute questions evenly across all the major topics in the reading.
+- Questions should test understanding, not just recall of isolated facts.`;
 
   const { object } = await generateObject({
     model: openai(MODEL),
-    schema: quizSchema,
-    system: appendOwnerStyleToSystem(baseQuizSystem, ownerExtra),
+    schema: questionsSchema,
+    system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
     prompt: `Reading material:\n${accumulatedText.slice(0, 10000)}\n\n${
       notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
     }`,
   });
 
+  // ── Shuffle answer options so correct index is randomised ────────────
+  const questions = object.questions.map(shuffleOptions);
+
+  // ── Persist (no review yet — generated after quiz completion) ────────
   const id = crypto.randomUUID();
   await db.insert(quizzes).values({
     id,
     sessionId,
-    questionsJson: JSON.stringify(object.questions),
-    reviewJson: JSON.stringify(object.review),
-    totalQuestions: object.questions.length,
+    questionsJson: JSON.stringify(questions),
+    reviewJson: null,
+    totalQuestions: questions.length,
     createdAt: new Date(),
   });
 
-  return NextResponse.json({ id, ...object });
+  return NextResponse.json({ id, questions });
 }
 
 export async function GET(request: Request) {

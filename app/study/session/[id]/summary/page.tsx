@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { aiNoteContentToHtml, stripLatexForAiNotes } from "@/lib/ai-notes-render";
-import { QuizView } from "@/components/study/QuizView";
+import { QuizView, type WrongAnswer } from "@/components/study/QuizView";
 import { ReviewPanel } from "@/components/study/ReviewPanel";
 
 interface QuizQuestion {
@@ -15,7 +15,7 @@ interface QuizQuestion {
 }
 
 interface ReviewData {
-  keyConcepts: string[];
+  perfect?: boolean;
   thingsToReview: string[];
   videoSuggestions: { title: string; searchQuery: string }[];
 }
@@ -53,6 +53,8 @@ export default function SessionSummaryPage() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [review, setReview] = useState<ReviewData | null>(null);
   const [score, setScore] = useState<number | null>(null);
+  const [quizId, setQuizId] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizError, setQuizError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -77,6 +79,7 @@ export default function SessionSummaryPage() {
           const data = await res.json();
           setQuestions(data.questions);
           setReview(data.review);
+          setQuizId(data.id);
           if (data.score != null) setScore(data.score);
         }
       })
@@ -150,7 +153,8 @@ export default function SessionSummaryPage() {
       }
       const data = await res.json();
       setQuestions(data.questions);
-      setReview(data.review);
+      setReview(data.review ?? null);
+      setQuizId(data.id);
       setTab("quiz");
     } catch (e) {
       setQuizError(e instanceof Error ? e.message : "Something went wrong");
@@ -160,11 +164,32 @@ export default function SessionSummaryPage() {
   }, [sessionId]);
 
   const handleQuizComplete = useCallback(
-    (finalScore: number) => {
+    async (finalScore: number, total: number, wrongAnswers: WrongAnswer[]) => {
       setScore(finalScore);
+      setReviewLoading(true);
       setTab("review");
+      try {
+        const res = await fetch("/api/ai/quiz/review", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            quizId,
+            score: finalScore,
+            totalQuestions: total,
+            wrongQuestions: wrongAnswers,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setReview(data);
+        }
+      } catch {
+        // review failed silently — UI will show a retry or empty state
+      } finally {
+        setReviewLoading(false);
+      }
     },
-    []
+    [quizId]
   );
 
   const copyNotes = useCallback(() => {
@@ -457,7 +482,7 @@ export default function SessionSummaryPage() {
                   </button>
                 </div>
               ) : (
-                <QuizView questions={questions} onComplete={handleQuizComplete} />
+              <QuizView questions={questions} onComplete={handleQuizComplete} />
               )
             ) : (
               <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
@@ -482,7 +507,12 @@ export default function SessionSummaryPage() {
         {/* ── Review tab ─────────────────────────────────────────── */}
         {tab === "review" && (
           <>
-            {review ? (
+            {reviewLoading ? (
+              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900 space-y-3">
+                <div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-black animate-spin mx-auto dark:border-gray-600 dark:border-t-white" />
+                <p className="text-sm text-gray-500">Generating your personalised review…</p>
+              </div>
+            ) : review ? (
               <ReviewPanel
                 review={review}
                 score={score ?? 0}
@@ -491,7 +521,7 @@ export default function SessionSummaryPage() {
             ) : (
               <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
                 <p className="text-gray-500 dark:text-gray-400">
-                  Complete the quiz first to see your review material.
+                  Complete the quiz first to see your personalised review.
                 </p>
               </div>
             )}

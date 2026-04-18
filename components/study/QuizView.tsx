@@ -9,9 +9,15 @@ interface QuizQuestion {
   explanation: string;
 }
 
+export interface WrongAnswer {
+  question: string;
+  correctAnswer: string;
+  explanation: string;
+}
+
 interface QuizViewProps {
   questions: QuizQuestion[];
-  onComplete: (score: number, total: number) => void;
+  onComplete: (score: number, total: number, wrongAnswers: WrongAnswer[]) => void;
 }
 
 export function QuizView({ questions, onComplete }: QuizViewProps) {
@@ -19,6 +25,7 @@ export function QuizView({ questions, onComplete }: QuizViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
+  const [wrongAnswers, setWrongAnswers] = useState<WrongAnswer[]>([]);
   const [finished, setFinished] = useState(false);
 
   const current = questions[currentIndex];
@@ -30,6 +37,15 @@ export function QuizView({ questions, onComplete }: QuizViewProps) {
       setRevealed(true);
       if (optionIndex === current.correctIndex) {
         setScore((s) => s + 1);
+      } else {
+        setWrongAnswers((prev) => [
+          ...prev,
+          {
+            question: current.question,
+            correctAnswer: current.options[current.correctIndex],
+            explanation: current.explanation,
+          },
+        ]);
       }
     },
     [revealed, current]
@@ -37,15 +53,15 @@ export function QuizView({ questions, onComplete }: QuizViewProps) {
 
   const handleNext = useCallback(() => {
     if (currentIndex + 1 >= questions.length) {
-      const finalScore = score;
+      const finalScore = selectedAnswer === current.correctIndex ? score : score;
       setFinished(true);
-      onComplete(finalScore, questions.length);
+      onComplete(finalScore, questions.length, wrongAnswers);
     } else {
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
       setRevealed(false);
     }
-  }, [currentIndex, questions.length, score, onComplete]);
+  }, [currentIndex, questions.length, score, wrongAnswers, onComplete, selectedAnswer, current]);
 
   if (finished) {
     const pct = Math.round((score / questions.length) * 100);
@@ -56,11 +72,13 @@ export function QuizView({ questions, onComplete }: QuizViewProps) {
           You got <strong>{score}</strong> out of <strong>{questions.length}</strong> correct
         </p>
         <p className="text-sm text-gray-500">
-          {pct >= 80
+          {pct === 100
+            ? "Perfect score! You've completely mastered this material."
+            : pct >= 80
             ? "Great job! You have a strong understanding of this material."
             : pct >= 50
-            ? "Good effort! Review the concepts below to strengthen your understanding."
-            : "Keep studying! The review material below will help you improve."}
+            ? "Good effort! Check your review below to strengthen your weak points."
+            : "Keep studying! Your personalised review below covers exactly what you missed."}
         </p>
       </div>
     );
