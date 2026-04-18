@@ -88,11 +88,11 @@ export async function PATCH(request: Request) {
     }
     if (quizMinQuestions !== undefined) {
       const v = Math.round(Number(quizMinQuestions));
-      update.quizMinQuestions = v >= 1 && v <= 20 ? v : null;
+      update.quizMinQuestions = v >= 1 && v <= 25 ? v : null;
     }
     if (quizMaxQuestions !== undefined) {
       const v = Math.round(Number(quizMaxQuestions));
-      update.quizMaxQuestions = v >= 1 && v <= 20 ? v : null;
+      update.quizMaxQuestions = v >= 1 && v <= 25 ? v : null;
     }
 
     await db.update(users).set(update).where(eq(users.id, session.user.id));

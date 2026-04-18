@@ -285,14 +285,14 @@ export default function SettingsPage() {
                 Quiz question count
               </label>
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
-                After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;20.
+                After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;25.
               </p>
               <div className="flex items-center gap-3">
                 <div className="relative w-28">
                   <input
                     type="number"
                     min={1}
-                    max={20}
+                    max={25}
                     value={quizMin}
                     onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }}
                     placeholder="3"
@@ -307,7 +307,7 @@ export default function SettingsPage() {
                   <input
                     type="number"
                     min={1}
-                    max={20}
+                    max={25}
                     value={quizMax}
                     onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }}
                     placeholder="10"

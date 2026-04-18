@@ -1060,7 +1060,7 @@ function StudySessionInner() {
 
           {/* AI Notes panel — always mounted so notes state is preserved on hide/show */}
           <aside className={`w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 h-[50dvh] lg:h-auto${showNotes ? "" : " hidden"}`}>
-            <AiNotesPanel sessionId={sessionId} pageTexts={pageTexts} currentPage={currentPage} />
+            <AiNotesPanel sessionId={sessionId} pageTexts={pageTexts} currentPage={currentPage} startPage={startPage} />
           </aside>
         </div>
 

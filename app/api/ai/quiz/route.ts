@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 
 // ── Constants ──────────────────────────────────────────────────────────
 /** Hard ceiling on question count to avoid burning excessive tokens. */
-const MAX_QUESTIONS = 20;
+const MAX_QUESTIONS = 25;
 const DEFAULT_MIN = 3;
 const DEFAULT_MAX = 10;
 
@@ -102,11 +102,12 @@ export async function POST(request: Request) {
   const baseSystem = `You are a study assistant creating an end-of-session quiz.
 
 Generate exactly ${targetQ} multiple-choice questions testing comprehension of the reading material.
+- Prioritise the most essential, examinable concepts: core definitions, key principles, fundamental relationships, and must-know processes. Skip trivia, historical anecdotes, and fun facts unless they are directly tied to a core concept.
 - Each question must have exactly 4 answer options.
 - Vary the correct answer position across questions — do NOT always put the correct answer first.
 - Include one correct answer (correctIndex 0-3) and a brief explanation for each question.
 - Distribute questions evenly across all the major topics in the reading.
-- Questions should test understanding, not just recall of isolated facts.`;
+- Questions should test understanding and application, not just surface recall.`;
 
   const { object } = await generateObject({
     model: openai(MODEL),

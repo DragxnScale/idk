@@ -13,9 +13,11 @@ interface AiNotesPanelProps {
   sessionId: string | null;
   pageTexts: Map<number, string>;
   currentPage?: number;
+  /** Absolute PDF page where the reading session starts (= chapter page 1). */
+  startPage?: number;
 }
 
-export function AiNotesPanel({ sessionId, pageTexts, currentPage }: AiNotesPanelProps) {
+export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1 }: AiNotesPanelProps) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +79,9 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage }: AiNotesPanel
     }
   }, [pageTexts, generatedPages, generateNotesForPage]);
 
+  // Convert absolute PDF page to chapter-relative page (matches TOC numbering).
+  const relPage = (absPage: number) => absPage - startPage + 1;
+
   const newPagesAvailable = Array.from(pageTexts.keys()).filter(
     (p) => !generatedPages.has(p)
   ).length;
@@ -93,7 +98,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage }: AiNotesPanel
               disabled={generating}
               className="rounded-md border border-blue-400 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-500 dark:text-blue-300 dark:hover:bg-blue-900/20"
             >
-              {generating ? "Generating…" : `Note p. ${currentPage}`}
+              {generating ? "Generating…" : `Note p. ${relPage(currentPage)}`}
             </button>
           )}
           {newPagesAvailable > 0 && (
@@ -137,7 +142,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage }: AiNotesPanel
             className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
           >
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-              Page {note.pageNumber}
+              Page {relPage(note.pageNumber)}
             </p>
             <div
               className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none"
