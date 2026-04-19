@@ -1,0 +1,23 @@
+---
+description: Keep docs/ARCHITECTURE.md in sync with every code change
+alwaysApply: true
+---
+
+# Architecture Doc Maintenance
+
+`docs/ARCHITECTURE.md` is the single source of truth for this project. **Update it as part of every task that touches any of the following:**
+
+- `lib/db/schema.ts` — new or changed tables/columns → update §4 Data model
+- `app/api/**/route.ts` — new, removed, or changed endpoints → update the relevant §5 table
+- `lib/ai.ts`, `lib/app-settings.ts`, AI routes → update §6 AI architecture
+- New React components or pages → update §7 Frontend architecture
+- New environment variables → update §10
+- Security changes → update §8
+- New scripts → update §9
+
+## Rules
+
+1. **Always update the doc before committing.** The commit that adds a feature or fix must include the corresponding ARCHITECTURE.md change in the same commit.
+2. **Do not create a separate "docs update" commit** unless the *only* change is documentation.
+3. **Update only the affected sections** — do not rewrite unrelated sections.
+4. Keep the §11 sequence diagram accurate whenever AI flow or session flow changes.
