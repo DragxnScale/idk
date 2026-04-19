@@ -444,7 +444,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Config-driven grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-4 items-start">
         {(() => {
           const CS = "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4";
           const cardSectionMap: Record<string, React.ReactNode> = {
@@ -880,25 +880,25 @@ export default function SettingsPage() {
                 </div>
               </section>
             ),
+
+            "dog-photo": (
+              <section key="dog-photo" style={{ ...cardGridCol("dog-photo"), ...cardStyle("dog-photo") }} className="rounded-2xl overflow-hidden mb-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
+              </section>
+            ),
+
+            "credits": (
+              <section key="credits" style={{ ...cardGridCol("credits"), ...cardStyle("credits") }} className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 mb-4 p-5">
+                <p className={descClass("credits")}>
+                  {cdesc("credits", "Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!")}
+                </p>
+              </section>
+            ),
           };
 
           return orderedCards.map((card) => cardSectionMap[card.id] ?? null);
         })()}
-
-        {/* Easter egg — dog + credits only when cache is off (not in config order, always appended) */}
-        {!pdfCacheEnabled && (
-          <>
-            <section className="rounded-2xl overflow-hidden mb-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
-            </section>
-            <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 mb-4 p-5">
-              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
-              </p>
-            </section>
-          </>
-        )}
       </div>
         </div>{/* end outer container */}
     </main>

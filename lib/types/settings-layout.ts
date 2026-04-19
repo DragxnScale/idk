@@ -42,9 +42,11 @@ export const CARD_DEFAULTS: CardConfig[] = [
   { id: "pdf-cache",            visible: true, span: 1, order:  5, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
   { id: "upload-storage",       visible: true, span: 1, order:  6, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
   { id: "exit-password",        visible: true, span: 1, order:  7, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "focus-music",          visible: true, span: 2, order:  8, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "theme",                visible: true, span: 2, order:  9, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "keyboard-shortcuts",   visible: true, span: 2, order: 10, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
+  { id: "dog-photo",            visible: true, span: 1, order:  8, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
+  { id: "credits",              visible: true, span: 1, order:  9, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
+  { id: "focus-music",          visible: true, span: 2, order: 10, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
+  { id: "theme",                visible: true, span: 2, order: 11, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
+  { id: "keyboard-shortcuts",   visible: true, span: 2, order: 12, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
 ];
 
 export const DEFAULT_CONFIG: SettingsLayoutConfig = {
@@ -62,6 +64,8 @@ export const CARD_LABELS: Record<string, string> = {
   "pdf-cache":          "Offline PDF cache",
   "upload-storage":     "Upload storage",
   "exit-password":      "Exit password",
+  "dog-photo":          "Dog photo (easter egg)",
+  "credits":            "Credits text (easter egg)",
   "focus-music":        "Focus music",
   "theme":              "Theme",
   "keyboard-shortcuts": "Keyboard shortcuts",
