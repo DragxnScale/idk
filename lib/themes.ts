@@ -9,6 +9,7 @@ export interface ThemeColors {
   cardBorder: string;   // card border
   text: string;         // main text
   textMuted: string;    // muted text
+  custom?: boolean;     // true for user-created themes
 }
 
 export const THEMES: ThemeColors[] = [
@@ -111,5 +112,79 @@ export const THEMES: ThemeColors[] = [
 ];
 
 export function getThemeById(id: string | null): ThemeColors {
-  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+  return THEMES.find((t) => t.id === id) ?? getCustomThemes().find((t) => t.id === id) ?? THEMES[0];
+}
+
+// ── Custom theme utilities ────────────────────────────────────────────────────
+
+const CUSTOM_KEY = "bowlbeacon-custom-themes";
+
+/** Relative luminance (0 = black, 1 = white) */
+function luminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/** Given a bg hex, lighten or darken it by `amount` (0–1) toward white/black */
+function shiftColor(hex: string, amount: number, toward: "white" | "black"): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const target = toward === "white" ? 255 : 0;
+  const mix = (c: number) => Math.round(c + (target - c) * amount);
+  return `#${[mix(r), mix(g), mix(b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Derive a full ThemeColors from the three user-chosen colors.
+ * The user picks: primary (button color), accent (highlight), background.
+ */
+export function buildCustomTheme(
+  id: string,
+  name: string,
+  primary: string,
+  accent: string,
+  bg: string
+): ThemeColors {
+  const bgLum = luminance(bg);
+  const isDark = bgLum < 0.3;
+  const primaryFg = luminance(primary) > 0.35 ? "#0a0a0a" : "#ffffff";
+  const card = isDark ? shiftColor(bg, 0.06, "white") : shiftColor(bg, 0.03, "black");
+  const cardBorder = isDark ? shiftColor(bg, 0.15, "white") : shiftColor(bg, 0.12, "black");
+  const text = isDark ? "#f0f0f0" : "#0a0a0a";
+  const textMuted = isDark ? "#9ca3af" : "#6b7280";
+  return { id, name, primary, primaryFg, accent, bg, card, cardBorder, text, textMuted, custom: true };
+}
+
+export function getCustomThemes(): ThemeColors[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomThemes(themes: ThemeColors[]) {
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(themes));
+}
+
+/** Apply a theme's CSS variables directly to the document root (for custom themes). */
+export function applyThemeCssVars(t: ThemeColors) {
+  const el = document.documentElement;
+  el.style.setProperty("--theme-primary", t.primary);
+  el.style.setProperty("--theme-primary-fg", t.primaryFg);
+  el.style.setProperty("--theme-accent", t.accent);
+  el.style.setProperty("--background", t.bg);
+  el.style.setProperty("--foreground", t.text);
+}
+
+/** Remove inline CSS vars (used when switching away from a custom theme). */
+export function clearThemeCssVars() {
+  const el = document.documentElement;
+  ["--theme-primary", "--theme-primary-fg", "--theme-accent", "--background", "--foreground"]
+    .forEach((v) => el.style.removeProperty(v));
 }

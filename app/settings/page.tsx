@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
-import { THEMES, getThemeById } from "@/lib/themes";
+import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 
 const ZOOM_PRESETS = [
@@ -83,6 +83,53 @@ export default function SettingsPage() {
   // ── Theme ──────────────────────────────────────────────────────────
   const [themeId, setThemeId] = useState<string>("default");
   const [themeSaving, setThemeSaving] = useState(false);
+
+  // ── Custom themes ──────────────────────────────────────────────────
+  const [customThemes, setCustomThemes] = useState<ReturnType<typeof getCustomThemes>>([]);
+  const [newThemeName, setNewThemeName] = useState("My Theme");
+  const [newThemePrimary, setNewThemePrimary] = useState("#6366f1");
+  const [newThemeAccent, setNewThemeAccent] = useState("#8b5cf6");
+  const [newThemeBg, setNewThemeBg] = useState("#ffffff");
+
+  useEffect(() => { setCustomThemes(getCustomThemes()); }, []);
+
+  async function applyTheme(id: string, custom = false) {
+    setThemeId(id);
+    setThemeSaving(true);
+    document.documentElement.setAttribute("data-theme", id);
+    localStorage.setItem("bowlbeacon-theme", id);
+    if (custom) {
+      const ct = getCustomThemes().find((t) => t.id === id);
+      if (ct) applyThemeCssVars(ct);
+    } else {
+      clearThemeCssVars();
+    }
+    try {
+      await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ themeId: id }),
+      });
+    } finally {
+      setThemeSaving(false);
+    }
+  }
+
+  function addCustomTheme() {
+    const id = `custom-${Date.now()}`;
+    const theme = buildCustomTheme(id, newThemeName.trim() || "Custom", newThemePrimary, newThemeAccent, newThemeBg);
+    const updated = [...getCustomThemes(), theme];
+    saveCustomThemes(updated);
+    setCustomThemes(updated);
+    applyTheme(id, true);
+  }
+
+  function deleteCustomTheme(id: string) {
+    const updated = getCustomThemes().filter((t) => t.id !== id);
+    saveCustomThemes(updated);
+    setCustomThemes(updated);
+    if (themeId === id) applyTheme("default");
+  }
 
   // ── Focus music playlist (localStorage) ─────────────────────────
   const [playlist, setPlaylist] = useState<MusicTrack[]>([]);
@@ -486,6 +533,71 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Exit password — paired with Textbook display size to fill the row */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Exit password</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Required to end a study session early. Defaults to your login
+            password if not changed.
+          </p>
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Current login password
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                placeholder="Your login password"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                New exit password
+              </label>
+              <input
+                type="password"
+                value={newExitPassword}
+                onChange={(e) => setNewExitPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                placeholder="At least 4 characters"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Confirm new exit password
+              </label>
+              <input
+                type="password"
+                value={confirmExitPassword}
+                onChange={(e) => setConfirmExitPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                placeholder="Repeat new exit password"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+              />
+            </div>
+            {pwMessage && (
+              <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                {pwMessage}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={pwStatus === "loading"}
+              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+            >
+              {pwStatus === "loading" ? "Saving…" : "Save exit password"}
+            </button>
+          </form>
+        </section>
+
         {/* Focus music playlist */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
@@ -620,98 +732,21 @@ export default function SettingsPage() {
           )}
         </section>
 
-        {/* Exit password */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-          <h2 className="text-base font-semibold mb-1">Exit password</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Required to end a study session early. Defaults to your login
-            password if not changed.
-          </p>
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Current login password
-              </label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                placeholder="Your login password"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                New exit password
-              </label>
-              <input
-                type="password"
-                value={newExitPassword}
-                onChange={(e) => setNewExitPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                placeholder="At least 4 characters"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Confirm new exit password
-              </label>
-              <input
-                type="password"
-                value={confirmExitPassword}
-                onChange={(e) => setConfirmExitPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                placeholder="Repeat new exit password"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            {pwMessage && (
-              <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                {pwMessage}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={pwStatus === "loading"}
-              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-            >
-              {pwStatus === "loading" ? "Saving…" : "Save exit password"}
-            </button>
-          </form>
-        </section>
-
         {/* Custom theme */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Theme</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Pick a color theme for the app. This applies to your account across devices.
+            Pick a built-in theme or create your own with a color picker.
           </p>
-          <div className="grid grid-cols-4 gap-2">
+
+          {/* Built-in themes */}
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-6">
             {THEMES.map((t) => {
               const isActive = themeId === t.id;
               return (
                 <button
                   key={t.id}
-                  onClick={async () => {
-                    setThemeId(t.id);
-                    setThemeSaving(true);
-                    try {
-                      await fetch("/api/user/settings", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ themeId: t.id }),
-                      });
-                      document.documentElement.setAttribute("data-theme", t.id);
-                      localStorage.setItem("bowlbeacon-theme", t.id);
-                    } finally {
-                      setThemeSaving(false);
-                    }
-                  }}
+                  onClick={() => applyTheme(t.id, false)}
                   disabled={themeSaving}
                   className={`rounded-lg border py-2.5 text-xs font-medium transition ${
                     isActive
@@ -728,6 +763,119 @@ export default function SettingsPage() {
                 </button>
               );
             })}
+          </div>
+
+          {/* Custom themes */}
+          {customThemes.length > 0 && (
+            <div className="mb-5">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Your themes</p>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                {customThemes.map((t) => {
+                  const isActive = themeId === t.id;
+                  return (
+                    <div key={t.id} className="relative group">
+                      <button
+                        onClick={() => applyTheme(t.id, true)}
+                        disabled={themeSaving}
+                        className={`w-full rounded-lg border py-2.5 text-xs font-medium transition ${
+                          isActive
+                            ? "border-accent ring-2 ring-accent/20"
+                            : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                        }`}
+                      >
+                        <div className="flex justify-center gap-1 mb-1.5">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
+                        </div>
+                        <span className="block truncate px-1">{t.name}</span>
+                      </button>
+                      <button
+                        onClick={() => deleteCustomTheme(t.id)}
+                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 rounded-full bg-red-500 text-white text-[9px] items-center justify-center leading-none"
+                        title="Delete theme"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Create custom theme */}
+          <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-3">Create custom theme</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newThemeName}
+                  onChange={(e) => setNewThemeName(e.target.value)}
+                  maxLength={20}
+                  placeholder="My Theme"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Primary</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={newThemePrimary}
+                    onChange={(e) => setNewThemePrimary(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <span className="text-xs text-gray-400 font-mono">{newThemePrimary}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Accent</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={newThemeAccent}
+                    onChange={(e) => setNewThemeAccent(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <span className="text-xs text-gray-400 font-mono">{newThemeAccent}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Background</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={newThemeBg}
+                    onChange={(e) => setNewThemeBg(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <span className="text-xs text-gray-400 font-mono">{newThemeBg}</span>
+                </div>
+              </div>
+            </div>
+            {/* Preview */}
+            <div
+              className="rounded-lg p-3 mb-3 flex items-center gap-3 text-sm border"
+              style={{ backgroundColor: newThemeBg, borderColor: newThemePrimary + "40" }}
+            >
+              <span
+                className="rounded-md px-3 py-1 text-xs font-medium"
+                style={{ backgroundColor: newThemePrimary, color: "#ffffff" }}
+              >
+                Button
+              </span>
+              <span style={{ color: newThemeAccent }} className="text-xs font-medium">Accent text</span>
+              <span className="text-xs text-gray-500">Preview</span>
+            </div>
+            <button
+              onClick={addCustomTheme}
+              className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
+            >
+              Save &amp; apply theme
+            </button>
           </div>
         </section>
 
