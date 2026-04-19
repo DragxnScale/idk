@@ -520,37 +520,68 @@ sequenceDiagram
 ## §12 – Owner Settings Layout Editor
 
 ### 12.1 Overview
-The super-owner can configure the settings page layout for all users via a drag-and-drop editor in the Admin Panel → **Settings Layout** tab. Changes are stored globally in the database and applied on every user's next settings page load.
+The super-owner can configure the settings page layout for all users via a drag-and-drop editor in the Admin Panel → **Settings Layout** tab. The layout is stored globally and applied on every user's next settings page load.
+
+**v2 (state-aware) layout**: the settings page has **4 independent layouts**, one per combination of the two user toggles that cause empty space on the page:
+
+| State key             | PDF cache | Study breaks | Typical use |
+|-----------------------|-----------|--------------|-------------|
+| `cacheOff_breaksOff`  | OFF       | OFF          | Largest gap → fill with dog + credits, swap cards between columns |
+| `cacheOff_breaksOn`   | OFF       | ON           | Cache inputs hidden on left, dog + credits fill right |
+| `cacheOn_breaksOff`   | ON        | OFF          | No gap → hide dog + credits |
+| `cacheOn_breaksOn`    | ON        | ON           | Minor gap → show credits only, hide dog |
+
+At runtime the settings page resolves the active key via `resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` and uses that state's ordered card list for rendering.
 
 ### 12.2 Data Model
 ```
 global_config (single row, id = 1)
-  settings_layout_json  TEXT   JSON: SettingsLayoutConfig
+  settings_layout_json  TEXT   JSON: SettingsLayoutConfig (v2)
   updated_at            INTEGER
+```
+JSON shape:
+```json
+{
+  "version": 2,
+  "states": {
+    "cacheOff_breaksOff": [ CardConfig, ... ],
+    "cacheOff_breaksOn":  [ CardConfig, ... ],
+    "cacheOn_breaksOff":  [ CardConfig, ... ],
+    "cacheOn_breaksOn":   [ CardConfig, ... ]
+  }
+}
 ```
 
 ### 12.3 Type Definitions (`lib/types/settings-layout.ts`)
 - `CardConfig` — per-card properties: `id`, `visible`, `span` (1 or 2), `order`, `titleText`, `titleSize`, `descText`, `descSize`, `fontFamily`
-- `SettingsLayoutConfig` — `{ version, cards: CardConfig[] }`
-- `CARD_DEFAULTS` — default 11-card layout used when no DB config exists
-- `CARD_LABELS` — human-readable display names for the editor
+- `LayoutStateKey` — union of the four state keys above
+- `SettingsLayoutConfig` — `{ version: 2, states: Record<LayoutStateKey, CardConfig[]> }`
+- `DEFAULT_CONFIG` — pre-populated defaults for all 4 states
+- `LAYOUT_STATE_KEYS`, `LAYOUT_STATE_LABELS` — iteration helpers
+- `resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` — runtime picker
+- `mergeWithDefaults(loaded)` — handles three input shapes:
+  1. Missing / null → `DEFAULT_CONFIG`
+  2. Legacy v1 `{ version, cards }` → migrated by seeding the single card list into all 4 states
+  3. v2 `{ version, states }` → per-state merge against base cards (fills in newly-added cards)
 
 ### 12.4 API
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| GET | `/api/admin/settings-layout` | Any logged-in user | Returns current config (or defaults) |
-| PATCH | `/api/admin/settings-layout` | Super-owner only | Upserts config in `global_config` row 1 |
+| GET | `/api/admin/settings-layout` | Any logged-in user | Returns current config (normalised through `mergeWithDefaults`) |
+| PATCH | `/api/admin/settings-layout` | Super-owner only | Upserts v2 config in `global_config` row 1; validates every state key is an array |
 
 ### 12.5 Admin Editor (`components/admin/SettingsLayoutTab.tsx`)
-- **Drag-and-drop**: `@dnd-kit/core` + `@dnd-kit/sortable` with `rectSortingStrategy` for 2-column snap grid
-- **Card tiles**: show badge (Full/Half), visibility, font/size metadata; drag handle top-right
-- **Properties panel**: per-card controls for visibility toggle, width span (1 col / 2 col), heading text, heading size (xs–xl), description text, description size (xs–base), font family (default / monospace / serif)
-- **Save**: PATCH to API; **Reset**: restores `DEFAULT_CONFIG` in-memory
+- **State selector** at the top of the editor: 4 buttons (one per state) let the owner switch which layout they're editing. All edits (drag, visibility, text, span, font, etc.) apply only to the currently selected state.
+- **Copy-from helper**: a strip of small buttons copies another state's card list into the current one (with confirmation).
+- **Drag-and-drop**: `@dnd-kit/core` `useDraggable` + `useDroppable`. Pure-swap logic — dragging card A onto card B exchanges only their `order` values, so all other cards stay visually stationary.
+- **Card tiles**: show badge (Full/Half), visibility, font/size metadata; drag handle top-right.
+- **Properties panel**: per-card controls for visibility toggle, width span (1 col / 2 col), heading text, heading size (xs–xl), description text, description size (xs–base), font family (default / monospace / serif).
+- **Save**: PATCH full 4-state config to API. **Reset this state**: restores one state to its default. **Reset all**: restores every state to `DEFAULT_CONFIG`.
 
 ### 12.6 Settings Page Consumption (`app/settings/page.tsx`)
 - Fetches `/api/admin/settings-layout` on mount; falls back silently to `DEFAULT_CONFIG`
-- Helper functions: `cc(id)`, `ctitle(id, default)`, `cdesc(id, default)`, `titleClass(id)`, `descClass(id)`, `cardStyle(id)`, `cardGridCol(id)`
-- All 11 cards rendered via a flat `Record<string, ReactNode>` keyed by card ID, mapped in `orderedCards` order
-- Each `<section>` receives `gridColumn` from `cc(id).span` and `fontFamily` from `cardStyle(id)`
-- Visibility filtering: `orderedCards` only includes cards where `visible === true`
-- Easter-egg sections (dog photo + credits) are appended after the config-driven cards, conditioned on `pdfCacheEnabled`
+- `activeStateKey = resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` recomputes on every render, so toggling either setting re-shuffles the layout live (without a page reload)
+- `activeStateCards = layoutCfg.states[activeStateKey]` feeds all helper functions: `cc(id)`, `ctitle`, `cdesc`, `titleClass`, `descClass`, `cardStyle`, `cardGridCol`
+- `orderedCards` = active state cards sorted by `order`, filtered by `visible`
+- CSS columns (`md:columns-2`) used for masonry flow; full-width cards set `columnSpan: "all"`; all cards set `breakInside: "avoid"` so the tall dog image can never be split across a column
+- Dog + credits visibility is **entirely driven by the state's `visible` flag** — no hardcoded conditionals on `pdfCacheEnabled` remain

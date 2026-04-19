@@ -20,8 +20,11 @@ import {
   type TitleSize,
   type TextSize,
   type CardSpan,
+  type LayoutStateKey,
   DEFAULT_CONFIG,
   CARD_LABELS,
+  LAYOUT_STATE_KEYS,
+  LAYOUT_STATE_LABELS,
   mergeWithDefaults,
 } from "@/lib/types/settings-layout";
 
@@ -36,14 +39,11 @@ function CardTile({
   selected: boolean;
   onClick: () => void;
 }) {
-  // Draggable on the grip handle only
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
     useDraggable({ id: card.id });
 
-  // Droppable on the whole tile
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `drop-${card.id}` });
 
-  // Combine both refs into the same DOM node
   const setRef = useCallback(
     (node: HTMLDivElement | null) => {
       setDragRef(node);
@@ -65,7 +65,6 @@ function CardTile({
         ${!card.visible ? "opacity-40" : ""}
       `}
     >
-      {/* Drag handle — only this element triggers the drag */}
       <button
         {...attributes}
         {...listeners}
@@ -104,7 +103,6 @@ function CardTile({
   );
 }
 
-// Floating ghost while dragging
 function CardGhost({ card }: { card: CardConfig }) {
   return (
     <div className="rounded-xl border-2 border-blue-400 bg-blue-900/70 p-3 shadow-2xl w-48 rotate-2 pointer-events-none">
@@ -130,7 +128,6 @@ function PropertiesPanel({
         {CARD_LABELS[card.id] ?? card.id}
       </h3>
 
-      {/* Visibility */}
       <label className="flex items-center justify-between cursor-pointer">
         <span className="text-xs text-gray-400">Visible</span>
         <button
@@ -142,7 +139,6 @@ function PropertiesPanel({
         </button>
       </label>
 
-      {/* Span */}
       <div>
         <p className="text-xs text-gray-400 mb-1.5">Card width</p>
         <div className="grid grid-cols-2 gap-1.5">
@@ -155,7 +151,6 @@ function PropertiesPanel({
         </div>
       </div>
 
-      {/* Title text */}
       <div>
         <label className="block text-xs text-gray-400 mb-1">Heading text</label>
         <input
@@ -167,7 +162,6 @@ function PropertiesPanel({
         />
       </div>
 
-      {/* Title size */}
       <div>
         <p className="text-xs text-gray-400 mb-1.5">Heading size</p>
         <div className="flex gap-1 flex-wrap">
@@ -180,7 +174,6 @@ function PropertiesPanel({
         </div>
       </div>
 
-      {/* Desc text */}
       <div>
         <label className="block text-xs text-gray-400 mb-1">Description text</label>
         <textarea rows={3} value={card.descText ?? ""} onChange={(e) => onChange({ descText: e.target.value || null })}
@@ -188,7 +181,6 @@ function PropertiesPanel({
           className="w-full rounded-lg border border-gray-600 bg-gray-700 px-2.5 py-1.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none resize-none" />
       </div>
 
-      {/* Desc size */}
       <div>
         <p className="text-xs text-gray-400 mb-1.5">Description size</p>
         <div className="flex gap-1">
@@ -201,7 +193,6 @@ function PropertiesPanel({
         </div>
       </div>
 
-      {/* Font family */}
       <div>
         <p className="text-xs text-gray-400 mb-1.5">Font family</p>
         <div className="space-y-1">
@@ -218,10 +209,69 @@ function PropertiesPanel({
   );
 }
 
+// ── State selector strip ─────────────────────────────────────────────────────
+
+function StateSelector({
+  activeState,
+  onSelect,
+  onCopyFrom,
+}: {
+  activeState: LayoutStateKey;
+  onSelect: (s: LayoutStateKey) => void;
+  onCopyFrom: (src: LayoutStateKey) => void;
+}) {
+  return (
+    <div className="mb-4 rounded-xl border border-gray-800 bg-gray-900/40 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+          Editing layout for state
+        </p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-600">Copy from:</span>
+          {LAYOUT_STATE_KEYS.filter((k) => k !== activeState).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onCopyFrom(k)}
+              className="text-[10px] rounded border border-gray-700 px-2 py-0.5 text-gray-400 hover:border-gray-500 hover:text-gray-200 transition"
+              title={`Copy cards from ${LAYOUT_STATE_LABELS[k]}`}
+            >
+              {LAYOUT_STATE_LABELS[k]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {LAYOUT_STATE_KEYS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onSelect(k)}
+            className={`rounded-lg px-3 py-2 text-xs font-medium border transition text-left
+              ${activeState === k
+                ? "border-blue-500 bg-blue-600/30 text-blue-200 shadow-md shadow-blue-900/30"
+                : "border-gray-700 bg-gray-800/60 text-gray-400 hover:border-gray-500 hover:text-gray-200"}
+            `}
+          >
+            <div className="font-semibold text-[11px]">{LAYOUT_STATE_LABELS[k]}</div>
+            <div className="mt-0.5 text-[9px] uppercase tracking-wider opacity-70">
+              {k === "cacheOff_breaksOff" && "No cache · No breaks"}
+              {k === "cacheOff_breaksOn"  && "No cache · Breaks"}
+              {k === "cacheOn_breaksOff"  && "Cache · No breaks"}
+              {k === "cacheOn_breaksOn"   && "Cache · Breaks"}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main SettingsLayoutTab ───────────────────────────────────────────────────
 
 export function SettingsLayoutTab() {
   const [config, setConfig] = useState<SettingsLayoutConfig>(DEFAULT_CONFIG);
+  const [activeState, setActiveState] = useState<LayoutStateKey>("cacheOff_breaksOff");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -238,17 +288,27 @@ export function SettingsLayoutTab() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
-  const sortedCards = [...config.cards].sort((a, b) => a.order - b.order);
+  // Active state's card list (never null thanks to mergeWithDefaults)
+  const stateCards = config.states[activeState] ?? DEFAULT_CONFIG.states[activeState];
+  const sortedCards = [...stateCards].sort((a, b) => a.order - b.order);
+  const selectedCard = stateCards.find((c) => c.id === selectedId) ?? null;
 
-  const selectedCard = config.cards.find((c) => c.id === selectedId) ?? null;
-
-  const updateCard = useCallback((id: string, patch: Partial<CardConfig>) => {
-    setConfig((prev) => ({
-      ...prev,
-      cards: prev.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-    }));
-    setStatus("idle");
-  }, []);
+  /** Mutate one card within the currently active state only */
+  const updateCard = useCallback(
+    (id: string, patch: Partial<CardConfig>) => {
+      setConfig((prev) => ({
+        ...prev,
+        states: {
+          ...prev.states,
+          [activeState]: prev.states[activeState].map((c) =>
+            c.id === id ? { ...c, ...patch } : c
+          ),
+        },
+      }));
+      setStatus("idle");
+    },
+    [activeState]
+  );
 
   const handleDragStart = (e: DragStartEvent) => setActiveId(e.active.id as string);
 
@@ -260,21 +320,25 @@ export function SettingsLayoutTab() {
     const overId = (over.id as string).replace(/^drop-/, "");
     if (active.id === overId) return;
 
-    // Pure swap — only the two involved cards exchange positions, every other card stays put
-    const aIdx = sortedCards.findIndex((c) => c.id === active.id);
-    const bIdx = sortedCards.findIndex((c) => c.id === overId);
-    if (aIdx === -1 || bIdx === -1) return;
+    // Pure swap within the active state only
+    const cards = config.states[activeState];
+    const a = cards.find((c) => c.id === active.id);
+    const b = cards.find((c) => c.id === overId);
+    if (!a || !b) return;
 
-    const aOrder = sortedCards[aIdx].order;
-    const bOrder = sortedCards[bIdx].order;
+    const aOrder = a.order;
+    const bOrder = b.order;
 
     setConfig((prev) => ({
       ...prev,
-      cards: prev.cards.map((c) => {
-        if (c.id === active.id) return { ...c, order: bOrder };
-        if (c.id === overId)    return { ...c, order: aOrder };
-        return c;
-      }),
+      states: {
+        ...prev.states,
+        [activeState]: prev.states[activeState].map((c) => {
+          if (c.id === active.id) return { ...c, order: bOrder };
+          if (c.id === overId)    return { ...c, order: aOrder };
+          return c;
+        }),
+      },
     }));
     setStatus("idle");
   };
@@ -295,9 +359,33 @@ export function SettingsLayoutTab() {
     }
   };
 
-  const handleReset = () => {
-    if (!confirm("Reset settings layout to defaults? This cannot be undone.")) return;
+  const handleResetAll = () => {
+    if (!confirm("Reset ALL 4 state layouts to defaults? This cannot be undone.")) return;
     setConfig(DEFAULT_CONFIG);
+    setStatus("idle");
+  };
+
+  const handleResetState = () => {
+    if (!confirm(`Reset only "${LAYOUT_STATE_LABELS[activeState]}" to defaults?`)) return;
+    setConfig((prev) => ({
+      ...prev,
+      states: {
+        ...prev.states,
+        [activeState]: DEFAULT_CONFIG.states[activeState].map((c) => ({ ...c })),
+      },
+    }));
+    setStatus("idle");
+  };
+
+  const handleCopyFrom = (src: LayoutStateKey) => {
+    if (!confirm(`Overwrite "${LAYOUT_STATE_LABELS[activeState]}" with cards from "${LAYOUT_STATE_LABELS[src]}"?`)) return;
+    setConfig((prev) => ({
+      ...prev,
+      states: {
+        ...prev.states,
+        [activeState]: prev.states[src].map((c) => ({ ...c })),
+      },
+    }));
     setStatus("idle");
   };
 
@@ -305,7 +393,7 @@ export function SettingsLayoutTab() {
     return <p className="text-red-400 text-sm">Failed to load layout config. Check console.</p>;
   }
 
-  const draggedCard = activeId ? config.cards.find((c) => c.id === activeId) : null;
+  const draggedCard = activeId ? stateCards.find((c) => c.id === activeId) : null;
 
   return (
     <div className="flex gap-6 min-h-[600px]">
@@ -315,13 +403,17 @@ export function SettingsLayoutTab() {
           <div>
             <h3 className="text-base font-semibold text-gray-100">Settings page layout</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Drag cards to reorder. Click to edit properties. Changes apply globally for all users.
+              Each of the 4 states (cache × breaks) has its own independent layout. Drag cards to reorder. Click to edit properties.
             </p>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={handleReset}
+            <button type="button" onClick={handleResetState}
               className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-200 transition">
-              Reset defaults
+              Reset this state
+            </button>
+            <button type="button" onClick={handleResetAll}
+              className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-500 hover:border-red-500 hover:text-red-400 transition">
+              Reset all
             </button>
             <button type="button" onClick={handleSave} disabled={status === "saving"}
               className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${status === "saved" ? "bg-green-600 text-white" : status === "error" ? "bg-red-600 text-white" : "bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-60"}`}>
@@ -330,9 +422,17 @@ export function SettingsLayoutTab() {
           </div>
         </div>
 
+        <StateSelector
+          activeState={activeState}
+          onSelect={(s) => { setActiveState(s); setSelectedId(null); }}
+          onCopyFrom={handleCopyFrom}
+        />
+
         <div className="mb-3 flex items-center gap-2">
           <div className="h-px flex-1 bg-gray-800" />
-          <span className="text-[10px] text-gray-600 uppercase tracking-widest">2-column snap grid · drag handle to move</span>
+          <span className="text-[10px] text-gray-600 uppercase tracking-widest">
+            {LAYOUT_STATE_LABELS[activeState]} · drag handle to move
+          </span>
           <div className="h-px flex-1 bg-gray-800" />
         </div>
 
@@ -341,7 +441,6 @@ export function SettingsLayoutTab() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          {/* 2-col grid — items-start so cards are their natural height */}
           <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl border border-gray-800 bg-gray-900/50 min-h-[400px] items-start">
             {sortedCards.map((card) => (
               <CardTile
@@ -359,7 +458,7 @@ export function SettingsLayoutTab() {
         </DndContext>
 
         <p className="mt-3 text-xs text-gray-600">
-          Drag handle (⋮⋮) to reorder · Click card to open properties panel →
+          Drag handle (⋮⋮) to reorder · Click card to open properties panel → · Edits apply to the selected state only
         </p>
       </div>
 

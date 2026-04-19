@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
-import { DEFAULT_CONFIG, mergeWithDefaults, type SettingsLayoutConfig, type CardConfig } from "@/lib/types/settings-layout";
+import { DEFAULT_CONFIG, mergeWithDefaults, resolveLayoutStateKey, type SettingsLayoutConfig, type CardConfig } from "@/lib/types/settings-layout";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -396,11 +396,16 @@ export default function SettingsPage() {
       .catch(() => {});
   }, []);
 
-  /** Get the config for a specific card (falls back to DEFAULT_CONFIG entry) */
+  /** Resolve the active state key from the two user toggles */
+  const activeStateKey = resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled);
+  const activeStateCards: CardConfig[] =
+    layoutCfg.states?.[activeStateKey] ?? DEFAULT_CONFIG.states[activeStateKey];
+
+  /** Get the config for a specific card (falls back to DEFAULT_CONFIG state entry) */
   function cc(id: string): CardConfig {
     return (
-      layoutCfg.cards.find((c) => c.id === id) ??
-      DEFAULT_CONFIG.cards.find((c) => c.id === id) ??
+      activeStateCards.find((c) => c.id === id) ??
+      DEFAULT_CONFIG.states[activeStateKey].find((c) => c.id === id) ??
       { id, visible: true, span: 1, order: 99, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" }
     );
   }
@@ -428,8 +433,8 @@ export default function SettingsPage() {
     return { breakInside: "avoid" } as React.CSSProperties;
   }
 
-  // Sorted visible card IDs for rendering order
-  const orderedCards = [...layoutCfg.cards]
+  // Sorted visible card IDs for rendering order (from the active state)
+  const orderedCards = [...activeStateCards]
     .sort((a, b) => a.order - b.order)
     .filter((c) => c.visible);
 
@@ -885,14 +890,14 @@ export default function SettingsPage() {
               </section>
             ),
 
-            "dog-photo": pdfCacheEnabled ? null : (
+            "dog-photo": (
               <section key="dog-photo" style={{ ...cardGridCol("dog-photo"), ...cardStyle("dog-photo"), breakInside: "avoid", pageBreakInside: "avoid" }} className="rounded-2xl overflow-hidden mb-4 block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl block" />
               </section>
             ),
 
-            "credits": pdfCacheEnabled ? null : (
+            "credits": (
               <section key="credits" style={{ ...cardGridCol("credits"), ...cardStyle("credits"), breakInside: "avoid", pageBreakInside: "avoid" }} className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 mb-4 p-5 block">
                 <p className={descClass("credits")}>
                   {cdesc("credits", "Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!")}

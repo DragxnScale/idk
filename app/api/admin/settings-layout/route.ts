@@ -6,6 +6,8 @@ import { globalConfig } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import {
   DEFAULT_CONFIG,
+  LAYOUT_STATE_KEYS,
+  mergeWithDefaults,
   type SettingsLayoutConfig,
 } from "@/lib/types/settings-layout";
 
@@ -13,7 +15,11 @@ async function getConfig(): Promise<SettingsLayoutConfig> {
   const row = await db.query.globalConfig.findFirst({ where: eq(globalConfig.id, 1) });
   if (!row?.settingsLayoutJson) return DEFAULT_CONFIG;
   try {
-    return JSON.parse(row.settingsLayoutJson) as SettingsLayoutConfig;
+    // mergeWithDefaults transparently migrates legacy v1 { cards } shape into
+    // the new v2 { states } shape, and fills in any new cards/states added
+    // since the config was last saved.
+    const raw = JSON.parse(row.settingsLayoutJson);
+    return mergeWithDefaults(raw);
   } catch {
     return DEFAULT_CONFIG;
   }
@@ -41,8 +47,16 @@ export async function PATCH(req: Request) {
   }
 
   const config = body?.config;
-  if (!config || !Array.isArray(config.cards)) {
-    return NextResponse.json({ error: "Invalid config shape" }, { status: 400 });
+  if (!config || !config.states || typeof config.states !== "object") {
+    return NextResponse.json({ error: "Invalid config shape: missing states" }, { status: 400 });
+  }
+  for (const key of LAYOUT_STATE_KEYS) {
+    if (!Array.isArray(config.states[key])) {
+      return NextResponse.json(
+        { error: `Invalid config shape: states.${key} must be an array` },
+        { status: 400 }
+      );
+    }
   }
 
   const json = JSON.stringify(config);
