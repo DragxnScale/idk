@@ -753,13 +753,17 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* Easter egg / gap filler — dog always shows, gradient fills remaining space when cache is on */}
-        <section className="rounded-2xl overflow-hidden break-inside-avoid mb-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-t-2xl" />
-          {pdfCacheEnabled && (
-            <div className="w-full h-[120px] rounded-b-2xl" style={{ background: "linear-gradient(to bottom, #0012ff, #5400f7)" }} />
+        {/* About / credits + easter egg */}
+        <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          {!pdfCacheEnabled && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover" />
           )}
+          <div className="p-5">
+            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+              Bowl Beacon was a passion project designed by Jayden Wong as an introductory lession to learn how to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
+            </p>
+          </div>
         </section>
 
         {/* Focus music playlist */}
