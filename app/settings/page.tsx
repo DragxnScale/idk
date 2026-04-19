@@ -429,33 +429,32 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* Storage */}
+        {/* Textbook display size — paired with Offline PDF cache (similar heights) */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            Space used by your uploaded PDFs.
+          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Controls how large the PDF pages appear while reading. Saved on
+            this device.
           </p>
-          {storage ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">{storage.usedFormatted} used</span>
-                <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`}
-                  style={{ width: `${storage.pct}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
-              {storage.pct >= 90 && (
-                <p className="text-xs text-red-500 font-medium">
-                  Storage nearly full — delete unused PDFs from My Drive to free space.
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
-          )}
+          <div className="grid grid-cols-4 gap-2">
+            {ZOOM_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => handleZoomChange(preset.value)}
+                className={`rounded-lg border py-3 text-sm font-medium transition ${
+                  zoom === preset.value
+                    ? "btn-primary border-accent"
+                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                }`}
+              >
+                {preset.label}
+                <span className="block text-xs opacity-60 mt-0.5">
+                  {Math.round(preset.value * 100)}%
+                </span>
+              </button>
+            ))}
+          </div>
         </section>
 
         {/* PDF offline cache limits */}
@@ -505,35 +504,37 @@ export default function SettingsPage() {
           </p>
         </section>
 
-        {/* Textbook display size */}
+        {/* Storage — paired with Exit password */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Controls how large the PDF pages appear while reading. Saved on
-            this device.
+          <h2 className="text-base font-semibold mb-1">Upload storage</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Space used by your uploaded PDFs.
           </p>
-          <div className="grid grid-cols-4 gap-2">
-            {ZOOM_PRESETS.map((preset) => (
-              <button
-                key={preset.value}
-                type="button"
-                onClick={() => handleZoomChange(preset.value)}
-                className={`rounded-lg border py-3 text-sm font-medium transition ${
-                  zoom === preset.value
-                    ? "btn-primary border-accent"
-                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                }`}
-              >
-                {preset.label}
-                <span className="block text-xs opacity-60 mt-0.5">
-                  {Math.round(preset.value * 100)}%
-                </span>
-              </button>
-            ))}
-          </div>
+          {storage ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">{storage.usedFormatted} used</span>
+                <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
+              </div>
+              <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`}
+                  style={{ width: `${storage.pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
+              {storage.pct >= 90 && (
+                <p className="text-xs text-red-500 font-medium">
+                  Storage nearly full — delete unused PDFs from My Drive to free space.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
+          )}
         </section>
 
-        {/* Exit password — paired with Textbook display size to fill the row */}
+        {/* Exit password — paired with Upload storage */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
           <h2 className="text-base font-semibold mb-1">Exit password</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
