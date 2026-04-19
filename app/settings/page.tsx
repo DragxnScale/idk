@@ -357,7 +357,7 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        <div className="md:columns-2 gap-4">
+        <div key={pdfCacheEnabled ? "cache-on" : "cache-off"} className="md:columns-2 gap-4">
 
         {/* Daily goals */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
