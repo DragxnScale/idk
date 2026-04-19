@@ -15,9 +15,11 @@ interface AiNotesPanelProps {
   currentPage?: number;
   /** Absolute PDF page where the reading session starts (= chapter page 1). */
   startPage?: number;
+  /** If set, the public shared notes cache is checked/populated for this catalog book. */
+  textbookCatalogId?: string;
 }
 
-export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1 }: AiNotesPanelProps) {
+export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1, textbookCatalogId }: AiNotesPanelProps) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1 
         const res = await fetch("/api/ai/notes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, pageNumber, pageText }),
+          body: JSON.stringify({ sessionId, pageNumber, pageText, textbookCatalogId }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));

@@ -102,6 +102,17 @@ export default function DashboardPage() {
   const [msgSending, setMsgSending] = useState(false);
   const [msgSent, setMsgSent] = useState(false);
   const [unreadMsgCount, setUnreadMsgCount] = useState(0);
+  // Textbook progress
+  const [textbookProgress, setTextbookProgress] = useState<{
+    textbookCatalogId: string;
+    title: string;
+    sessions: number;
+    totalMinutes: number;
+    totalPagesVisited: number;
+    totalPages: number | null;
+    progressPct: number | null;
+    lastStudiedAt: string | null;
+  }[]>([]);
 
   useEffect(() => {
     async function fetchStats(retries = 3): Promise<StatsData | null> {
@@ -129,6 +140,11 @@ export default function DashboardPage() {
       return null;
     }
     fetchStats().then(setStats).finally(() => setLoading(false));
+
+    fetch("/api/user/textbook-progress")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setTextbookProgress)
+      .catch(() => {});
 
     fetch("/api/bookmarks/all")
       .then((r) => (r.ok ? r.json() : []))
@@ -307,7 +323,7 @@ export default function DashboardPage() {
         )}
 
         {/* Today's stats */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-8">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mb-4">
           <StatCard
             label="Today"
             value={
@@ -318,12 +334,54 @@ export default function DashboardPage() {
           />
           <StatCard label="Sessions" value={String(stats.todaySessions)} />
           <StatCard label="Avg / Session" value={`${stats.averageMinutes}m`} />
-          <StatCard
-            label="Streak"
-            value={`${stats.streak} day${stats.streak !== 1 ? "s" : ""}`}
-          />
           <StatCard label="Pages Today" value={String(stats.todayPages)} />
           <StatCard label="Reading Speed" value={stats.pagesPerHour > 0 ? `${stats.pagesPerHour} pg/hr` : "—"} />
+        </div>
+
+        {/* Streak card */}
+        <div className={`rounded-xl border p-5 mb-8 flex items-center gap-4 ${
+          stats.streak > 0
+            ? stats.todaySessions === 0
+              ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20"
+              : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+            : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+        }`}>
+          <span className="text-4xl select-none" aria-hidden>
+            {stats.streak > 0 ? (stats.todaySessions === 0 ? "🔥" : "✅") : "💤"}
+          </span>
+          <div className="flex-1 min-w-0">
+            {stats.streak > 0 ? (
+              <>
+                <p className={`text-2xl font-bold leading-none ${
+                  stats.todaySessions === 0
+                    ? "text-amber-700 dark:text-amber-300"
+                    : "text-green-700 dark:text-green-300"
+                }`}>
+                  {stats.streak} day{stats.streak !== 1 ? "s" : ""}
+                </p>
+                <p className={`text-sm mt-0.5 ${
+                  stats.todaySessions === 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-green-600 dark:text-green-400"
+                }`}>
+                  {stats.todaySessions === 0
+                    ? "Streak at risk — study today to keep it!"
+                    : "Streak going strong — keep it up!"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold leading-none text-gray-700 dark:text-gray-300">No streak yet</p>
+                <p className="text-sm mt-0.5 text-gray-500 dark:text-gray-400">Study today to start your streak!</p>
+              </>
+            )}
+          </div>
+          {stats.streak > 0 && (
+            <div className="text-right flex-shrink-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Best</p>
+              <p className="text-sm font-semibold">{stats.streak}d</p>
+            </div>
+          )}
         </div>
 
         {/* Daily goal progress */}
@@ -409,6 +467,46 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
+
+        {/* Textbook progress */}
+        {textbookProgress.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+            <h2 className="text-sm font-semibold mb-4">Your Textbooks</h2>
+            <ul className="space-y-4">
+              {textbookProgress.map((book) => (
+                <li key={book.textbookCatalogId}>
+                  <Link
+                    href={`/study/session`}
+                    className="block group"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-sm font-medium group-hover:underline underline-offset-2 truncate mr-4">
+                        {book.title}
+                      </p>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                        {book.progressPct != null ? `${book.progressPct}%` : `${book.totalPagesVisited} pg`}
+                      </span>
+                    </div>
+                    {book.progressPct != null && (
+                      <div className="w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-accent transition-all"
+                          style={{ width: `${book.progressPct}%` }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      {book.sessions} session{book.sessions !== 1 ? "s" : ""} · {book.totalMinutes}m studied
+                      {book.lastStudiedAt && (
+                        <> · last studied {new Date(book.lastStudiedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</>
+                      )}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Recent sessions */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">

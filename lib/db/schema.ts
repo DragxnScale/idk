@@ -242,3 +242,28 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull().default(""),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
+
+// ── Public shared notes (one per catalog textbook page, shared across users) ──
+
+export const publicNotes = sqliteTable("public_notes", {
+  id: text("id").primaryKey(),
+  textbookCatalogId: text("textbook_catalog_id").notNull(),
+  pageNumber: integer("page_number").notNull(),
+  content: text("content").notNull(),
+  promptVersion: integer("prompt_version").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
+// ── Flashcards (generated from session AI notes) ─────────────────────────────
+
+export const flashcards = sqliteTable("flashcards", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => studySessions.id, { onDelete: "cascade" }),
+  front: text("front").notNull(),    // term or question
+  back: text("back").notNull(),      // definition or answer
+  pageNumber: integer("page_number"),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});

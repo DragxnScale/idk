@@ -6,6 +6,7 @@ import Link from "next/link";
 import { aiNoteContentToHtml, stripLatexForAiNotes } from "@/lib/ai-notes-render";
 import { QuizView, type WrongAnswer } from "@/components/study/QuizView";
 import { ReviewPanel } from "@/components/study/ReviewPanel";
+import { FlashcardView, type Flashcard } from "@/components/study/FlashcardView";
 
 interface QuizQuestion {
   question: string;
@@ -41,7 +42,7 @@ interface SessionInfo {
   lastPageIndex: number | null;
 }
 
-type Tab = "stats" | "notes" | "quiz" | "review";
+type Tab = "stats" | "notes" | "quiz" | "review" | "flashcards";
 
 export default function SessionSummaryPage() {
   const params = useParams<{ id: string }>();
@@ -61,6 +62,9 @@ export default function SessionSummaryPage() {
   const [videos, setVideos] = useState<VideoRec[] | null>(null);
   const [videosLoading, setVideosLoading] = useState(false);
   const [videosError, setVideosError] = useState("");
+  const [flashcardList, setFlashcardList] = useState<Flashcard[]>([]);
+  const [flashcardsLoading, setFlashcardsLoading] = useState(false);
+  const [flashcardsError, setFlashcardsError] = useState("");
 
   useEffect(() => {
     if (!sessionId) return;
@@ -86,8 +90,7 @@ export default function SessionSummaryPage() {
       .catch(() => {});
 
     // Load cached videos first, then auto-generate if we have session text
-    fetch(`/api/ai/videos?sessionId=${sessionId}`)
-      .then((r) => (r.ok ? r.json() : null))
+    fetch(`/api/ai/videos?sessionId=${sessionId}`)      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.videos) {
           setVideos(data.videos);
@@ -98,6 +101,14 @@ export default function SessionSummaryPage() {
             generateVideos(storedText);
           }
         }
+      })
+      .catch(() => {});
+
+    // Load cached flashcards
+    fetch(`/api/ai/flashcards?sessionId=${sessionId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.cards?.length) setFlashcardList(data.cards);
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,6 +218,7 @@ export default function SessionSummaryPage() {
     { key: "notes", label: "Notes", count: notes.length },
     { key: "quiz", label: "Quiz", count: questions.length },
     { key: "review", label: "Review" },
+    { key: "flashcards", label: "Flashcards", count: flashcardList.length > 0 ? flashcardList.length : undefined },
   ];
 
   const duration =
@@ -526,6 +538,51 @@ export default function SessionSummaryPage() {
               </div>
             )}
           </>
+        )}
+
+        {/* ── Flashcards tab ──────────────────────────────────────── */}
+        {tab === "flashcards" && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+            {flashcardList.length > 0 ? (
+              <FlashcardView cards={flashcardList} />
+            ) : (
+              <div className="text-center py-6 space-y-4">
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  No flashcards yet. Generate them from your AI notes.
+                </p>
+                {flashcardsError && (
+                  <p className="text-xs text-red-500">{flashcardsError}</p>
+                )}
+                <button
+                  disabled={flashcardsLoading}
+                  onClick={async () => {
+                    setFlashcardsLoading(true);
+                    setFlashcardsError("");
+                    try {
+                      const res = await fetch("/api/ai/flashcards", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ sessionId }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (res.ok) {
+                        setFlashcardList(data.cards ?? []);
+                      } else {
+                        setFlashcardsError(data.error ?? "Failed to generate flashcards");
+                      }
+                    } catch {
+                      setFlashcardsError("Network error. Please try again.");
+                    } finally {
+                      setFlashcardsLoading(false);
+                    }
+                  }}
+                  className="btn-primary rounded-lg px-6 py-2.5 text-sm font-medium disabled:opacity-60"
+                >
+                  {flashcardsLoading ? "Generating…" : "Generate Flashcards"}
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Bottom nav */}
