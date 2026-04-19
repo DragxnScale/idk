@@ -753,10 +753,14 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* 🐶 Easter egg */}
-        <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover" />
+        {/* Easter egg / gap filler — dog when cache is off, gradient when cache is on */}
+        <section className="rounded-2xl overflow-hidden break-inside-avoid mb-4 min-h-[160px]">
+          {pdfCacheEnabled ? (
+            <div className="w-full min-h-[160px] bg-gradient-to-br from-blue-700 via-indigo-600 to-purple-700 rounded-2xl" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
+          )}
         </section>
 
         {/* Focus music playlist */}
