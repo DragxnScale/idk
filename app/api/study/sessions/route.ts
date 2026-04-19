@@ -35,6 +35,8 @@ export async function POST(request: Request) {
   const goalType = body.goalType as string;
   const targetValue = body.targetValue as number;
   const documentJson = body.documentJson ?? null;
+  // Optional: client sends the real start time when syncing an offline session
+  const startedAt = body.startedAt ? new Date(body.startedAt) : new Date();
 
   if (!goalType || targetValue == null) {
     return NextResponse.json(
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
     goalType,
     targetValue,
     documentJson: documentJson ? JSON.stringify(documentJson) : null,
-    startedAt: now,
+    startedAt,
     createdAt: now,
   });
 

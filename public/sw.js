@@ -1,43 +1,185 @@
-// Bowl Beacon Service Worker — network-first with auto-update
-const CACHE_NAME = "bowlbeacon-v1";
+// Bowl Beacon Service Worker — v3 offline-capable
+const CACHE_VERSION = "v3";
+const SHELL_CACHE = `bowlbeacon-shell-${CACHE_VERSION}`;
+const API_CACHE = `bowlbeacon-api-${CACHE_VERSION}`;
+const PDF_CACHE = `bowlbeacon-pdf-${CACHE_VERSION}`;
 
-// Install: activate immediately
+// PDF cache limits — updated at runtime via postMessage from the page.
+// Defaults: keep at most 2 PDFs, and at most 500 MB total.
+// Whichever is the binding constraint triggers eviction (oldest-first).
+let pdfMaxCount = 2;
+let pdfMaxBytes = 500 * 1024 * 1024; // 500 MB
+
+// API GET routes to cache with stale-while-revalidate so the app loads offline
+const CACHED_API_PREFIXES = [
+  "/api/auth/session",
+  "/api/study/stats",
+  "/api/textbooks",
+  "/api/user/drive",
+  "/api/user/settings",
+  "/api/user/textbook-progress",
+  "/api/study/sessions",
+];
+
 self.addEventListener("install", () => self.skipWaiting());
 
-// Activate: claim all clients and clear old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => !k.endsWith(CACHE_VERSION))
+            .map((k) => caches.delete(k))
+        )
+      )
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch: network-first strategy — always try fresh content, fall back to cache
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-
-  // Skip non-GET and API/auth requests
   if (request.method !== "GET") return;
-  const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/")) return;
-  if (url.pathname.startsWith("/auth/")) return;
 
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        // Cache the fresh response
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(request))
-  );
+  const url = new URL(request.url);
+
+  // PDF proxy: cache-first (PDFs are immutable once loaded, large files)
+  if (url.pathname.startsWith("/api/proxy/pdf")) {
+    event.respondWith(cacheFirst(request, PDF_CACHE));
+    return;
+  }
+
+  // Public Vercel Blob PDFs: cache-first
+  if (url.hostname.endsWith("blob.vercel-storage.com") && url.pathname.endsWith(".pdf")) {
+    event.respondWith(cacheFirst(request, PDF_CACHE));
+    return;
+  }
+
+  // Whitelisted API GETs: stale-while-revalidate
+  if (CACHED_API_PREFIXES.some((p) => url.pathname.startsWith(p))) {
+    event.respondWith(staleWhileRevalidate(request, API_CACHE));
+    return;
+  }
+
+  // Skip other API / auth routes
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+
+  // App shell: network-first with cache fallback
+  event.respondWith(networkFirstWithFallback(request));
 });
 
-// Listen for update messages from the app
+// Cache-first: serve from cache, fetch and cache on miss
+async function cacheFirst(request, cacheName) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+      // Enforce size / count limits after adding a new PDF
+      if (cacheName === PDF_CACHE) {
+        evictPdfCache().catch(() => {});
+      }
+    }
+    return response;
+  } catch {
+    return new Response("Offline — PDF not yet cached", { status: 503 });
+  }
+}
+
+/**
+ * Evict oldest PDF cache entries until both the count and total size are
+ * within the configured limits.  Entries are sorted by the Date response
+ * header (falling back to insertion order) so the least-recently-cached
+ * PDF is evicted first.
+ */
+async function evictPdfCache() {
+  const cache = await caches.open(PDF_CACHE);
+  const keys = await cache.keys();
+  if (keys.length === 0) return;
+
+  // Build list of { request, date, size } sorted oldest-first
+  const entries = await Promise.all(
+    keys.map(async (req) => {
+      const res = await cache.match(req);
+      const size = Number(res?.headers?.get("content-length") ?? 0);
+      const dateStr = res?.headers?.get("date");
+      const date = dateStr ? new Date(dateStr).getTime() : 0;
+      return { req, date, size };
+    })
+  );
+  entries.sort((a, b) => a.date - b.date); // oldest first
+
+  let totalBytes = entries.reduce((s, e) => s + e.size, 0);
+  let count = entries.length;
+
+  for (const entry of entries) {
+    // Stop once we're within both limits
+    if (count <= pdfMaxCount && totalBytes <= pdfMaxBytes) break;
+    await cache.delete(entry.req);
+    totalBytes -= entry.size;
+    count--;
+  }
+}
+
+// Stale-while-revalidate: return cache immediately, update in background
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // Serve cached immediately, update in background
+    fetchPromise.catch(() => {});
+    return cached;
+  }
+
+  // No cache yet: wait for the network
+  const fresh = await fetchPromise;
+  return (
+    fresh ??
+    new Response(JSON.stringify({ offline: true }), {
+      headers: { "Content-Type": "application/json" },
+      status: 503,
+    })
+  );
+}
+
+// Network-first: try network, fall back to cache
+async function networkFirstWithFallback(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(SHELL_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    return (
+      cached ??
+      new Response("You are offline and this page has not been cached yet.", {
+        status: 503,
+      })
+    );
+  }
+}
+
 self.addEventListener("message", (event) => {
   if (event.data === "skipWaiting") self.skipWaiting();
+  // Accept PDF cache limit updates from the settings page
+  if (event.data?.type === "setPdfCacheLimits") {
+    if (typeof event.data.maxCount === "number") pdfMaxCount = event.data.maxCount;
+    if (typeof event.data.maxBytes === "number") pdfMaxBytes = event.data.maxBytes;
+    // Run eviction immediately in case new limits are tighter
+    evictPdfCache().catch(() => {});
+  }
 });

@@ -49,6 +49,37 @@ export default function SettingsPage() {
       .catch(() => {});
   }, []);
 
+  // ── PDF cache limits (device-local, sent to SW) ────────────────────
+  const [pdfCacheCount, setPdfCacheCountState] = useState(2);
+  const [pdfCacheMb, setPdfCacheMbState] = useState(500);
+
+  useEffect(() => {
+    const c = Number(localStorage.getItem("bowlbeacon-pdf-cache-count")) || 2;
+    const mb = Number(localStorage.getItem("bowlbeacon-pdf-cache-mb")) || 500;
+    setPdfCacheCountState(c);
+    setPdfCacheMbState(mb);
+  }, []);
+
+  function sendPdfLimitsToSw(count: number, mb: number) {
+    navigator.serviceWorker?.ready.then((reg) => {
+      reg.active?.postMessage({ type: "setPdfCacheLimits", maxCount: count, maxBytes: mb * 1024 * 1024 });
+    }).catch(() => {});
+  }
+
+  function handlePdfCacheCount(v: number) {
+    const val = Math.max(1, Math.min(10, v));
+    setPdfCacheCountState(val);
+    localStorage.setItem("bowlbeacon-pdf-cache-count", String(val));
+    sendPdfLimitsToSw(val, pdfCacheMb);
+  }
+
+  function handlePdfCacheMb(v: number) {
+    const val = Math.max(100, Math.min(5000, v));
+    setPdfCacheMbState(val);
+    localStorage.setItem("bowlbeacon-pdf-cache-mb", String(val));
+    sendPdfLimitsToSw(pdfCacheCount, val);
+  }
+
   // ── Theme ──────────────────────────────────────────────────────────
   const [themeId, setThemeId] = useState<string>("default");
   const [themeSaving, setThemeSaving] = useState(false);
@@ -209,9 +240,9 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="mx-auto max-w-lg px-6 py-10 space-y-4">
+      <div className="mx-auto max-w-4xl px-6 py-10">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-4 mb-6 md:col-span-2">
           <Link
             href="/dashboard"
             className="text-sm text-gray-500 hover:text-black dark:hover:text-white underline underline-offset-4"
@@ -221,8 +252,10 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+
         {/* Daily goals */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Daily goals</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Set targets for each day. Your progress towards these will be
@@ -349,9 +382,8 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* Textbook display size */}
+        {/* Storage */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-          <h2 className="text-base font-semibold mb-1">Storage</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
             Space used by your uploaded PDFs.
           </p>
@@ -377,6 +409,53 @@ export default function SettingsPage() {
           ) : (
             <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
           )}
+        </section>
+
+        {/* PDF offline cache limits */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Offline PDF cache</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Textbooks you open are cached on this device so they load instantly and work offline.
+            Older ones are evicted when either limit is reached.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Max textbooks cached
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={pdfCacheCount}
+                  onChange={(e) => handlePdfCacheCount(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                <span className="text-xs text-gray-400">books (1 – 10)</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Max cache size
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={100}
+                  max={5000}
+                  step={100}
+                  value={pdfCacheMb}
+                  onChange={(e) => handlePdfCacheMb(Number(e.target.value))}
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                <span className="text-xs text-gray-400">MB (100 – 5000)</span>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+            Default: 2 textbooks or 500 MB. Saved on this device only.
+          </p>
         </section>
 
         {/* Textbook display size */}
@@ -408,7 +487,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Focus music playlist */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Build a study playlist. Search for songs or paste a URL. Music loops
@@ -607,7 +686,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Custom theme */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Theme</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Pick a color theme for the app. This applies to your account across devices.
@@ -653,7 +732,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Keyboard shortcuts reference */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
           <h2 className="text-base font-semibold mb-1">Keyboard shortcuts</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
             Available while reading in a study session.
@@ -676,6 +755,7 @@ export default function SettingsPage() {
             ))}
           </div>
         </section>
+        </div>{/* end grid */}
       </div>
     </main>
   );

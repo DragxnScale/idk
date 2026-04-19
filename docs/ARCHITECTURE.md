@@ -284,7 +284,8 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | PATCH | `/api/admin/users` | Bulk or field updates. |
 | GET, PATCH, DELETE | `/api/admin/users/[id]` | User detail, update, delete. |
 | GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session. |
-| POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Run once after deploying to reclaim all previously stored catalog PDFs. |
+| GET | `/api/admin/catalog/cleanup-blobs` | Dry-run preview: reports how many rows/blobs would be deleted and estimated freed bytes. |
+| POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Recalculates `storageBytes` for affected users. |
 | GET, DELETE | `/api/admin/blobs` | List / delete blobs. |
 | GET | `/api/admin/blob-lookup` | Resolve blob metadata. |
 | GET, POST | `/api/admin/blob-token` | Token for admin uploads (admin-only). |
@@ -417,9 +418,15 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 - **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`.
 
-### 7.6 PWA
+### 7.6 PWA / Offline mode
 
-- **`public/sw.js`** — Service worker caching/update strategy.
+- **`public/sw.js`** — Upgraded service worker with three caching strategies:
+  - **Cache-first**: `/api/proxy/pdf` and Vercel Blob PDF URLs — PDFs load instantly after first visit, and work offline.
+  - **Stale-while-revalidate**: `/api/auth/session`, `/api/study/stats`, `/api/textbooks`, `/api/user/drive`, `/api/user/settings`, `/api/user/textbook-progress`, `/api/study/sessions` — cached data shown immediately, updated in background.
+  - **Network-first with fallback**: all app shell pages — always tries fresh, falls back to cache when offline.
+- **`lib/offline-session.ts`** — Client-side offline session queue backed by `localStorage`. When the device is offline: `enqueueOfflineSession()` stores the session locally with a `offline-*` temp ID; `updateOfflineSession()` updates the progress snapshot; `syncOfflineSessions()` replays all queued sessions to the server (honoring the original `startedAt` time) and fires `offlineSessionSynced` events for UI updates.
+- **`app/study/session/page.tsx`** — Offline-aware session page: detects `navigator.onLine`, shows an amber "You're offline" banner during the session, falls back to `enqueueOfflineSession()` if `POST /api/study/sessions` fails, queues `saveProgress` patches locally, marks session completed locally on end, then redirects to `/study/history` (full summary available after sync). AI Notes button is disabled during offline sessions. `syncOfflineSessions()` is called on mount and on every `online` event.
+- **`POST /api/study/sessions`** — Accepts optional `startedAt` ISO string so synced offline sessions preserve their real start time.
 - **`app/layout.tsx`** registers SW; **`app/manifest.ts`** defines installability.
 
 ---

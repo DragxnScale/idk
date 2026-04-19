@@ -41,7 +41,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js").then(function(r){r.addEventListener("updatefound",function(){var w=r.installing;if(w)w.addEventListener("statechange",function(){if(w.state==="installed"&&navigator.serviceWorker.controller){w.postMessage("skipWaiting");location.reload()}})});setInterval(function(){r.update()},60000)}).catch(function(){})}`
+            __html: `if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js").then(function(r){r.addEventListener("updatefound",function(){var w=r.installing;if(w)w.addEventListener("statechange",function(){if(w.state==="installed"&&navigator.serviceWorker.controller){w.postMessage("skipWaiting");location.reload()}})});setInterval(function(){r.update()},60000);function sendLimits(sw){try{var c=Number(localStorage.getItem("bowlbeacon-pdf-cache-count"))||2;var mb=Number(localStorage.getItem("bowlbeacon-pdf-cache-mb"))||500;sw.postMessage({type:"setPdfCacheLimits",maxCount:c,maxBytes:mb*1024*1024})}catch(e){}}navigator.serviceWorker.ready.then(function(reg){if(reg.active)sendLimits(reg.active)})}).catch(function(){})}`
           }}
         />
       </head>

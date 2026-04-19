@@ -10,6 +10,7 @@ import dynamic from "next/dynamic";
 import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
 import { loadPlaylist, savePlaylist, parseYouTubeId, isYouTubeUrl, resolveYouTubeTitle, isTitlePlaceholder, type MusicTrack } from "@/lib/music";
+import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOfflineId } from "@/lib/offline-session";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -82,6 +83,29 @@ function StudySessionInner() {
   const sessionEndingRef = useRef(false);
   const resumeHandled = useRef(false);
   const lastActivityRef = useRef(Date.now());
+
+  // Online / offline awareness
+  const [isOnline, setIsOnline] = useState(true);
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const handleOnline = async () => {
+      setIsOnline(true);
+      const synced = await syncOfflineSessions();
+      if (synced > 0) {
+        // Soft-refresh stats so the resume-check picks up the synced session
+        window.dispatchEvent(new Event("offlineSessionsSynced"));
+      }
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    // Sync any sessions left over from a previous offline visit
+    syncOfflineSessions().catch(() => {});
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Check for active session / handle resume
   useEffect(() => {
@@ -437,6 +461,25 @@ function StudySessionInner() {
       const docPayload = selectedDoc
         ? { ...selectedDoc, selectedChapters }
         : null;
+
+      // Offline path: skip the server entirely
+      if (!navigator.onLine) {
+        const tempId = enqueueOfflineSession({
+          goalType,
+          targetValue,
+          documentJson: docPayload,
+          startedAt: new Date().toISOString(),
+          totalFocusedMinutes: 0,
+          lastPageIndex: 1,
+          pagesVisited: 0,
+          visitedPagesList: [],
+          completed: false,
+        });
+        setSessionId(tempId);
+        setStarting(false);
+        return;
+      }
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       const res = await fetch("/api/study/sessions", {
@@ -453,11 +496,28 @@ function StudySessionInner() {
       const data = await res.json();
       setSessionId(data.id);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setError("Request timed out. Please try again.");
-      } else {
-        setError(e instanceof Error ? e.message : "Something went wrong");
+      // If a network error occurs mid-attempt, fall back to offline mode
+      if (
+        (e instanceof TypeError && e.message.includes("fetch")) ||
+        (e instanceof DOMException && e.name === "AbortError")
+      ) {
+        const docPayload = selectedDoc ? { ...selectedDoc, selectedChapters } : null;
+        const tempId = enqueueOfflineSession({
+          goalType,
+          targetValue,
+          documentJson: docPayload,
+          startedAt: new Date().toISOString(),
+          totalFocusedMinutes: 0,
+          lastPageIndex: 1,
+          pagesVisited: 0,
+          visitedPagesList: [],
+          completed: false,
+        });
+        setSessionId(tempId);
+        setStarting(false);
+        return;
       }
+      setError(e instanceof Error ? e.message : "Something went wrong");
       setStarting(false);
     }
   }, [goalType, targetValue, selectedDoc, selectedChapters]);
@@ -468,17 +528,25 @@ function StudySessionInner() {
     async (minutes: number) => {
       if (!sessionId || minutes <= lastSavedRef.current) return;
       lastSavedRef.current = minutes;
+
+      const progressPayload = {
+        totalFocusedMinutes: minutes,
+        lastPageIndex: currentPageRef.current,
+        pagesVisited: visitedPagesRef.current.size,
+        visitedPagesList: Array.from(visitedPagesRef.current),
+      };
+
+      // Offline or temp session: update the local queue
+      if (isOfflineId(sessionId)) {
+        updateOfflineSession(sessionId, progressPayload);
+        return;
+      }
+
       try {
         await fetch("/api/study/sessions", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            totalFocusedMinutes: minutes,
-            lastPageIndex: currentPageRef.current,
-            pagesVisited: visitedPagesRef.current.size,
-            visitedPagesList: Array.from(visitedPagesRef.current),
-          }),
+          body: JSON.stringify({ sessionId, ...progressPayload }),
         });
       } catch {
         // will retry on next tick
@@ -500,6 +568,28 @@ function StudySessionInner() {
       } catch {
         // storage may be full
       }
+    }
+
+    // Offline session: mark completed locally and let sync handle the rest
+    if (isOfflineId(sessionId)) {
+      updateOfflineSession(sessionId, {
+        completed: true,
+        endedAt: new Date().toISOString(),
+        totalFocusedMinutes: focusedMinutesRef.current,
+        pagesVisited: visitedPagesRef.current.size,
+        visitedPagesList: Array.from(visitedPagesRef.current),
+      });
+      // Try to sync immediately (may succeed if connection came back)
+      const synced = await syncOfflineSessions().catch(() => 0);
+      if (synced > 0) {
+        // Session synced — but we don't know the real ID yet from this path,
+        // so send user to history instead of a specific summary.
+        window.location.href = "/study/history";
+      } else {
+        // Still offline — show history (will list the pending session after sync)
+        window.location.href = "/study/history";
+      }
+      return;
     }
 
     try {
@@ -887,6 +977,14 @@ function StudySessionInner() {
       onResume={() => setIsPaused(false)}
     >
       <main className="h-dvh flex flex-col overflow-hidden">
+        {/* Offline banner */}
+        {!isOnline && (
+          <div className="flex-shrink-0 flex items-center justify-center gap-2 bg-amber-900/80 px-4 py-1.5 text-xs font-medium text-amber-200">
+            <span>⚡</span>
+            <span>You&apos;re offline — your session is being saved locally and will sync when you reconnect.</span>
+            {isOfflineId(sessionId ?? "") && <span className="text-amber-400">· AI features unavailable offline</span>}
+          </div>
+        )}
         {/* Top bar */}
         <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2 sm:px-6 sm:py-3 sm:gap-4 dark:border-gray-700">
           <div className="flex items-center gap-4">
@@ -964,11 +1062,13 @@ function StudySessionInner() {
             )}
             <button
               onClick={() => setShowNotes((v) => !v)}
+              disabled={!isOnline && isOfflineId(sessionId ?? "")}
+              title={!isOnline && isOfflineId(sessionId ?? "") ? "AI Notes unavailable offline" : undefined}
               className={`rounded-lg border px-3 py-1.5 text-xs transition ${
                 showNotes
                   ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300"
                   : "border-gray-300 dark:border-gray-600"
-              }`}
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               {showNotes ? "Hide Notes" : "AI Notes"}
             </button>
