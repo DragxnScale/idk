@@ -753,6 +753,18 @@ export default function SettingsPage() {
           </form>
         </section>
 
+        {/* 🐶 Easter egg */}
+        <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover" />
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3">
+              <p className="text-white text-sm font-semibold">You found the secret.</p>
+              <p className="text-white/70 text-xs">Now go study. 🐾</p>
+            </div>
+          </div>
+        </section>
+
         {/* Focus music playlist */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
