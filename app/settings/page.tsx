@@ -753,18 +753,22 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* About / credits + easter egg */}
-        <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          {!pdfCacheEnabled && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover" />
-          )}
-          <div className="p-5">
-            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-              Bowl Beacon was a passion project designed by Jayden Wong as an introductory lession to learn how to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
-            </p>
-          </div>
+        {/* Easter egg dog — only when cache is off */}
+        {!pdfCacheEnabled && (
+        <section className="rounded-2xl overflow-hidden break-inside-avoid mb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
         </section>
+        )}
+
+        {/* Credits — only when cache is on */}
+        {pdfCacheEnabled && (
+        <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 p-5">
+          <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+            Bowl Beacon was a passion project designed by Jayden Wong as an introductory lession to learn how to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
+          </p>
+        </section>
+        )}
 
         {/* Focus music playlist */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
