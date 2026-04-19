@@ -615,6 +615,7 @@ export default function SettingsPage() {
               : "Caching is off. Textbooks will always load from the network and won't be available offline."}
           </p>
           {pdfCacheEnabled && (
+          <>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -653,6 +654,7 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
             Default: 2 textbooks or 500 MB. Saved on this device only.
           </p>
+          </>
           )}
         </section>
 
