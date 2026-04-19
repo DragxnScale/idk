@@ -75,7 +75,7 @@ export async function GET() {
     if (existing) {
       existing.sessions += 1;
       existing.totalMinutes += row.totalFocusedMinutes ?? 0;
-      for (const p of pageSet) existing.visitedPages.add(p);
+      pageSet.forEach((p) => existing.visitedPages.add(p));
       if (rowDate && (!existing.lastStudiedAt || rowDate > existing.lastStudiedAt)) {
         existing.lastStudiedAt = rowDate;
       }

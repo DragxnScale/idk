@@ -417,6 +417,7 @@ function StudySessionInner() {
       });
 
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDoc?.documentId, selectedDoc?.sourceUrl, selectedDoc?.type]);
 
   const handlePageText = useCallback((page: number, text: string) => {

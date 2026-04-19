@@ -68,7 +68,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1,
         setGenerating(false);
       }
     },
-    [sessionId, pageTexts, generatedPages]
+    [sessionId, pageTexts, generatedPages, textbookCatalogId]
   );
 
   const generateAllNew = useCallback(async () => {
