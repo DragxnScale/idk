@@ -527,7 +527,6 @@ export default function SettingsPage() {
             </button>
           </form>
         </section>
-        </section>
 
 
         <div className="md:grid md:grid-cols-2 md:gap-4">
