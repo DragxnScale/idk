@@ -758,7 +758,7 @@ export default function SettingsPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-t-2xl" />
           {pdfCacheEnabled && (
-            <div className="w-full h-[120px] bg-gradient-to-br from-blue-700 via-indigo-600 to-purple-700 rounded-b-2xl" />
+            <div className="w-full h-[120px] rounded-b-2xl" style={{ background: "linear-gradient(to bottom, #0012ff, #5400f7)" }} />
           )}
         </section>
 
