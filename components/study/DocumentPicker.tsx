@@ -88,6 +88,7 @@ export interface SelectedDocument {
   documentId: string;
   title: string;
   startPage?: number;
+  pageOffset?: number;
   sourceUrl?: string;
   availableChapters?: string[];
   chapterPageRanges?: Record<string, [number, number]>;
@@ -163,6 +164,8 @@ interface DriveDoc {
   title: string;
   fileUrl: string;
   totalPages: number | null;
+  chapterPageRanges: Record<string, [number, number]> | null;
+  pageOffset: number;
   createdAt: string | null;
 }
 
@@ -276,7 +279,19 @@ function DrivePanel({
             >
               <button
                 type="button"
-                onClick={() => onSelect({ type: "upload", documentId: doc.id, title: doc.title, sourceUrl: doc.fileUrl })}
+                onClick={() => onSelect({
+                  type: "upload",
+                  documentId: doc.id,
+                  title: doc.title,
+                  sourceUrl: doc.fileUrl,
+                  pageOffset: doc.pageOffset || undefined,
+                  ...(doc.chapterPageRanges && Object.keys(doc.chapterPageRanges).length > 0
+                    ? {
+                        availableChapters: Object.keys(doc.chapterPageRanges),
+                        chapterPageRanges: doc.chapterPageRanges,
+                      }
+                    : {}),
+                })}
                 className="flex-1 text-left text-sm font-medium truncate hover:text-gray-600 dark:hover:text-gray-300 transition"
               >
                 {doc.title}
@@ -603,36 +618,211 @@ function UploadPanel({
         </p>
       )}
 
-      {/* Pick one to study */}
+      {/* Pick one to study — with optional TOC setup */}
       {allDone && uploaded.length > 0 && (
-        <div>
-          <p className="text-sm font-medium mb-2">
-            {uploaded.length === 1
-              ? "Ready — start studying?"
-              : `${uploaded.length} files uploaded — pick one to study:`}
-          </p>
-          <ul className="space-y-1.5">
-            {uploaded.map((it, i) => (
-              <li key={i}>
-                  <button
-                  type="button"
-                  onClick={() =>
-                    onSelect({
-                      type: "upload",
-                      documentId: it.result!.id,
-                      title: it.result!.title,
-                      sourceUrl: it.result!.fileUrl,
-                    })
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-left text-sm font-medium transition hover:border-black hover:shadow-sm dark:border-gray-600 dark:hover:border-white"
-                >
-                  {it.result!.title}
-                </button>
-              </li>
-            ))}
-          </ul>
+        <UploadedDocEditor docs={uploaded} onSelect={onSelect} />
+      )}
+    </div>
+  );
+}
+
+/* ── Uploaded Doc Editor ───────────────────────────────────────────── */
+
+interface TocRow {
+  chapter: string;    // user-facing label, e.g. "1" or "Introduction"
+  start: string;      // text input — PDF page number
+  end: string;
+}
+
+function UploadedDocEditor({
+  docs,
+  onSelect,
+}: {
+  docs: FileItem[];
+  onSelect: (doc: SelectedDocument) => void;
+}) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [tocRows, setTocRows] = useState<TocRow[]>([{ chapter: "", start: "", end: "" }]);
+  const [pageOffset, setPageOffset] = useState("0");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const doc = docs[activeIdx]?.result!;
+
+  function addRow() {
+    setTocRows((prev) => [...prev, { chapter: "", start: "", end: "" }]);
+  }
+
+  function removeRow(i: number) {
+    setTocRows((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function updateRow(i: number, field: keyof TocRow, value: string) {
+    setTocRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+  }
+
+  function buildRanges(): Record<string, [number, number]> | null {
+    const result: Record<string, [number, number]> = {};
+    for (const row of tocRows) {
+      if (!row.chapter.trim()) continue;
+      const s = parseInt(row.start, 10);
+      const e = parseInt(row.end, 10);
+      if (!isNaN(s) && !isNaN(e) && s > 0 && e >= s) {
+        result[row.chapter.trim()] = [s, e];
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  }
+
+  async function saveAndStart(skipToc = false) {
+    setSaving(true);
+    setSaveError(null);
+    const ranges = skipToc ? null : buildRanges();
+    const offset = parseInt(pageOffset, 10) || 0;
+
+    if (ranges || offset !== 0) {
+      try {
+        const res = await fetch(`/api/documents/${doc.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(ranges ? { chapterPageRanges: ranges } : {}),
+            pageOffset: offset,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setSaveError(data.error ?? "Failed to save TOC");
+          setSaving(false);
+          return;
+        }
+      } catch {
+        setSaveError("Network error saving TOC");
+        setSaving(false);
+        return;
+      }
+    }
+
+    onSelect({
+      type: "upload",
+      documentId: doc.id,
+      title: doc.title,
+      sourceUrl: doc.fileUrl,
+      pageOffset: offset || undefined,
+      ...(ranges
+        ? { availableChapters: Object.keys(ranges), chapterPageRanges: ranges }
+        : {}),
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      {docs.length > 1 && (
+        <div className="flex gap-2 flex-wrap">
+          {docs.map((it, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => { setActiveIdx(i); setTocRows([{ chapter: "", start: "", end: "" }]); setPageOffset("0"); }}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${i === activeIdx ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-300 hover:border-gray-500 dark:border-gray-600"}`}
+            >
+              {it.result!.title}
+            </button>
+          ))}
         </div>
       )}
+
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4 dark:border-gray-700 dark:bg-gray-800/50">
+        <div>
+          <p className="text-sm font-semibold mb-0.5">{doc.title}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Optionally enter a table of contents and page offset so chapter selection works.
+          </p>
+        </div>
+
+        {/* Page offset */}
+        <div>
+          <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
+            Page offset
+            <span className="ml-1 font-normal text-gray-400">(PDF page 1 = book page 1 + offset, e.g. enter 10 if the book&apos;s page&nbsp;1 is PDF page 11)</span>
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={pageOffset}
+            onChange={(e) => setPageOffset(e.target.value)}
+            className="w-28 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
+            placeholder="0"
+          />
+        </div>
+
+        {/* TOC rows */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+            Table of contents <span className="font-normal text-gray-400">(PDF page numbers)</span>
+          </p>
+          <div className="space-y-2">
+            {tocRows.map((row, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={row.chapter}
+                  onChange={(e) => updateRow(i, "chapter", e.target.value)}
+                  placeholder="Chapter / title"
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                <input
+                  type="number"
+                  value={row.start}
+                  onChange={(e) => updateRow(i, "start", e.target.value)}
+                  placeholder="Start pg"
+                  min={1}
+                  className="w-20 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                <input
+                  type="number"
+                  value={row.end}
+                  onChange={(e) => updateRow(i, "end", e.target.value)}
+                  placeholder="End pg"
+                  min={1}
+                  className="w-20 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+                {tocRows.length > 1 && (
+                  <button type="button" onClick={() => removeRow(i)} className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={addRow}
+            className="mt-2 text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 underline underline-offset-2"
+          >
+            + Add row
+          </button>
+        </div>
+
+        {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => saveAndStart(false)}
+            className="btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save & start studying"}
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => saveAndStart(true)}
+            className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 disabled:opacity-60"
+          >
+            Skip
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

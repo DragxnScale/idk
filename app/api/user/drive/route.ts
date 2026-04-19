@@ -23,6 +23,8 @@ export async function GET() {
       title: d.title ?? "Untitled",
       fileUrl: d.fileUrl,
       totalPages: d.totalPages ?? null,
+      chapterPageRanges: d.chapterPageRanges ? JSON.parse(d.chapterPageRanges) : null,
+      pageOffset: d.pageOffset ?? 0,
       createdAt: d.createdAt?.toISOString() ?? null,
     }))
   );

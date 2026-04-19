@@ -134,7 +134,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 **Study core**
 
 - `study_sessions` — goal type/value, start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]` of unique page indices for dedup), `document_json` (resume), `videos_json` (cached AI video recs).
-- `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`.
+- `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`, `chapter_page_ranges` (user-defined TOC JSON), `page_offset` (PDF page alignment).
 - `textbook_catalog` — shared books: `source_url`, chapter page ranges JSON, visibility flags.
 - `session_content` — links session to document and chapter/page range.
 
@@ -201,6 +201,7 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 |--------|------|---------|
 | POST | `/api/documents/upload` | Form upload PDF → Blob (public) → `documents` row. |
 | POST | `/api/documents/register` | Register metadata after client upload completes. |
+| GET, PATCH | `/api/documents/[id]` | Get metadata or update `chapterPageRanges` / `pageOffset` / `title` for a document; owner or admin only. |
 | POST | `/api/documents/ensure-imported` | Auto-imports a catalog PDF into public Blob on first access; returns stored URL for subsequent CDN-direct loads (bypasses proxy for Fast Origin Transfer). |
 | GET | `/api/documents/[id]/file` | Redirect to stored `fileUrl` (Blob) if user owns doc. |
 | GET | `/api/textbooks` | List/search catalog entries. |
@@ -223,6 +224,8 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`). |
 | PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz question bounds). |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
+
+User-uploaded documents are accessible **only by the owner or an admin** — enforced in `GET/PATCH /api/documents/[id]` and `GET /api/user/drive`.
 
 ### 5.7 Bookmarks
 
@@ -380,7 +383,7 @@ Query: `sessionId`. Returns existing cards sorted by page number.
 **Study (`components/study/`)**
 
 - **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`.
-- **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`.
+- **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`. After upload completes, shows `UploadedDocEditor` — lets the user enter a per-chapter TOC (chapter label + PDF start/end page) and a page offset; saves to `PATCH /api/documents/[id]`; the chapter data is then available immediately in the session.
 - **`PdfViewer.tsx`** — `react-pdf`; zoom, search, TOC, bookmarks/highlights, page visit batching, `onPageText` for AI.
 - **`AiNotesPanel.tsx`** — Generates/displays notes per page; accepts `textbookCatalogId` for shared cache; page numbers shown relative to chapter start.
 - **`QuizView.tsx`** — Steps through questions, tracks wrong answers, calls `onComplete(score, total, wrongAnswers)`.

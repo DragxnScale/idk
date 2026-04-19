@@ -104,6 +104,8 @@ export const documents = sqliteTable("documents", {
   textbookCatalogId: text("textbook_catalog_id"),
   fileUrl: text("file_url"), // Vercel Blob URL for uploaded PDFs
   totalPages: integer("total_pages"),
+  chapterPageRanges: text("chapter_page_ranges"), // JSON: Record<string, [number, number]> — user-defined TOC
+  pageOffset: integer("page_offset"),             // PDF page 1 = textbook page (1 + pageOffset)
   extractedText: text("extracted_text"),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),

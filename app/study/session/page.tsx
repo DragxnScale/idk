@@ -594,6 +594,9 @@ function StudySessionInner() {
       const range = selectedDoc.chapterPageRanges[firstChapter];
       return range ? range[0] : 1;
     }
+    // For user uploads with a page offset, PDF page 1 maps to book page (1 + offset),
+    // so the "start page" in book terms is (1 + offset).
+    if (selectedDoc?.pageOffset) return 1 + selectedDoc.pageOffset;
     return selectedDoc?.startPage ?? 1;
   }
 
