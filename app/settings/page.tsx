@@ -567,7 +567,8 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        {/* Textbook display size — paired with Offline PDF cache (similar heights) */}
+        {/* Textbook display size — shown here when cache is off */}
+        {!pdfCacheEnabled && (
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
@@ -594,6 +595,7 @@ export default function SettingsPage() {
             ))}
           </div>
         </section>
+        )}
 
         {/* PDF offline cache limits */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
@@ -752,6 +754,36 @@ export default function SettingsPage() {
             </button>
           </form>
         </section>
+
+        {/* Textbook display size — shown here (after exit password) when cache is on */}
+        {pdfCacheEnabled && (
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+            Controls how large the PDF pages appear while reading. Saved on
+            this device.
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {ZOOM_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => handleZoomChange(preset.value)}
+                className={`rounded-lg border py-3 text-sm font-medium transition ${
+                  zoom === preset.value
+                    ? "btn-primary border-accent"
+                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                }`}
+              >
+                {preset.label}
+                <span className="block text-xs opacity-60 mt-0.5">
+                  {Math.round(preset.value * 100)}%
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+        )}
 
         {/* Easter egg — dog + credits only when cache is off */}
         {!pdfCacheEnabled && (
