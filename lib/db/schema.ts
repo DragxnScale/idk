@@ -15,6 +15,11 @@ export const users = sqliteTable("users", {
   quizMaxQuestions: integer("quiz_max_questions"), // null = default (10)
   defaultGoalType: text("default_goal_type"),       // "time" | "pages" | "chapter" | null
   defaultTargetValue: integer("default_target_value"), // default minutes/pages for new sessions
+  pomodoroEnabled: integer("pomodoro_enabled", { mode: "boolean" }).default(false),
+  pomodoroFocusMin: integer("pomodoro_focus_min"),    // default 25
+  pomodoroBreakMin: integer("pomodoro_break_min"),    // default 5
+  pomodoroLongBreakMin: integer("pomodoro_long_break_min"), // default 15
+  pomodoroCycles: integer("pomodoro_cycles"),         // cycles before long break, default 4
   storageBytes: integer("storage_bytes").default(0),         // running total of user upload bytes
   storageQuotaBytes: integer("storage_quota_bytes"),         // null = use DEFAULT_QUOTA_BYTES
   themeId: text("theme_id"), // custom theme color set id

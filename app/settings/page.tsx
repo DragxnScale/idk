@@ -63,6 +63,44 @@ export default function SettingsPage() {
   const [sessionDefaultStatus, setSessionDefaultStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [sessionDefaultMessage, setSessionDefaultMessage] = useState<string | null>(null);
 
+  // ── Pomodoro ───────────────────────────────────────────────────────
+  const [pomodoroEnabled, setPomodoroEnabled] = useState(false);
+  const [pomodoroFocus, setPomodoroFocus] = useState("25");
+  const [pomodoroBreak, setPomodoroBreak] = useState("5");
+  const [pomodoroLong, setPomodoroLong] = useState("15");
+  const [pomodoroCycles, setPomodoroCycles] = useState("4");
+  const [pomodoroStatus, setPomodoroStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [pomodoroMessage, setPomodoroMessage] = useState<string | null>(null);
+
+  async function handlePomodoroSave(e: React.FormEvent) {
+    e.preventDefault();
+    setPomodoroStatus("loading");
+    setPomodoroMessage(null);
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pomodoroEnabled,
+          pomodoroFocusMin: pomodoroFocus ? Number(pomodoroFocus) : null,
+          pomodoroBreakMin: pomodoroBreak ? Number(pomodoroBreak) : null,
+          pomodoroLongBreakMin: pomodoroLong ? Number(pomodoroLong) : null,
+          pomodoroCycles: pomodoroCycles ? Number(pomodoroCycles) : null,
+        }),
+      });
+      if (res.ok) {
+        setPomodoroStatus("success");
+        setPomodoroMessage("Saved.");
+      } else {
+        setPomodoroStatus("error");
+        setPomodoroMessage("Failed to save.");
+      }
+    } catch {
+      setPomodoroStatus("error");
+      setPomodoroMessage("Network error.");
+    }
+  }
+
   async function handleSessionDefaultSave(e: React.FormEvent) {
     e.preventDefault();
     setSessionDefaultStatus("loading");
@@ -266,6 +304,11 @@ export default function SettingsPage() {
         if (data.email) setAccountEmail(data.email);
         if (data.defaultGoalType) setDefaultGoalType(data.defaultGoalType);
         if (data.defaultTargetValue) setDefaultTargetValue(String(data.defaultTargetValue));
+        if (data.pomodoroEnabled !== undefined) setPomodoroEnabled(!!data.pomodoroEnabled);
+        if (data.pomodoroFocusMin) setPomodoroFocus(String(data.pomodoroFocusMin));
+        if (data.pomodoroBreakMin) setPomodoroBreak(String(data.pomodoroBreakMin));
+        if (data.pomodoroLongBreakMin) setPomodoroLong(String(data.pomodoroLongBreakMin));
+        if (data.pomodoroCycles) setPomodoroCycles(String(data.pomodoroCycles));
       });
   }, []);
 
@@ -565,6 +608,65 @@ export default function SettingsPage() {
               {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
             </button>
           </form>
+        </section>
+
+        {/* Pomodoro timer */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-base font-semibold">Pomodoro timer</h2>
+            <button
+              type="button"
+              onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
+              role="switch"
+              aria-checked={pomodoroEnabled}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            {pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer."}
+          </p>
+          {pomodoroEnabled && (
+          <form onSubmit={handlePomodoroSave} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
+                <input type="number" min={1} max={90} value={pomodoroFocus}
+                  onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }}
+                  placeholder="25"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
+                <input type="number" min={1} max={30} value={pomodoroBreak}
+                  onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }}
+                  placeholder="5"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
+                <input type="number" min={1} max={60} value={pomodoroLong}
+                  onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }}
+                  placeholder="15"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
+                <input type="number" min={1} max={10} value={pomodoroCycles}
+                  onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }}
+                  placeholder="4"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+              </div>
+            </div>
+            {pomodoroMessage && (
+              <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
+            )}
+            <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+              {pomodoroStatus === "loading" ? "Saving…" : "Save Pomodoro settings"}
+            </button>
+          </form>
+          )}
         </section>
 
         {/* Textbook display size — shown here when cache is off */}

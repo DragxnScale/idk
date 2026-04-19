@@ -30,6 +30,11 @@ export async function GET() {
     quizMaxQuestions: user.quizMaxQuestions ?? null,
     defaultGoalType: user.defaultGoalType ?? null,
     defaultTargetValue: user.defaultTargetValue ?? null,
+    pomodoroEnabled: user.pomodoroEnabled ?? false,
+    pomodoroFocusMin: user.pomodoroFocusMin ?? null,
+    pomodoroBreakMin: user.pomodoroBreakMin ?? null,
+    pomodoroLongBreakMin: user.pomodoroLongBreakMin ?? null,
+    pomodoroCycles: user.pomodoroCycles ?? null,
   });
 }
 
@@ -40,7 +45,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions, defaultGoalType, defaultTargetValue, name } = body;
+  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions, defaultGoalType, defaultTargetValue, name, pomodoroEnabled, pomodoroFocusMin, pomodoroBreakMin, pomodoroLongBreakMin, pomodoroCycles } = body;
 
   const user = await db.query.users.findFirst({
     where: (u, { eq }) => eq(u.id, session.user.id),
@@ -75,7 +80,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined) {
+  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
     if (name !== undefined) {
@@ -108,6 +113,25 @@ export async function PATCH(request: Request) {
     if (defaultTargetValue !== undefined) {
       const v = Math.round(Number(defaultTargetValue));
       update.defaultTargetValue = v > 0 ? v : null;
+    }
+    if (pomodoroEnabled !== undefined) {
+      update.pomodoroEnabled = !!pomodoroEnabled;
+    }
+    if (pomodoroFocusMin !== undefined) {
+      const v = Math.round(Number(pomodoroFocusMin));
+      update.pomodoroFocusMin = v >= 1 && v <= 90 ? v : null;
+    }
+    if (pomodoroBreakMin !== undefined) {
+      const v = Math.round(Number(pomodoroBreakMin));
+      update.pomodoroBreakMin = v >= 1 && v <= 30 ? v : null;
+    }
+    if (pomodoroLongBreakMin !== undefined) {
+      const v = Math.round(Number(pomodoroLongBreakMin));
+      update.pomodoroLongBreakMin = v >= 1 && v <= 60 ? v : null;
+    }
+    if (pomodoroCycles !== undefined) {
+      const v = Math.round(Number(pomodoroCycles));
+      update.pomodoroCycles = v >= 1 && v <= 10 ? v : null;
     }
 
     await db.update(users).set(update).where(eq(users.id, session.user.id));

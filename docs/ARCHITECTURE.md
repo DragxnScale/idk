@@ -156,6 +156,10 @@ Drizzle **SQLite** tables (conceptual grouping):
 - `quizzes` — `questions_json`, `review_json`, optional `score` / `total_questions`.
 - `flashcards` — `session_id`, `front`, `back`, `page_number`; cascades on session delete.
 
+**Pomodoro / user preferences**
+
+- `users` table now includes `pomodoro_enabled`, `pomodoro_focus_min`, `pomodoro_break_min`, `pomodoro_long_break_min`, `pomodoro_cycles` for per-user Pomodoro configuration saved to the DB.
+
 **App config**
 
 - `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra).
@@ -222,9 +226,10 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | POST | `/api/user/drive/import` | Import PDF from URL or ZIP (streams to Blob). |
 | POST | `/api/user/drive/link` | Link external URL as document. |
 | GET | `/api/user/storage` | Returns `{ usedBytes, quotaBytes, pct, usedFormatted, quotaFormatted }` for the current user. |
-| GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`). |
-| PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz question bounds). |
+| GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`, Pomodoro config). |
+| PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz bounds; Pomodoro fields: focus 1–90 min, break 1–30 min, long break 1–60 min, cycles 1–10). |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
+| GET | `/api/user/heatmap` | Returns `{ days: { date, minutes }[] }` for the past 365 days for the GitHub-style activity heatmap on the dashboard. |
 
 User-uploaded documents are accessible **only by the owner or an admin** — enforced in `GET/PATCH /api/documents/[id]` and `GET /api/user/drive`.
 

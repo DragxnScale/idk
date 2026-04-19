@@ -11,6 +11,7 @@ import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
 import { loadPlaylist, savePlaylist, parseYouTubeId, isYouTubeUrl, resolveYouTubeTitle, isTitlePlaceholder, type MusicTrack } from "@/lib/music";
 import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOfflineId } from "@/lib/offline-session";
+import { PomodoroTimer } from "@/components/study/PomodoroTimer";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -65,6 +66,12 @@ function StudySessionInner() {
   const [checkingActive, setCheckingActive] = useState(true);
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
   const [inactivityTimeout, setInactivityTimeout] = useState(3); // default 3 min
+  const [pomodoroEnabled, setPomodoroEnabled] = useState(false);
+  const [pomodoroFocus, setPomodoroFocus] = useState(25);
+  const [pomodoroBreak, setPomodoroBreak] = useState(5);
+  const [pomodoroLongBreak, setPomodoroLongBreak] = useState(15);
+  const [pomodoroBreakActive, setPomodoroBreakActive] = useState(false);
+  const [pomodoroCyclesBeforeLong, setPomodoroCyclesBeforeLong] = useState(4);
   const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
   const [musicIdx, setMusicIdx] = useState(0);
   const [musicPlaying, setMusicPlaying] = useState(false);
@@ -113,6 +120,11 @@ function StudySessionInner() {
         if (!data) return;
         if (data.defaultGoalType) setGoalType(data.defaultGoalType as GoalType);
         if (data.defaultTargetValue) setTargetValue(data.defaultTargetValue);
+        if (data.pomodoroEnabled) setPomodoroEnabled(true);
+        if (data.pomodoroFocusMin) setPomodoroFocus(data.pomodoroFocusMin);
+        if (data.pomodoroBreakMin) setPomodoroBreak(data.pomodoroBreakMin);
+        if (data.pomodoroLongBreakMin) setPomodoroLongBreak(data.pomodoroLongBreakMin);
+        if (data.pomodoroCycles) setPomodoroCyclesBeforeLong(data.pomodoroCycles);
       })
       .catch(() => {});
   // Only run once on mount — intentional
@@ -1099,13 +1111,25 @@ function StudySessionInner() {
             <Timer
               goalType={goalType}
               targetValue={targetValue}
-              isPaused={isPaused || !docReady}
+              isPaused={isPaused || !docReady || (pomodoroEnabled && pomodoroBreakActive)}
               onTick={(mins) => {
                 focusedMinutesRef.current = mins;
                 saveProgress(mins);
               }}
               onGoalReached={handleEnd}
             />
+            {pomodoroEnabled && sessionId && (
+              <div className="mt-4">
+                <PomodoroTimer
+                  focusMin={pomodoroFocus}
+                  breakMin={pomodoroBreak}
+                  longBreakMin={pomodoroLongBreak}
+                  cyclesBeforeLong={pomodoroCyclesBeforeLong}
+                  isPaused={isPaused || !docReady}
+                  onPhaseChange={(phase) => setPomodoroBreakActive(phase !== "focus")}
+                />
+              </div>
+            )}
             <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
               <p>Pages visited: {visitedPageCount}</p>
               {goalType === "chapter" && selectedChapters.length > 0 && (

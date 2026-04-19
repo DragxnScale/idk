@@ -66,6 +66,52 @@ export default function SessionSummaryPage() {
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
   const [flashcardsError, setFlashcardsError] = useState("");
 
+  function handleExport() {
+    const lines: string[] = [];
+    lines.push(`# Session Summary\n`);
+    if (sessionInfo) {
+      const started = sessionInfo.startedAt ? new Date(sessionInfo.startedAt).toLocaleString() : "Unknown";
+      lines.push(`**Date:** ${started}`);
+      lines.push(`**Duration:** ${sessionInfo.totalFocusedMinutes ?? 0} minutes`);
+      lines.push(`**Pages visited:** ${sessionInfo.lastPageIndex ?? 0}\n`);
+    }
+    if (notes.length > 0) {
+      lines.push(`## AI Notes\n`);
+      for (const note of notes) {
+        lines.push(`### Page ${note.pageNumber ?? "?"}\n`);
+        lines.push(stripLatexForAiNotes(note.content));
+        lines.push("");
+      }
+    }
+    if (flashcardList.length > 0) {
+      lines.push(`## Flashcards\n`);
+      for (const card of flashcardList) {
+        lines.push(`**${card.front}**`);
+        lines.push(`> ${card.back}`);
+        lines.push("");
+      }
+    }
+    if (questions.length > 0) {
+      lines.push(`## Quiz (${score ?? "?"} / ${questions.length})\n`);
+      questions.forEach((q, i) => {
+        lines.push(`${i + 1}. ${q.question}`);
+        q.options.forEach((opt, j) => {
+          const letter = String.fromCharCode(65 + j);
+          lines.push(`   ${letter}. ${opt}${j === q.correctIndex ? " ✓" : ""}`);
+        });
+        lines.push(`   *${q.explanation}*`);
+        lines.push("");
+      });
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${sessionId}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => {
     if (!sessionId) return;
 
@@ -605,6 +651,13 @@ export default function SessionSummaryPage() {
           >
             Dashboard
           </Link>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Export as Markdown
+          </button>
         </div>
       </div>
     </main>

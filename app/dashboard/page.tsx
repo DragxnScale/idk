@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { HeatmapCalendar } from "@/components/dashboard/HeatmapCalendar";
 
 const PageViewerModal = dynamic(() => import("./PageViewerModal"), { ssr: false });
 
@@ -468,8 +469,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Activity heatmap */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+          <h2 className="text-sm font-semibold mb-4">Activity</h2>
+          <HeatmapCalendar />
+        </div>
+
         {/* Textbook progress */}
-        {textbookProgress.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
             <h2 className="text-sm font-semibold mb-4">Your Textbooks</h2>
             <ul className="space-y-4">
