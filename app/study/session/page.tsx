@@ -92,19 +92,31 @@ function StudySessionInner() {
       setIsOnline(true);
       const synced = await syncOfflineSessions();
       if (synced > 0) {
-        // Soft-refresh stats so the resume-check picks up the synced session
         window.dispatchEvent(new Event("offlineSessionsSynced"));
       }
     };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    // Sync any sessions left over from a previous offline visit
     syncOfflineSessions().catch(() => {});
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
+  }, []);
+
+  // Load user's session defaults and pre-fill goal type + target value
+  useEffect(() => {
+    fetch("/api/user/settings")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        if (data.defaultGoalType) setGoalType(data.defaultGoalType as GoalType);
+        if (data.defaultTargetValue) setTargetValue(data.defaultTargetValue);
+      })
+      .catch(() => {});
+  // Only run once on mount — intentional
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Check for active session / handle resume

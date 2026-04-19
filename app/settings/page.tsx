@@ -36,6 +36,49 @@ export default function SettingsPage() {
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
 
+  // ── Account details ────────────────────────────────────────────────
+  const [displayName, setDisplayName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountStatus, setAccountStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [accountMessage, setAccountMessage] = useState<string | null>(null);
+
+  async function handleAccountSave(e: React.FormEvent) {
+    e.preventDefault();
+    setAccountStatus("loading");
+    setAccountMessage(null);
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: displayName }),
+      });
+      if (res.ok) { setAccountStatus("success"); setAccountMessage("Name updated."); }
+      else { const d = await res.json(); setAccountStatus("error"); setAccountMessage(d.error ?? "Failed to save."); }
+    } catch { setAccountStatus("error"); setAccountMessage("Something went wrong."); }
+  }
+
+  // ── Session defaults ───────────────────────────────────────────────
+  const [defaultGoalType, setDefaultGoalType] = useState<"time" | "pages" | "chapter">("time");
+  const [defaultTargetValue, setDefaultTargetValue] = useState<string>("");
+  const [sessionDefaultStatus, setSessionDefaultStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [sessionDefaultMessage, setSessionDefaultMessage] = useState<string | null>(null);
+
+  async function handleSessionDefaultSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSessionDefaultStatus("loading");
+    setSessionDefaultMessage(null);
+    try {
+      const v = defaultTargetValue ? Number(defaultTargetValue) : null;
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultGoalType, defaultTargetValue: v }),
+      });
+      if (res.ok) { setSessionDefaultStatus("success"); setSessionDefaultMessage("Defaults saved."); }
+      else { const d = await res.json(); setSessionDefaultStatus("error"); setSessionDefaultMessage(d.error ?? "Failed to save."); }
+    } catch { setSessionDefaultStatus("error"); setSessionDefaultMessage("Something went wrong."); }
+  }
+
   // ── Storage ────────────────────────────────────────────────────────
   const [storage, setStorage] = useState<{
     usedBytes: number; quotaBytes: number; pct: number;
@@ -208,6 +251,10 @@ export default function SettingsPage() {
         setQuizMin(data.quizMinQuestions != null ? String(data.quizMinQuestions) : "");
         setQuizMax(data.quizMaxQuestions != null ? String(data.quizMaxQuestions) : "");
         if (data.themeId) setThemeId(data.themeId);
+        if (data.name) setDisplayName(data.name);
+        if (data.email) setAccountEmail(data.email);
+        if (data.defaultGoalType) setDefaultGoalType(data.defaultGoalType);
+        if (data.defaultTargetValue) setDefaultTargetValue(String(data.defaultTargetValue));
       });
   }, []);
 
@@ -425,6 +472,94 @@ export default function SettingsPage() {
               className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
             >
               {goalsStatus === "loading" ? "Saving…" : "Save goals"}
+            </button>
+          </form>
+        </section>
+
+        {/* Account details */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          <h2 className="text-base font-semibold mb-1">Account</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Your display name shown in the app.
+          </p>
+          <form onSubmit={handleAccountSave} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }}
+                maxLength={64}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Email</label>
+              <input
+                type="email"
+                value={accountEmail}
+                readOnly
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800/50"
+              />
+              <p className="text-xs text-gray-400 mt-1">Email cannot be changed.</p>
+            </div>
+            {accountMessage && (
+              <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
+            )}
+            <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+              {accountStatus === "loading" ? "Saving…" : "Save name"}
+            </button>
+          </form>
+        </section>
+
+        {/* Session defaults */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
+          <h2 className="text-base font-semibold mb-1">Session defaults</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Pre-fill the goal type and target whenever you start a new session.
+          </p>
+          <form onSubmit={handleSessionDefaultSave} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Default goal type</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["time", "pages", "chapter"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => { setDefaultGoalType(type); setSessionDefaultStatus("idle"); }}
+                    className={`rounded-lg border py-2 text-sm font-medium capitalize transition ${
+                      defaultGoalType === type
+                        ? "btn-primary border-accent"
+                        : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {defaultGoalType !== "chapter" && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Default {defaultGoalType === "time" ? "duration (min)" : "page count"}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={defaultGoalType === "time" ? 480 : 500}
+                  value={defaultTargetValue}
+                  onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }}
+                  placeholder={defaultGoalType === "time" ? "e.g. 25" : "e.g. 10"}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                />
+              </div>
+            )}
+            {sessionDefaultMessage && (
+              <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
+            )}
+            <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+              {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
             </button>
           </form>
         </section>

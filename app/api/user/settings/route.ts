@@ -20,12 +20,16 @@ export async function GET() {
   }
 
   return NextResponse.json({
+    name: user.name ?? null,
+    email: user.email ?? null,
     dailyMinutesGoal: user.dailyMinutesGoal ?? null,
     dailySessionsGoal: user.dailySessionsGoal ?? null,
     inactivityTimeout: user.inactivityTimeout ?? null,
     themeId: user.themeId ?? null,
     quizMinQuestions: user.quizMinQuestions ?? null,
     quizMaxQuestions: user.quizMaxQuestions ?? null,
+    defaultGoalType: user.defaultGoalType ?? null,
+    defaultTargetValue: user.defaultTargetValue ?? null,
   });
 }
 
@@ -36,7 +40,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions } = body;
+  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions, defaultGoalType, defaultTargetValue, name } = body;
 
   const user = await db.query.users.findFirst({
     where: (u, { eq }) => eq(u.id, session.user.id),
@@ -71,9 +75,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined) {
+  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
+    if (name !== undefined) {
+      update.name = typeof name === "string" && name.trim() ? name.trim().slice(0, 64) : null;
+    }
     if (dailyMinutesGoal !== undefined) {
       const v = Number(dailyMinutesGoal);
       update.dailyMinutesGoal = v > 0 ? v : null;
@@ -93,6 +100,14 @@ export async function PATCH(request: Request) {
     if (quizMaxQuestions !== undefined) {
       const v = Math.round(Number(quizMaxQuestions));
       update.quizMaxQuestions = v >= 1 && v <= 25 ? v : null;
+    }
+    if (defaultGoalType !== undefined) {
+      const valid = ["time", "pages", "chapter"];
+      update.defaultGoalType = valid.includes(defaultGoalType) ? defaultGoalType : null;
+    }
+    if (defaultTargetValue !== undefined) {
+      const v = Math.round(Number(defaultTargetValue));
+      update.defaultTargetValue = v > 0 ? v : null;
     }
 
     await db.update(users).set(update).where(eq(users.id, session.user.id));

@@ -13,6 +13,8 @@ export const users = sqliteTable("users", {
   inactivityTimeout: integer("inactivity_timeout"), // minutes, null = default (3)
   quizMinQuestions: integer("quiz_min_questions"), // null = default (3)
   quizMaxQuestions: integer("quiz_max_questions"), // null = default (10)
+  defaultGoalType: text("default_goal_type"),       // "time" | "pages" | "chapter" | null
+  defaultTargetValue: integer("default_target_value"), // default minutes/pages for new sessions
   storageBytes: integer("storage_bytes").default(0),         // running total of user upload bytes
   storageQuotaBytes: integer("storage_quota_bytes"),         // null = use DEFAULT_QUOTA_BYTES
   themeId: text("theme_id"), // custom theme color set id
