@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { documents, users } from "@/lib/db/schema";
@@ -25,13 +25,18 @@ export async function POST(request: Request) {
 
   const fileSizeBytes = typeof fileSize === "number" && fileSize > 0 ? fileSize : 0;
 
-  // ── Quota check ──────────────────────────────────────────────────────
+  // ── Quota check (compute live from DB, not stale counter) ────────────
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.user.id),
-    columns: { storageBytes: true, storageQuotaBytes: true },
+    columns: { storageQuotaBytes: true },
   });
 
-  const usedBytes = user?.storageBytes ?? 0;
+  const [usageRow] = await db
+    .select({ total: sql<number>`COALESCE(SUM(file_size_bytes), 0)` })
+    .from(documents)
+    .where(and(eq(documents.userId, session.user.id), eq(documents.sourceType, "upload")));
+
+  const usedBytes = Number(usageRow?.total ?? 0);
   const quota = effectiveQuota(user?.storageQuotaBytes);
 
   if (fileSizeBytes > 0 && usedBytes + fileSizeBytes > quota) {
@@ -58,11 +63,15 @@ export async function POST(request: Request) {
     updatedAt: now,
   });
 
-  // ── Update running storage total ─────────────────────────────────────
+  // ── Sync storageBytes to accurate DB sum ─────────────────────────────
   if (fileSizeBytes > 0) {
+    const [newUsage] = await db
+      .select({ total: sql<number>`COALESCE(SUM(file_size_bytes), 0)` })
+      .from(documents)
+      .where(and(eq(documents.userId, session.user.id), eq(documents.sourceType, "upload")));
     await db
       .update(users)
-      .set({ storageBytes: sql`COALESCE(storage_bytes, 0) + ${fileSizeBytes}` })
+      .set({ storageBytes: Number(newUsage?.total ?? 0) })
       .where(eq(users.id, session.user.id));
   }
 
