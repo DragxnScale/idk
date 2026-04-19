@@ -87,6 +87,7 @@ export const studySessions = sqliteTable("study_sessions", {
   endedAt: integer("ended_at", { mode: "timestamp" }),
   totalFocusedMinutes: integer("total_focused_minutes"),
   pagesVisited: integer("pages_visited"),
+  visitedPagesList: text("visited_pages_list"), // JSON: number[] of unique page indices visited
   lastPageIndex: integer("last_page_index"),
   videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
   documentJson: text("document_json"), // JSON: serialized SelectedDocument for resume

@@ -476,6 +476,7 @@ function StudySessionInner() {
             totalFocusedMinutes: minutes,
             lastPageIndex: currentPageRef.current,
             pagesVisited: visitedPagesRef.current.size,
+            visitedPagesList: Array.from(visitedPagesRef.current),
           }),
         });
       } catch {
@@ -509,6 +510,7 @@ function StudySessionInner() {
           endedAt: new Date().toISOString(),
           totalFocusedMinutes: focusedMinutesRef.current,
           pagesVisited: visitedPagesRef.current.size,
+          visitedPagesList: Array.from(visitedPagesRef.current),
         }),
       });
     } finally {

@@ -108,7 +108,7 @@ export default function DashboardPage() {
     title: string;
     sessions: number;
     totalMinutes: number;
-    totalPagesVisited: number;
+    uniquePagesVisited: number;
     totalPages: number | null;
     progressPct: number | null;
     lastStudiedAt: string | null;
@@ -484,7 +484,7 @@ export default function DashboardPage() {
                         {book.title}
                       </p>
                       <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                        {book.progressPct != null ? `${book.progressPct}%` : `${book.totalPagesVisited} pg`}
+                        {book.progressPct != null ? `${book.progressPct}%` : `${book.uniquePagesVisited} pg`}
                       </span>
                     </div>
                     {book.progressPct != null && (

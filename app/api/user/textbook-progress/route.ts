@@ -7,7 +7,7 @@ interface ProgressEntry {
   title: string;
   sessions: number;
   totalMinutes: number;
-  totalPagesVisited: number;
+  uniquePagesVisited: number;
   totalPages: number | null;
   progressPct: number | null;
   lastStudiedAt: string | null;
@@ -43,7 +43,7 @@ export async function GET() {
   // ── Group by textbookCatalogId ───────────────────────────────────────
   const map = new Map<
     string,
-    { title: string; sessions: number; totalMinutes: number; totalPagesVisited: number; lastStudiedAt: Date | null }
+    { title: string; sessions: number; totalMinutes: number; visitedPages: Set<number>; lastStudiedAt: Date | null }
   >();
 
   for (const row of rows) {
@@ -60,10 +60,22 @@ export async function GET() {
     const existing = map.get(key);
     const rowDate = row.startedAt ?? null;
 
+    // Parse the stored page list; fall back to an empty set if not yet stored
+    let pageSet: Set<number> = new Set();
+    if (row.visitedPagesList) {
+      try {
+        const arr: number[] = JSON.parse(row.visitedPagesList);
+        pageSet = new Set(arr);
+      } catch { /* ignore */ }
+    } else if (row.pagesVisited) {
+      // Legacy rows without the list: we can't know which pages, so skip
+      // contribution to the union (they'll just show 0 until re-studied).
+    }
+
     if (existing) {
       existing.sessions += 1;
       existing.totalMinutes += row.totalFocusedMinutes ?? 0;
-      existing.totalPagesVisited += row.pagesVisited ?? 0;
+      for (const p of pageSet) existing.visitedPages.add(p);
       if (rowDate && (!existing.lastStudiedAt || rowDate > existing.lastStudiedAt)) {
         existing.lastStudiedAt = rowDate;
       }
@@ -72,7 +84,7 @@ export async function GET() {
         title: doc.title ?? "Untitled textbook",
         sessions: 1,
         totalMinutes: row.totalFocusedMinutes ?? 0,
-        totalPagesVisited: row.pagesVisited ?? 0,
+        visitedPages: pageSet,
         lastStudiedAt: rowDate,
       });
     }
@@ -103,11 +115,11 @@ export async function GET() {
         title,
         sessions: data.sessions,
         totalMinutes: data.totalMinutes,
-        totalPagesVisited: data.totalPagesVisited,
+        uniquePagesVisited: data.visitedPages.size,
         totalPages,
         progressPct:
           totalPages && totalPages > 0
-            ? Math.min(100, Math.round((data.totalPagesVisited / totalPages) * 100))
+            ? Math.min(100, Math.round((data.visitedPages.size / totalPages) * 100))
             : null,
         lastStudiedAt: data.lastStudiedAt?.toISOString() ?? null,
       };

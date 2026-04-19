@@ -105,6 +105,8 @@ export async function PATCH(request: Request) {
     updates.lastPageIndex = body.lastPageIndex;
   if (typeof body.pagesVisited === "number")
     updates.pagesVisited = body.pagesVisited;
+  if (Array.isArray(body.visitedPagesList))
+    updates.visitedPagesList = JSON.stringify(body.visitedPagesList);
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json(existing);
