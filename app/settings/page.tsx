@@ -1095,8 +1095,7 @@ export default function SettingsPage() {
             ))}
           </div>
         </section>
-        </div>{/* end grid */}
-      </div>
+        </div>{/* end outer container */}
     </main>
   );
 }
