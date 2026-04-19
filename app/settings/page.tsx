@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
-import { DEFAULT_CONFIG, type SettingsLayoutConfig, type CardConfig } from "@/lib/types/settings-layout";
+import { DEFAULT_CONFIG, mergeWithDefaults, type SettingsLayoutConfig, type CardConfig } from "@/lib/types/settings-layout";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -392,7 +392,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch("/api/admin/settings-layout")
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.config) setLayoutCfg(d.config); })
+      .then((d) => { if (d?.config) setLayoutCfg(mergeWithDefaults(d.config)); })
       .catch(() => {});
   }, []);
 
@@ -435,7 +435,7 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-6 py-10">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <Link
@@ -447,8 +447,8 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        {/* Config-driven masonry — half-width cards flow to fill gaps, full-width cards span all columns */}
-        <div className="md:columns-2 md:gap-4 [&>*]:inline-block [&>*]:w-full">
+        {/* Config-driven masonry — half-width cards pack into either column to fill gaps, full-width cards span all columns */}
+        <div className="md:columns-2 md:gap-x-4">
         {(() => {
           const CS = "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4";
           const cardSectionMap: Record<string, React.ReactNode> = {

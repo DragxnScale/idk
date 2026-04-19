@@ -12,7 +12,7 @@ import {
   useDraggable,
   useDroppable,
 } from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
+
 import {
   type CardConfig,
   type SettingsLayoutConfig,
@@ -22,6 +22,7 @@ import {
   type CardSpan,
   DEFAULT_CONFIG,
   CARD_LABELS,
+  mergeWithDefaults,
 } from "@/lib/types/settings-layout";
 
 // ── Individual draggable + droppable card tile ────────────────────────────────
@@ -59,8 +60,8 @@ function CardTile({
       style={{ gridColumn: card.span === 2 ? "1 / -1" : undefined }}
       className={`group relative rounded-xl border-2 cursor-pointer transition-colors select-none
         ${selected ? "border-blue-500 bg-blue-950/40 shadow-lg shadow-blue-900/30" : "border-gray-700 bg-gray-800/60"}
-        ${isOver && !isDragging ? "border-blue-400 bg-blue-900/30" : ""}
-        ${isDragging ? "opacity-40" : "hover:border-gray-500"}
+        ${isOver && !isDragging ? "border-blue-400 bg-blue-900/30 ring-2 ring-blue-500/40" : ""}
+        ${isDragging ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900" : "hover:border-gray-500"}
         ${!card.visible ? "opacity-40" : ""}
       `}
     >
@@ -229,7 +230,7 @@ export function SettingsLayoutTab() {
   useEffect(() => {
     fetch("/api/admin/settings-layout")
       .then((r) => r.ok ? r.json() : Promise.reject())
-      .then((d) => setConfig(d.config))
+      .then((d) => setConfig(mergeWithDefaults(d.config)))
       .catch(() => setLoadError(true));
   }, []);
 
@@ -259,14 +260,21 @@ export function SettingsLayoutTab() {
     const overId = (over.id as string).replace(/^drop-/, "");
     if (active.id === overId) return;
 
-    const oldIndex = sortedCards.findIndex((c) => c.id === active.id);
-    const newIndex = sortedCards.findIndex((c) => c.id === overId);
-    if (oldIndex === -1 || newIndex === -1) return;
+    // Pure swap — only the two involved cards exchange positions, every other card stays put
+    const aIdx = sortedCards.findIndex((c) => c.id === active.id);
+    const bIdx = sortedCards.findIndex((c) => c.id === overId);
+    if (aIdx === -1 || bIdx === -1) return;
 
-    const reordered = arrayMove(sortedCards, oldIndex, newIndex);
+    const aOrder = sortedCards[aIdx].order;
+    const bOrder = sortedCards[bIdx].order;
+
     setConfig((prev) => ({
       ...prev,
-      cards: reordered.map((c, i) => ({ ...c, order: i })),
+      cards: prev.cards.map((c) => {
+        if (c.id === active.id) return { ...c, order: bOrder };
+        if (c.id === overId)    return { ...c, order: aOrder };
+        return c;
+      }),
     }));
     setStatus("idle");
   };

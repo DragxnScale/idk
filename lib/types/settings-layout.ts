@@ -54,6 +54,26 @@ export const DEFAULT_CONFIG: SettingsLayoutConfig = {
   cards: CARD_DEFAULTS,
 };
 
+/**
+ * Merges a loaded config with CARD_DEFAULTS so any new cards added in a later
+ * app version are present even if the DB has an older saved config.
+ * Existing cards keep their saved properties; new ones are appended at the end.
+ */
+export function mergeWithDefaults(loaded: SettingsLayoutConfig | null | undefined): SettingsLayoutConfig {
+  if (!loaded?.cards) return DEFAULT_CONFIG;
+  const byId = new Map(loaded.cards.map((c) => [c.id, c]));
+  const maxOrder = loaded.cards.reduce((m, c) => Math.max(m, c.order), -1);
+  const merged: CardConfig[] = [];
+  let nextOrder = maxOrder + 1;
+  // Keep loaded cards as-is
+  for (const c of loaded.cards) merged.push(c);
+  // Append any defaults not present
+  for (const d of CARD_DEFAULTS) {
+    if (!byId.has(d.id)) merged.push({ ...d, order: nextOrder++ });
+  }
+  return { ...loaded, version: loaded.version ?? 1, cards: merged };
+}
+
 /** Human-readable labels shown in the admin editor */
 export const CARD_LABELS: Record<string, string> = {
   "daily-goals":        "Daily goals",
