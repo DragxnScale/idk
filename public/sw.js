@@ -6,9 +6,9 @@ const PDF_CACHE = `bowlbeacon-pdf-${CACHE_VERSION}`;
 
 // PDF cache limits — updated at runtime via postMessage from the page.
 // Defaults: keep at most 2 PDFs, and at most 500 MB total.
-// Whichever is the binding constraint triggers eviction (oldest-first).
 let pdfMaxCount = 2;
 let pdfMaxBytes = 500 * 1024 * 1024; // 500 MB
+let pdfCacheEnabled = true; // can be disabled by user
 
 // API GET routes to cache with stale-while-revalidate so the app loads offline
 const CACHED_API_PREFIXES = [
@@ -71,6 +71,10 @@ self.addEventListener("fetch", (event) => {
 
 // Cache-first: serve from cache, fetch and cache on miss
 async function cacheFirst(request, cacheName) {
+  // If PDF caching is disabled by the user, just fetch directly
+  if (cacheName === PDF_CACHE && !pdfCacheEnabled) {
+    try { return await fetch(request); } catch { return new Response("Offline — PDF caching is disabled in Settings", { status: 503 }); }
+  }
   const cached = await caches.match(request);
   if (cached) return cached;
   try {
@@ -175,11 +179,14 @@ async function networkFirstWithFallback(request) {
 
 self.addEventListener("message", (event) => {
   if (event.data === "skipWaiting") self.skipWaiting();
-  // Accept PDF cache limit updates from the settings page
   if (event.data?.type === "setPdfCacheLimits") {
     if (typeof event.data.maxCount === "number") pdfMaxCount = event.data.maxCount;
     if (typeof event.data.maxBytes === "number") pdfMaxBytes = event.data.maxBytes;
-    // Run eviction immediately in case new limits are tighter
     evictPdfCache().catch(() => {});
+  }
+  if (event.data?.type === "setPdfCacheEnabled") {
+    pdfCacheEnabled = !!event.data.enabled;
+    // If disabled, clear the existing PDF cache
+    if (!pdfCacheEnabled) caches.delete(PDF_CACHE).catch(() => {});
   }
 });

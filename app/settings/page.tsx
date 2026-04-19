@@ -38,7 +38,7 @@ export default function SettingsPage() {
 
   // ── Account details ────────────────────────────────────────────────
   const [displayName, setDisplayName] = useState("");
-  const [accountEmail, setAccountEmail] = useState("");
+  const [accountEmail, setAccountEmail] = useState(""); // kept for potential future use
   const [accountStatus, setAccountStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
 
@@ -95,17 +95,28 @@ export default function SettingsPage() {
   // ── PDF cache limits (device-local, sent to SW) ────────────────────
   const [pdfCacheCount, setPdfCacheCountState] = useState(2);
   const [pdfCacheMb, setPdfCacheMbState] = useState(500);
+  const [pdfCacheEnabled, setPdfCacheEnabledState] = useState(true);
 
   useEffect(() => {
     const c = Number(localStorage.getItem("bowlbeacon-pdf-cache-count")) || 2;
     const mb = Number(localStorage.getItem("bowlbeacon-pdf-cache-mb")) || 500;
+    const en = localStorage.getItem("bowlbeacon-pdf-cache-enabled");
     setPdfCacheCountState(c);
     setPdfCacheMbState(mb);
+    setPdfCacheEnabledState(en !== "false");
   }, []);
 
   function sendPdfLimitsToSw(count: number, mb: number) {
     navigator.serviceWorker?.ready.then((reg) => {
       reg.active?.postMessage({ type: "setPdfCacheLimits", maxCount: count, maxBytes: mb * 1024 * 1024 });
+    }).catch(() => {});
+  }
+
+  function handlePdfCacheEnabled(enabled: boolean) {
+    setPdfCacheEnabledState(enabled);
+    localStorage.setItem("bowlbeacon-pdf-cache-enabled", String(enabled));
+    navigator.serviceWorker?.ready.then((reg) => {
+      reg.active?.postMessage({ type: "setPdfCacheEnabled", enabled });
     }).catch(() => {});
   }
 
@@ -479,9 +490,11 @@ export default function SettingsPage() {
         {/* Account details */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Account</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            Your display name shown in the app.
-          </p>
+          {displayName && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
+            </p>
+          )}
           <form onSubmit={handleAccountSave} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
@@ -493,16 +506,6 @@ export default function SettingsPage() {
                 placeholder="Your name"
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Email</label>
-              <input
-                type="email"
-                value={accountEmail}
-                readOnly
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800/50"
-              />
-              <p className="text-xs text-gray-400 mt-1">Email cannot be changed.</p>
             </div>
             {accountMessage && (
               <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
@@ -539,18 +542,18 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
-            {defaultGoalType !== "chapter" && (
+            {defaultGoalType !== undefined && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  Default {defaultGoalType === "time" ? "duration (min)" : "page count"}
+                  {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
                 </label>
                 <input
                   type="number"
                   min={1}
-                  max={defaultGoalType === "time" ? 480 : 500}
+                  max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500}
                   value={defaultTargetValue}
                   onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }}
-                  placeholder={defaultGoalType === "time" ? "e.g. 25" : "e.g. 10"}
+                  placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
                 />
               </div>
@@ -594,11 +597,24 @@ export default function SettingsPage() {
 
         {/* PDF offline cache limits */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Offline PDF cache</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-base font-semibold">Offline PDF cache</h2>
+            <button
+              type="button"
+              onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
+              aria-checked={pdfCacheEnabled}
+              role="switch"
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Textbooks you open are cached on this device so they load instantly and work offline.
-            Older ones are evicted when either limit is reached.
+            {pdfCacheEnabled
+              ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
+              : "Caching is off. Textbooks will always load from the network and won't be available offline."}
           </p>
+          {pdfCacheEnabled && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -637,6 +653,7 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
             Default: 2 textbooks or 500 MB. Saved on this device only.
           </p>
+          )}
         </section>
 
         {/* Storage — paired with Exit password */}
