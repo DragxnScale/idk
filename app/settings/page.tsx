@@ -289,7 +289,7 @@ export default function SettingsPage() {
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-4xl px-6 py-10">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6 md:col-span-2">
+        <div className="flex items-center gap-4 mb-6 [column-span:all]">
           <Link
             href="/dashboard"
             className="text-sm text-gray-500 hover:text-black dark:hover:text-white underline underline-offset-4"
@@ -299,10 +299,10 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="md:columns-2 gap-4">
 
         {/* Daily goals */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Daily goals</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Set targets for each day. Your progress towards these will be
@@ -430,7 +430,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Textbook display size — paired with Offline PDF cache (similar heights) */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Controls how large the PDF pages appear while reading. Saved on
@@ -458,7 +458,7 @@ export default function SettingsPage() {
         </section>
 
         {/* PDF offline cache limits */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Offline PDF cache</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Textbooks you open are cached on this device so they load instantly and work offline.
@@ -505,7 +505,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Storage — paired with Exit password */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Upload storage</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
             Space used by your uploaded PDFs.
@@ -535,7 +535,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Exit password — paired with Upload storage */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
           <h2 className="text-base font-semibold mb-1">Exit password</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Required to end a study session early. Defaults to your login
@@ -600,7 +600,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Focus music playlist */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Build a study playlist. Search for songs or paste a URL. Music loops
@@ -734,7 +734,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Custom theme */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Theme</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Pick a built-in theme or create your own with a color picker.
@@ -881,7 +881,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Keyboard shortcuts reference */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 md:col-span-2">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Keyboard shortcuts</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
             Available while reading in a study session.
