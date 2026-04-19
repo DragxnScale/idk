@@ -102,7 +102,7 @@ export function PomodoroTimer({
       </div>
       <p className={`text-xs font-semibold uppercase tracking-wide ${ringColor}`}>{phaseLabel}</p>
       <p className="text-xs text-gray-400 dark:text-gray-500">
-        {totalPomodoros} pomodoro{totalPomodoros !== 1 ? "s" : ""} completed
+      {totalPomodoros} focus interval{totalPomodoros !== 1 ? "s" : ""} completed
       </p>
     </div>
   );

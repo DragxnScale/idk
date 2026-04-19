@@ -400,10 +400,8 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        <div key={pdfCacheEnabled ? "cache-on" : "cache-off"} className="md:columns-2 gap-4">
-
         {/* Daily goals */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
           <h2 className="text-base font-semibold mb-1">Daily goals</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
             Set targets for each day. Your progress towards these will be
@@ -529,379 +527,270 @@ export default function SettingsPage() {
             </button>
           </form>
         </section>
-
-        {/* Account details */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Account</h2>
-          {displayName && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
-            </p>
-          )}
-          <form onSubmit={handleAccountSave} className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }}
-                maxLength={64}
-                placeholder="Your name"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            {accountMessage && (
-              <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
-            )}
-            <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-              {accountStatus === "loading" ? "Saving…" : "Save name"}
-            </button>
-          </form>
         </section>
 
-        {/* Session defaults */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Session defaults</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            Pre-fill the goal type and target whenever you start a new session.
-          </p>
-          <form onSubmit={handleSessionDefaultSave} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Default goal type</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["time", "pages", "chapter"] as const).map((type) => (
+
+        <div className="md:grid md:grid-cols-2 md:gap-4">
+          {/* ── Left column ── */}
+          <div>
+            {/* Account details */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <h2 className="text-base font-semibold mb-1">Account</h2>
+              {displayName && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
+                </p>
+              )}
+              <form onSubmit={handleAccountSave} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }}
+                    maxLength={64}
+                    placeholder="Your name"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                  />
+                </div>
+                {accountMessage && (
+                  <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
+                )}
+                <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                  {accountStatus === "loading" ? "Saving…" : "Save name"}
+                </button>
+              </form>
+            </section>
+
+            {/* Session defaults */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <h2 className="text-base font-semibold mb-1">Session defaults</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+                Pre-fill the goal type and target whenever you start a new session.
+              </p>
+              <form onSubmit={handleSessionDefaultSave} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Default goal type</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["time", "pages", "chapter"] as const).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => { setDefaultGoalType(type); setSessionDefaultStatus("idle"); }}
+                        className={`rounded-lg border py-2 text-sm font-medium capitalize transition ${
+                          defaultGoalType === type ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {defaultGoalType !== undefined && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500}
+                      value={defaultTargetValue}
+                      onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }}
+                      placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                    />
+                  </div>
+                )}
+                {sessionDefaultMessage && (
+                  <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
+                )}
+                <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                  {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
+                </button>
+              </form>
+            </section>
+
+            {/* Study breaks */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-base font-semibold">Study breaks</h2>
+                <button
+                  type="button"
+                  onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
+                  role="switch"
+                  aria-checked={pomodoroEnabled}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+                {pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer."}
+              </p>
+              {pomodoroEnabled && (
+              <form onSubmit={handlePomodoroSave} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
+                    <input type="number" min={1} max={90} value={pomodoroFocus} onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }} placeholder="25" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
+                    <input type="number" min={1} max={30} value={pomodoroBreak} onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }} placeholder="5" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
+                    <input type="number" min={1} max={60} value={pomodoroLong} onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }} placeholder="15" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
+                    <input type="number" min={1} max={10} value={pomodoroCycles} onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }} placeholder="4" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                </div>
+                {pomodoroMessage && (
+                  <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
+                )}
+                <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                  {pomodoroStatus === "loading" ? "Saving…" : "Save break settings"}
+                </button>
+              </form>
+              )}
+            </section>
+
+            {/* Textbook display size — always in left col */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+                Controls how large the PDF pages appear while reading. Saved on this device.
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {ZOOM_PRESETS.map((preset) => (
                   <button
-                    key={type}
+                    key={preset.value}
                     type="button"
-                    onClick={() => { setDefaultGoalType(type); setSessionDefaultStatus("idle"); }}
-                    className={`rounded-lg border py-2 text-sm font-medium capitalize transition ${
-                      defaultGoalType === type
-                        ? "btn-primary border-accent"
-                        : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
+                    onClick={() => handleZoomChange(preset.value)}
+                    className={`rounded-lg border py-3 text-sm font-medium transition ${
+                      zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
                     }`}
                   >
-                    {type}
+                    {preset.label}
+                    <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
                   </button>
                 ))}
               </div>
-            </div>
-            {defaultGoalType !== undefined && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500}
-                  value={defaultTargetValue}
-                  onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }}
-                  placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-              </div>
-            )}
-            {sessionDefaultMessage && (
-              <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
-            )}
-            <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-              {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
-            </button>
-          </form>
-        </section>
-
-        {/* Pomodoro timer */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-base font-semibold">Pomodoro timer</h2>
-            <button
-              type="button"
-              onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
-              role="switch"
-              aria-checked={pomodoroEnabled}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
-            </button>
+            </section>
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            {pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer."}
-          </p>
-          {pomodoroEnabled && (
-          <form onSubmit={handlePomodoroSave} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
-                <input type="number" min={1} max={90} value={pomodoroFocus}
-                  onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }}
-                  placeholder="25"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
-                <input type="number" min={1} max={30} value={pomodoroBreak}
-                  onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }}
-                  placeholder="5"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
-                <input type="number" min={1} max={60} value={pomodoroLong}
-                  onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }}
-                  placeholder="15"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
-                <input type="number" min={1} max={10} value={pomodoroCycles}
-                  onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }}
-                  placeholder="4"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-              </div>
-            </div>
-            {pomodoroMessage && (
-              <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
-            )}
-            <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-              {pomodoroStatus === "loading" ? "Saving…" : "Save Pomodoro settings"}
-            </button>
-          </form>
-          )}
-        </section>
 
-        {/* Textbook display size — shown here when cache is off */}
-        {!pdfCacheEnabled && (
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Controls how large the PDF pages appear while reading. Saved on
-            this device.
-          </p>
-          <div className="grid grid-cols-4 gap-2">
-            {ZOOM_PRESETS.map((preset) => (
-              <button
-                key={preset.value}
-                type="button"
-                onClick={() => handleZoomChange(preset.value)}
-                className={`rounded-lg border py-3 text-sm font-medium transition ${
-                  zoom === preset.value
-                    ? "btn-primary border-accent"
-                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                }`}
-              >
-                {preset.label}
-                <span className="block text-xs opacity-60 mt-0.5">
-                  {Math.round(preset.value * 100)}%
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-        )}
-
-        {/* PDF offline cache limits */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-base font-semibold">Offline PDF cache</h2>
-            <button
-              type="button"
-              onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
-              aria-checked={pdfCacheEnabled}
-              role="switch"
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
-            </button>
-          </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            {pdfCacheEnabled
-              ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
-              : "Caching is off. Textbooks will always load from the network and won't be available offline."}
-          </p>
-          {pdfCacheEnabled && (
-          <>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Max textbooks cached
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={pdfCacheCount}
-                  onChange={(e) => handlePdfCacheCount(Number(e.target.value))}
-                  className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                <span className="text-xs text-gray-400">books (1 – 10)</span>
+          {/* ── Right column ── */}
+          <div>
+            {/* Offline PDF cache */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-base font-semibold">Offline PDF cache</h2>
+                <button
+                  type="button"
+                  onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
+                  aria-checked={pdfCacheEnabled}
+                  role="switch"
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
               </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Max cache size
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={100}
-                  max={5000}
-                  step={100}
-                  value={pdfCacheMb}
-                  onChange={(e) => handlePdfCacheMb(Number(e.target.value))}
-                  className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                <span className="text-xs text-gray-400">MB (100 – 5000)</span>
-              </div>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
-            Default: 2 textbooks or 500 MB. Saved on this device only.
-          </p>
-          </>
-          )}
-        </section>
-
-        {/* Storage — paired with Exit password */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Upload storage</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            Space used by your uploaded PDFs.
-          </p>
-          {storage ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">{storage.usedFormatted} used</span>
-                <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`}
-                  style={{ width: `${storage.pct}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
-              {storage.pct >= 90 && (
-                <p className="text-xs text-red-500 font-medium">
-                  Storage nearly full — delete unused PDFs from My Drive to free space.
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
-          )}
-        </section>
-
-        {/* Exit password — paired with Upload storage */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Exit password</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Required to end a study session early. Defaults to your login
-            password if not changed.
-          </p>
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Current login password
-              </label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                placeholder="Your login password"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                New exit password
-              </label>
-              <input
-                type="password"
-                value={newExitPassword}
-                onChange={(e) => setNewExitPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                placeholder="At least 4 characters"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Confirm new exit password
-              </label>
-              <input
-                type="password"
-                value={confirmExitPassword}
-                onChange={(e) => setConfirmExitPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                placeholder="Repeat new exit password"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-            </div>
-            {pwMessage && (
-              <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                {pwMessage}
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+                {pdfCacheEnabled
+                  ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
+                  : "Caching is off. Textbooks will always load from the network and won't be available offline."}
               </p>
+              {pdfCacheEnabled && (
+              <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max textbooks cached</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min={1} max={10} value={pdfCacheCount} onChange={(e) => handlePdfCacheCount(Number(e.target.value))} className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    <span className="text-xs text-gray-400">books (1 – 10)</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max cache size</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min={100} max={5000} step={100} value={pdfCacheMb} onChange={(e) => handlePdfCacheMb(Number(e.target.value))} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    <span className="text-xs text-gray-400">MB (100 – 5000)</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Default: 2 textbooks or 500 MB. Saved on this device only.</p>
+              </>
+              )}
+            </section>
+
+            {/* Upload storage */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <h2 className="text-base font-semibold mb-1">Upload storage</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">Space used by your uploaded PDFs.</p>
+              {storage ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{storage.usedFormatted} used</span>
+                    <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`} style={{ width: `${storage.pct}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
+                  {storage.pct >= 90 && <p className="text-xs text-red-500 font-medium">Storage nearly full — delete unused PDFs from My Drive to free space.</p>}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
+              )}
+            </section>
+
+            {/* Exit password */}
+            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
+              <h2 className="text-base font-semibold mb-1">Exit password</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
+                Required to end a study session early. Defaults to your login password if not changed.
+              </p>
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current login password</label>
+                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoComplete="current-password" placeholder="Your login password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New exit password</label>
+                  <input type="password" value={newExitPassword} onChange={(e) => setNewExitPassword(e.target.value)} required autoComplete="new-password" placeholder="At least 4 characters" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new exit password</label>
+                  <input type="password" value={confirmExitPassword} onChange={(e) => setConfirmExitPassword(e.target.value)} required autoComplete="new-password" placeholder="Repeat new exit password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                </div>
+                {pwMessage && (
+                  <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
+                )}
+                <button type="submit" disabled={pwStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
+                  {pwStatus === "loading" ? "Saving…" : "Save exit password"}
+                </button>
+              </form>
+            </section>
+
+            {/* Easter egg — dog + credits only when cache is off */}
+            {!pdfCacheEnabled && (
+            <>
+            <section className="rounded-2xl overflow-hidden mb-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
+            </section>
+            <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 mb-4 p-5">
+              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
+              </p>
+            </section>
+            </>
             )}
-            <button
-              type="submit"
-              disabled={pwStatus === "loading"}
-              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-            >
-              {pwStatus === "loading" ? "Saving…" : "Save exit password"}
-            </button>
-          </form>
-        </section>
-
-        {/* Textbook display size — shown here (after exit password) when cache is on */}
-        {pdfCacheEnabled && (
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4">
-          <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Controls how large the PDF pages appear while reading. Saved on
-            this device.
-          </p>
-          <div className="grid grid-cols-4 gap-2">
-            {ZOOM_PRESETS.map((preset) => (
-              <button
-                key={preset.value}
-                type="button"
-                onClick={() => handleZoomChange(preset.value)}
-                className={`rounded-lg border py-3 text-sm font-medium transition ${
-                  zoom === preset.value
-                    ? "btn-primary border-accent"
-                    : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                }`}
-              >
-                {preset.label}
-                <span className="block text-xs opacity-60 mt-0.5">
-                  {Math.round(preset.value * 100)}%
-                </span>
-              </button>
-            ))}
           </div>
-        </section>
-        )}
-
-        {/* Easter egg — dog + credits only when cache is off */}
-        {!pdfCacheEnabled && (
-        <>
-        <section className="rounded-2xl overflow-hidden break-inside-avoid mb-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
-        </section>
-        <section className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 p-5">
-          <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-            Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
-          </p>
-        </section>
-        </>
-        )}
-
+        </div>
         {/* Focus music playlist */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
           <h2 className="text-base font-semibold mb-1">Focus music</h2>
