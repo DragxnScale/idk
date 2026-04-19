@@ -2024,7 +2024,25 @@ function StorageTab() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BlobItem | null>(null);
   const [filter, setFilter] = useState<"all" | "user" | "admin">("all");
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{
+    deletedDocumentRows: number; clearedCatalogCaches: number; estimatedFreedFormatted: string;
+  } | null>(null);
 
+  async function runCleanup() {
+    if (!confirm("This will delete all per-user catalog PDF blobs and the global catalog cache blobs from Vercel Blob storage. Catalog books will be served via proxy instead. Continue?")) return;
+    setCleaning(true);
+    setCleanResult(null);
+    const res = await fetch("/api/admin/catalog/cleanup-blobs", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      setCleanResult(data);
+      load(); // refresh blob list
+    } else {
+      alert(data.error ?? "Cleanup failed");
+    }
+    setCleaning(false);
+  }
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/admin/blobs");
@@ -2078,6 +2096,32 @@ function StorageTab() {
 
   return (
     <>
+      {/* Catalog blob cleanup */}
+      <div className="rounded-xl border border-amber-800/60 bg-amber-900/20 p-4 mb-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-300 mb-1">Catalog PDF Cleanup</p>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              Deletes all per-user catalog PDF blobs and any globally cached catalog copies.
+              Catalog books will be served via the authenticated proxy with 30-day CDN edge caching — zero blob storage needed.
+            </p>
+            {cleanResult && (
+              <p className="text-xs text-green-400 mt-2 font-medium">
+                ✓ Deleted {cleanResult.deletedDocumentRows} document rows, {cleanResult.clearedCatalogCaches} catalog caches.
+                {cleanResult.estimatedFreedFormatted !== "0 B" && ` ~${cleanResult.estimatedFreedFormatted} freed (tracked files only).`}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={runCleanup}
+            disabled={cleaning}
+            className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-4 py-2 text-xs font-semibold text-white transition"
+          >
+            {cleaning ? "Cleaning…" : "Run Cleanup"}
+          </button>
+        </div>
+      </div>
+
       {/* Usage overview */}
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
         <div className="flex items-center justify-between mb-3">

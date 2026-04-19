@@ -52,7 +52,10 @@ export async function GET(request: NextRequest) {
 
   const responseHeaders: Record<string, string> = {
     "Content-Type": "application/pdf",
-    "Cache-Control": "public, max-age=86400",
+    // max-age: browser cache 7 days
+    // s-maxage: Vercel edge CDN cache 30 days — cache misses only on first request per edge region
+    // stale-while-revalidate: serve stale from edge while refreshing in background
+    "Cache-Control": "public, max-age=604800, s-maxage=2592000, stale-while-revalidate=86400",
   };
 
   const contentLength = upstream.headers.get("content-length");

@@ -202,7 +202,7 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | POST | `/api/documents/upload` | Form upload PDF → Blob (public) → `documents` row. |
 | POST | `/api/documents/register` | Register metadata after client upload completes. |
 | GET, PATCH | `/api/documents/[id]` | Get metadata or update `chapterPageRanges` / `pageOffset` / `title` for a document; owner or admin only. |
-| POST | `/api/documents/ensure-imported` | Ensures a catalog PDF is on public Blob CDN. Checks `textbookCatalog.cachedBlobUrl` first (global cache). On miss, downloads and uploads once, stores URL on catalog row — all future users get the same CDN URL, eliminating per-user blob duplication. |
+| POST | `/api/documents/ensure-imported` | Returns the URL to use for a catalog PDF. Returns `cachedBlobUrl` from the catalog row if one was previously stored; otherwise returns the authenticated proxy URL (`/api/proxy/pdf`). No blob uploads — catalog books are served via proxy with 30-day Vercel edge CDN caching. |
 | GET | `/api/documents/[id]/file` | Redirect to stored `fileUrl` (Blob) if user owns doc. |
 | GET | `/api/textbooks` | List/search catalog entries. |
 | POST | `/api/textbooks` | Authenticated: re-seeds/updates `textbook_catalog` from `lib/db/seed-textbooks`. |
@@ -211,7 +211,7 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET, HEAD | `/api/proxy/pdf` | Authenticated proxy to **allowlisted** hosts (e.g. archive.org, openstax, vercel blob); supports **Range** for PDF.js streaming. |
+| GET, HEAD | `/api/proxy/pdf` | Authenticated proxy to **allowlisted** hosts; supports **Range** for PDF.js streaming. Sets `Cache-Control: public, max-age=604800, s-maxage=2592000` — Vercel edge CDN caches each byte range for 30 days, so Fast Origin Transfer only applies to the first request per edge region. |
 
 ### 5.6 User settings and drive
 
@@ -284,7 +284,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | PATCH | `/api/admin/users` | Bulk or field updates. |
 | GET, PATCH, DELETE | `/api/admin/users/[id]` | User detail, update, delete. |
 | GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session. |
-| GET, POST, PATCH, DELETE | `/api/admin/catalog` | Textbook catalog CRUD. |
+| POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Run once after deploying to reclaim all previously stored catalog PDFs. |
 | GET, DELETE | `/api/admin/blobs` | List / delete blobs. |
 | GET | `/api/admin/blob-lookup` | Resolve blob metadata. |
 | GET, POST | `/api/admin/blob-token` | Token for admin uploads (admin-only). |
