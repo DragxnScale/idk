@@ -6,7 +6,7 @@ This document describes the **Bowl Beacon** codebase: layout, APIs, frontend, da
 
 ## 1. System overview
 
-Bowl Beacon is a **Next.js 14 (App Router)** study app. Users authenticate with email/password, upload or select PDFs (including a textbook catalog), run **focused study sessions** with timers and anti-distraction UX, and optionally use **OpenAI-powered** notes, quizzes, and video suggestions. Files are stored on **Vercel Blob**; metadata and auth live in **SQLite-compatible** storage via **LibSQL** (e.g. Turso in production, local file in dev).
+Bowl Beacon is a **Next.js 14 (App Router)** study app. Users authenticate with email/password, upload or select PDFs (including a textbook catalog), run **focused study sessions** with timers and anti-distraction UX, and optionally use **OpenAI-powered** notes, quizzes, video suggestions, and flashcards. Files are stored on **Vercel Blob** (public CDN); metadata and auth live in **SQLite-compatible** storage via **LibSQL** (Turso in production, local file in dev).
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
   end
   subgraph data [Data and AI]
     DB[(LibSQL / SQLite)]
-    Blob[Vercel Blob]
+    Blob[Vercel Blob CDN]
     OAI[OpenAI API]
   end
   UI --> API
@@ -46,7 +46,7 @@ flowchart LR
 | Database | `@libsql/client` — `DATABASE_URL` (file or Turso), optional `DATABASE_AUTH_TOKEN` |
 | AI | Vercel AI SDK (`ai`), `@ai-sdk/openai`, Zod schemas |
 | PDF | `react-pdf` + pdf.js (worker from unpkg) |
-| Storage | `@vercel/blob` (upload, multipart, client tokens) |
+| Storage | `@vercel/blob` — all uploads use `access: "public"` for CDN delivery |
 | Compression | `fflate` (ZIP import on drive) |
 
 **Build / config**
@@ -74,32 +74,34 @@ High-level map (only meaningful directories and notable files).
 │   │   ├── signin/page.tsx
 │   │   └── signup/page.tsx
 │   ├── dashboard/
-│   │   ├── page.tsx              # User dashboard (documents, bookmarks, etc.)
+│   │   ├── page.tsx              # Dashboard: stats, streak card, textbook progress, bookmarks, etc.
 │   │   └── PageViewerModal.tsx   # Modal PDF viewer for bookmarks
 │   ├── study/
 │   │   ├── session/page.tsx      # Main live study session UI
-│   │   ├── session/[id]/summary/page.tsx  # Post-session stats, notes, quiz, review
+│   │   ├── session/[id]/summary/page.tsx  # Post-session: stats, notes, quiz, review, flashcards
 │   │   └── history/page.tsx
 │   ├── settings/page.tsx
 │   ├── admin/page.tsx            # Admin console (guarded)
 │   └── api/                      # Route handlers (see §5)
 ├── components/
-│   ├── study/                    # Timer, PDF, picker, AI notes, quiz, review
+│   ├── study/                    # Timer, PDF, picker, AI notes, quiz, review, flashcards
 │   └── focus/                    # Visibility, fullscreen, override / exit password
 ├── lib/
 │   ├── auth.ts                   # NextAuth options + auth() JWT-from-cookie
-│   ├── ai.ts                     # OpenAI client, model id, isAiConfigured()
+│   ├── ai.ts                     # OpenAI client, MODEL id ("gpt-5.4"), isAiConfigured()
+│   ├── ai-notes-render.ts        # stripLatexForAiNotes(), aiNoteContentToHtml()
+│   ├── app-settings.ts           # getAiOwnerStyleExtra(), appendOwnerStyleToSystem()
+│   ├── admin.ts                  # requireAdmin(), requireSuperOwner() (Node)
+│   ├── admin-edge.ts             # Admin check for Edge routes
 │   ├── db/
 │   │   ├── index.ts              # Drizzle db singleton
 │   │   ├── schema.ts             # All table definitions
 │   │   └── seed-textbooks.ts
-│   ├── admin.ts                  # requireAdmin(), isAdmin() (Node)
-│   ├── admin-edge.ts             # Admin check for Edge routes
 │   ├── password.ts               # Password hashing / verification
 │   ├── prefs.ts                  # User prefs (e.g. PDF zoom)
 │   ├── themes.ts                 # Theme tokens
-│   ├── music.ts                  # Study playlist helpers (YouTube / audio)
-│   └── store.ts                  # Client-side store utilities if used
+│   ├── music.ts                  # Study playlist helpers
+│   └── store.ts                  # Client-side store utilities
 ├── types/
 │   └── next-auth.d.ts            # Session / JWT type extensions
 ├── public/                       # Static assets, sw.js, icons
@@ -125,13 +127,13 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Authentication (NextAuth-compatible)**
 
-- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags.
+- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags, `quiz_min_questions`, `quiz_max_questions`.
 - `accounts`, `auth_sessions`, `verification_tokens` — OAuth/session tables if extended.
 - `banned_emails` — signup/signin blocklist.
 
 **Study core**
 
-- `study_sessions` — goal type/value, start/end, focused minutes, pages, `document_json` (resume), `videos_json` (cached AI video recs).
+- `study_sessions` — goal type/value, start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]` of unique page indices for dedup), `document_json` (resume), `videos_json` (cached AI video recs).
 - `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`.
 - `textbook_catalog` — shared books: `source_url`, chapter page ranges JSON, visibility flags.
 - `session_content` — links session to document and chapter/page range.
@@ -150,7 +152,13 @@ Drizzle **SQLite** tables (conceptual grouping):
 **AI persistence**
 
 - `ai_notes` — generated notes per `session_id` + `page_number` + `content`.
+- `public_notes` — shared notes cache per `textbook_catalog_id` + `page_number` + `prompt_version`. Cache hit = zero AI tokens for subsequent users on same page. Bump `PUBLIC_NOTE_PROMPT_VERSION` in `app/api/ai/notes/route.ts` to invalidate on prompt change.
 - `quizzes` — `questions_json`, `review_json`, optional `score` / `total_questions`.
+- `flashcards` — `session_id`, `front`, `back`, `page_number`; cascades on session delete.
+
+**App config**
+
+- `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra).
 
 **Connection** (`lib/db/index.ts`): `drizzle` with `url` from `DATABASE_URL` (default `file:./study.db`) and optional `DATABASE_AUTH_TOKEN` for remote LibSQL.
 
@@ -172,11 +180,11 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/study/sessions` | List current user’s sessions (recent). |
+| GET | `/api/study/sessions` | List current user's sessions (recent). |
 | POST | `/api/study/sessions` | Start session; closes other open sessions for user; accepts `documentJson`. |
-| PATCH | `/api/study/sessions` | Update session (progress, end, fields like `totalFocusedMinutes`, `endedAt`, etc.). |
+| PATCH | `/api/study/sessions` | Update session fields: `totalFocusedMinutes`, `endedAt`, `pagesVisited`, `visitedPagesList`, etc. |
 | GET | `/api/study/sessions/[id]` | Single session for user. |
-| GET | `/api/study/stats` | Aggregated stats, active session, settings used by session UI. |
+| GET | `/api/study/stats` | Aggregated stats (streak, weekly chart, goals), active session info. |
 | GET | `/api/study/chapters-read` | Chapter reading progress helper. |
 
 ### 5.3 Page visits
@@ -191,8 +199,9 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/documents/upload` | Form upload PDF → Blob → `documents` row. |
+| POST | `/api/documents/upload` | Form upload PDF → Blob (public) → `documents` row. |
 | POST | `/api/documents/register` | Register metadata after client upload completes. |
+| POST | `/api/documents/ensure-imported` | Auto-imports a catalog PDF into public Blob on first access; returns stored URL for subsequent CDN-direct loads (bypasses proxy for Fast Origin Transfer). |
 | GET | `/api/documents/[id]/file` | Redirect to stored `fileUrl` (Blob) if user owns doc. |
 | GET | `/api/textbooks` | List/search catalog entries. |
 | POST | `/api/textbooks` | Authenticated: re-seeds/updates `textbook_catalog` from `lib/db/seed-textbooks`. |
@@ -203,16 +212,17 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 |--------|------|---------|
 | GET, HEAD | `/api/proxy/pdf` | Authenticated proxy to **allowlisted** hosts (e.g. archive.org, openstax, vercel blob); supports **Range** for PDF.js streaming. |
 
-### 5.6 User drive and settings
+### 5.6 User settings and drive
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/user/drive` | List user’s drive documents. |
+| GET | `/api/user/drive` | List user's drive documents. |
 | DELETE | `/api/user/drive` | Remove drive entry / document per body. |
 | POST | `/api/user/drive/import` | Import PDF from URL or ZIP (streams to Blob). |
 | POST | `/api/user/drive/link` | Link external URL as document. |
-| GET | `/api/user/settings` | User preferences. |
-| PATCH | `/api/user/settings` | Update preferences. |
+| GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`). |
+| PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz question bounds). |
+| GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
 
 ### 5.7 Bookmarks
 
@@ -235,15 +245,17 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET, POST | `/api/messages` | Inbox / send (query params and body per implementation). |
+| GET, POST | `/api/messages` | Inbox / send. |
 
 ### 5.10 Music
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/music/search` | Search helper for study music (query-based). |
+| GET | `/api/music/search` | Search helper for study music. |
 
 ### 5.11 Vercel Blob (user and internal uploads)
+
+All uploads use `access: "public"` so PDFs are served directly from the Vercel CDN, not proxied through Next.js serverless functions.
 
 | Method | Path | Runtime / notes |
 |--------|------|-------------------|
@@ -253,12 +265,12 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | POST | `/api/blob/multipart` | Multipart completion / parts. |
 | POST | `/api/blob/token` | Legacy or internal token issuance. |
 | POST | `/api/blob/client-token` | Token for **client-side** `@vercel/blob/client` uploads. |
-| GET, HEAD | `/api/blob/serve` | Serve or probe blob access (implementation-specific). |
-| GET | `/api/blob/health` | Health check. |
+| GET, HEAD | `/api/blob/serve` | Serve or probe blob access. |
+| GET | `/api/blob/health` | Health check (admin-only). |
 
 ### 5.12 Admin APIs
 
-All require admin session (Node: `requireAdmin`, Edge: `requireAdminEdge`). Super-admin / `isAdmin` logic lives in **`lib/admin.ts`** (see code for email + `users.isAdmin`).
+All require admin session. Super-admin / owner routes use `requireSuperOwner()` from `lib/admin.ts`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -269,16 +281,17 @@ All require admin session (Node: `requireAdmin`, Edge: `requireAdminEdge`). Supe
 | GET, POST, PATCH, DELETE | `/api/admin/catalog` | Textbook catalog CRUD. |
 | GET, DELETE | `/api/admin/blobs` | List / delete blobs. |
 | GET | `/api/admin/blob-lookup` | Resolve blob metadata. |
-| GET | `/api/admin/blob-token` | Token for admin uploads. |
-| POST | `/api/admin/blob-token` | Create upload URL / token. |
+| GET, POST | `/api/admin/blob-token` | Token for admin uploads (admin-only). |
 | GET | `/api/admin/blob-client-token` | Client token for admin UI. |
 | GET | `/api/admin/blob-write-token` | Write token exposure (guarded). |
 | POST | `/api/admin/blob-stream` | **Edge** stream upload to Blob. |
-| POST | `/api/admin/download-store` | Fetch remote PDF → Blob (catalog/archive flows). |
-| GET | `/api/admin/archive-token` | Admin-only; returns `{ ok, configured }` — never raw Archive keys. |
+| POST | `/api/admin/download-store` | Fetch remote PDF → Blob. |
+| GET | `/api/admin/archive-token` | Returns `{ ok, configured }` — **never** raw Archive keys. |
 | POST | `/api/admin/archive-upload` | Upload to Archive. |
 | POST | `/api/admin/mute-block` | Moderation. |
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |
+| GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set `noteStyleExtra` and active `MODEL`. |
+| POST | `/api/admin/owner-ai/chat` | Super-owner: direct chat with OpenAI for debugging. |
 
 ---
 
@@ -286,46 +299,64 @@ All require admin session (Node: `requireAdmin`, Edge: `requireAdminEdge`). Supe
 
 ### 6.1 Configuration (`lib/ai.ts`)
 
-- **`OPENAI_API_KEY`**: required for AI routes; absence yields **503** from APIs.
+- **`OPENAI_API_KEY`**: required for AI routes; absence yields **503**.
 - **`openai`**: `createOpenAI` from `@ai-sdk/openai`.
-- **`MODEL`**: default `gpt-4o-mini` (change here to swap models).
-- **`isAiConfigured()`**: boolean guard.
+- **`MODEL`**: currently `"gpt-5.4"` — change here to swap globally.
+- **`isAiConfigured()`**: boolean guard used by all AI routes.
 
-### 6.2 Routes
+### 6.2 Owner AI customisation (`lib/app-settings.ts`)
+
+- **`getAiOwnerStyleExtra()`** / **`setAiOwnerStyleExtra()`**: reads/writes the `app_settings` row with key `"ai_note_style_extra"`.
+- **`appendOwnerStyleToSystem(system, extra)`**: appends the owner's custom instructions to the base system prompt if non-empty.
+- Accessible to the super-owner via the admin panel's **Owner AI** tab.
+
+### 6.3 Routes
 
 | Path | Methods | SDK call | Persistence |
 |------|---------|----------|-------------|
-| `/api/ai/notes` | POST, GET | `generateText` | `ai_notes` table |
+| `/api/ai/notes` | POST, GET | `generateText` | `ai_notes` + `public_notes` cache |
 | `/api/ai/quiz` | POST, GET | `generateObject` + Zod `quizSchema` | `quizzes` table |
+| `/api/ai/quiz/review` | POST | `generateObject` | updates `quizzes.review_json` + `score` |
 | `/api/ai/videos` | GET, POST | `generateObject` + Zod `videoSchema` | `study_sessions.videos_json` |
+| `/api/ai/flashcards` | POST, GET | `generateObject` + Zod `flashcardSchema` | `flashcards` table |
 
 **Notes (POST)**  
-Body: `sessionId`, `pageNumber`, `pageText`. System prompt: concise study notes, bullets, `**bold**` terms, cap ~300 words; user content truncated (~6000 chars). Inserts row and returns `{ id, pageNumber, content }`.
+Body: `sessionId`, `pageNumber`, `pageText`, optional `textbookCatalogId`.  
+If `textbookCatalogId` is provided, checks `public_notes` for a matching row at the current `PUBLIC_NOTE_PROMPT_VERSION`. Cache hit → returns cached content, no AI call. Cache miss → calls OpenAI, strips LaTeX via `stripLatexForAiNotes()`, saves to `ai_notes` and upserts into `public_notes` for future users. Bump `PUBLIC_NOTE_PROMPT_VERSION` in the route whenever the system prompt changes.
 
 **Notes (GET)**  
-Query: `sessionId`. Returns notes for that session if owned by user.
+Query: `sessionId`. Returns all notes for the session sorted by page number.
 
 **Quiz (POST)**  
-Body: `sessionId`, `accumulatedText`. Loads existing AI notes for session as extra context. Generates MCQs (4 options, `correctIndex`), plus `review` object (`keyConcepts`, `thingsToReview`, `videoSuggestions` with YouTube-oriented search queries). Saves to `quizzes`.
+Body: `sessionId`, `accumulatedText`. Reads `quizMinQuestions` / `quizMaxQuestions` from user settings (default 3–10, max 25). Question count = `pagesRead × 1.5` clamped to user range. Shuffles answer options (Fisher-Yates) so the correct answer is not always index 0. Saves questions only (no review) to `quizzes`.
+
+**Quiz Review (POST)**  
+Body: `quizId`, `score`, `totalQuestions`, `wrongQuestions`. If score is perfect, returns `{ perfect: true }` and updates score — no AI call. Otherwise calls OpenAI to generate `thingsToReview` and `videoSuggestions` targeted at the specific wrong answers. Updates `quizzes.review_json`.
 
 **Quiz (GET)**  
-Loads saved quiz + review + score for session.
+Returns saved quiz + review + score for the session.
 
-**Videos (GET)**  
-Returns cached `videosJson` from session or `{ videos: null }`.
+**Videos (GET/POST)**  
+GET returns cached `videosJson`. POST generates and caches if not present.
 
-**Videos (POST)**  
-If not cached, runs `generateObject` on truncated reading text; writes `videosJson` on `study_sessions`.
+**Flashcards (POST)**  
+Body: `sessionId`. Fetches all `ai_notes` for the session. Calls `generateObject` to produce term/formula reference cards (~3 per page note). **Front** = term or concept name (never a question). **Back** = plain-language definition/explanation + formula in plain text. Inserts into `flashcards`, returns card array.
 
-### 6.3 Frontend integration
+**Flashcards (GET)**  
+Query: `sessionId`. Returns existing cards sorted by page number.
 
-- **`components/study/AiNotesPanel.tsx`**: calls `POST /api/ai/notes` using `pageTexts` Map filled by **`PdfViewer`** (`getTextContent` per page).
-- **`app/study/session/[id]/summary/page.tsx`**: loads notes/quiz via GET; triggers `POST /api/ai/quiz` with text from **`sessionStorage`** key `session-text-${sessionId}` (written in **`app/study/session/page.tsx`** when ending session). Video recommendations: `GET`/`POST /api/ai/videos` with same stored text pattern.
+### 6.4 Frontend integration
 
-### 6.4 Dependencies
+- **`components/study/AiNotesPanel.tsx`**: calls `POST /api/ai/notes` per page (or batch). Accepts `textbookCatalogId` prop to enable public cache. Fetches existing notes from DB on mount to persist state across hide/show. Displays page numbers relative to the chapter start (`absolutePage - startPage + 1`).
+- **`app/study/session/[id]/summary/page.tsx`**: tabs for Overview, Notes, Quiz, Review, and **Flashcards**. Loads notes/quiz/flashcards via GET on mount. Triggers POST endpoints on demand. After quiz completion calls `POST /api/ai/quiz/review` with wrong answers only.
+- **`components/study/QuizView.tsx`**: tracks `wrongAnswers` state; passes them to `onComplete`.
+- **`components/study/ReviewPanel.tsx`**: shows personalised review from wrong answers, or congratulations on a perfect score.
+- **`components/study/FlashcardView.tsx`**: 3D CSS flip animation, previous/next navigation, card counter, shuffle button.
+
+### 6.5 Dependencies
 
 - `ai` — `generateText`, `generateObject`.
-- `zod` — structured outputs for quiz and videos.
+- `zod` — structured outputs for quiz, videos, flashcards.
 
 ---
 
@@ -337,12 +368,12 @@ If not cached, runs `generateObject` on truncated reading text; writes `videosJs
 |-------|------|
 | `/` | Landing, install prompts, nav to auth. |
 | `/auth/signin`, `/auth/signup` | Credentials auth. |
-| `/dashboard` | Document library, bookmarks, open PDF modal. |
+| `/dashboard` | Stats, **streak card**, **textbook progress**, bookmarks, planner, countdowns. |
 | `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX. |
-| `/study/session/[id]/summary` | Overview, notes tab, quiz tab, review tab, video suggestions. |
+| `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
-| `/settings` | User settings. |
-| `/admin` | Admin dashboard (server/client components per file). |
+| `/settings` | User settings (includes quiz question min/max). |
+| `/admin` | Admin dashboard (guarded; super-owner sees Owner AI tab). |
 
 ### 7.2 Key components
 
@@ -350,40 +381,52 @@ If not cached, runs `generateObject` on truncated reading text; writes `videosJs
 
 - **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`.
 - **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`.
-- **`PdfViewer.tsx`** — `react-pdf` document; zoom, search, TOC, bookmarks/highlights, page visit batching, `onPageText` for AI; loads bookmarks from API.
-- **`AiNotesPanel.tsx`** — Triggers note generation per page or batch.
-- **`QuizView.tsx`** — Steps through questions, score, `onComplete`.
-- **`ReviewPanel.tsx`** — Renders post-quiz review + YouTube search links.
+- **`PdfViewer.tsx`** — `react-pdf`; zoom, search, TOC, bookmarks/highlights, page visit batching, `onPageText` for AI.
+- **`AiNotesPanel.tsx`** — Generates/displays notes per page; accepts `textbookCatalogId` for shared cache; page numbers shown relative to chapter start.
+- **`QuizView.tsx`** — Steps through questions, tracks wrong answers, calls `onComplete(score, total, wrongAnswers)`.
+- **`ReviewPanel.tsx`** — Targeted review for wrong answers; perfect-score congratulations view.
+- **`FlashcardView.tsx`** — 3D flip cards; shuffle; previous/next navigation.
 
 **Focus (`components/focus/`)**
 
-- **`VisibilityGuard.tsx`** — `visibilitychange` → overlay when returning from hidden tab; parent pauses timer.
-- **`OverrideFlow.tsx`** — “I need to stop” → exit password modal; optional fullscreen lock + `fullscreenchange` trap.
-- **`FullscreenTrigger.tsx`** — Toggle `requestFullscreen` on `documentElement`.
+- **`VisibilityGuard.tsx`** — `visibilitychange` → overlay; pauses timer.
+- **`OverrideFlow.tsx`** — Exit password modal; optional fullscreen lock.
+- **`FullscreenTrigger.tsx`** — Toggle `requestFullscreen`.
 
 **Dashboard**
 
-- **`PageViewerModal.tsx`** — Simplified PDF view for a bookmark item; highlight support.
+- **`PageViewerModal.tsx`** — Simplified PDF view for a bookmark item.
 
-### 7.3 Client-only and dynamic imports
+### 7.3 Dashboard features
 
-- **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false` to avoid pdf.js on server.
+- **Streak card**: shows current streak with flame icon; amber "at risk" warning if streak > 0 and no session today; green "going strong" if studied today.
+- **Textbook progress**: fetches `GET /api/user/textbook-progress`; shows each catalog book with a progress bar derived from the **union** of all unique pages visited across sessions (not a sum, so re-reading a page doesn't inflate the count).
+- **Weekly chart**: bar chart of daily study minutes; minimum bar height ensures small values are visible.
 
-### 7.4 PWA
+### 7.4 Page tracking (unique pages)
 
-- **`public/sw.js`** — Service worker (caching/update strategy as implemented in file).
+When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates each unique page index. On every progress save and on session end the client sends both `pagesVisited` (count) and `visitedPagesList` (JSON array) to `PATCH /api/study/sessions`. The progress route unions these arrays across all sessions per textbook to compute the true unique page count.
+
+### 7.5 Client-only and dynamic imports
+
+- **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`.
+
+### 7.6 PWA
+
+- **`public/sw.js`** — Service worker caching/update strategy.
 - **`app/layout.tsx`** registers SW; **`app/manifest.ts`** defines installability.
 
 ---
 
 ## 8. Security and auth notes
 
-- **Sessions**: JWT in httpOnly cookie (`sf.session-token`). **`auth()`** decodes JWT with `NEXTAUTH_SECRET` (avoids some `getServerSession` proxy issues).
-- **API routes**: Typically `auth()` first; return **401** if missing user.
-- **Admin**: `requireAdmin` checks super-admin email constant and/or `users.isAdmin` — see **`lib/admin.ts`**.
-- **PDF proxy**: Host allowlist only — arbitrary URLs cannot be fetched.
-- **Exit flow**: Stopping a locked session requires **`/api/auth/verify-exit`**.
-- **Secrets**: Never commit `.env.local`; use `.env.example` as template.
+- **Sessions**: JWT in httpOnly cookie (`sf.session-token`). **`auth()`** decodes JWT with `NEXTAUTH_SECRET`.
+- **API routes**: `auth()` first; return **401** if missing user.
+- **Admin**: `requireAdmin` checks `users.isAdmin`; `requireSuperOwner` checks hardcoded super-admin email.
+- **PDF proxy**: host allowlist only — arbitrary URLs cannot be fetched.
+- **Exit flow**: stopping a locked session requires `/api/auth/verify-exit`.
+- **Blob**: `/api/blob/health` and `/api/admin/blob-token` are admin-only; `/api/admin/archive-token` returns only `{ ok, configured }` — never raw keys.
+- **Secrets**: never commit `.env.local`; `.env.production` and `*credentials*.json` are in `.gitignore`.
 
 ---
 
@@ -395,18 +438,18 @@ If not cached, runs `generateObject` on truncated reading text; writes `videosJs
 | `npm run build` / `start` | Production. |
 | `npm run db:push` | Drizzle push schema to DB. |
 | `npm run db:generate` / `db:migrate` | Migrations. |
-| `scripts/migrate-blobs-public.mjs` | Migrates private Blob URLs in `textbook_catalog` to public (reads `.env.local` locally). |
-| `scripts/bump-version.mjs` | Version bump helper. |
+| `scripts/migrate-blobs-public.mjs` | Migrates private Blob URLs in `textbook_catalog` to public. |
+| `scripts/bump-version.mjs` | Version bump helper (runs automatically on commit via git hook). |
 
 ---
 
 ## 10. Environment variables (reference)
 
-See **`.env.example`** for the canonical list. Typical production setup includes:
+See **`.env.example`** for the canonical list. Typical production setup:
 
 - `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
 - `DATABASE_URL`, optional `DATABASE_AUTH_TOKEN`
-- `OPENAI_API_KEY` (AI features)
+- `OPENAI_API_KEY` (all AI features)
 - `BLOB_READ_WRITE_TOKEN` (uploads / Blob)
 - Archive keys for admin Archive upload features
 
@@ -426,20 +469,30 @@ sequenceDiagram
   U->>SP: Start session + pick document
   SP->>API: POST /api/study/sessions
   API->>DB: insert study_sessions
-  SP->>PV: Load PDF URL
-  PV->>API: optional proxy or direct Blob URL
+  SP->>PV: Load PDF (public Blob URL)
   PV->>SP: onPageText(page, text)
-  SP->>API: POST /api/ai/notes
-  API->>AI: generateText
-  API->>DB: insert ai_notes
+  SP->>API: POST /api/ai/notes (+ textbookCatalogId)
+  API->>DB: check public_notes cache
+  alt cache hit
+    API->>DB: insert ai_notes (no AI call)
+  else cache miss
+    API->>AI: generateText
+    API->>DB: insert ai_notes + upsert public_notes
+  end
   U->>SP: End session
-  SP->>API: PATCH /api/study/sessions
+  SP->>API: PATCH /api/study/sessions (visitedPagesList)
   SP->>SP: sessionStorage session-text-*
   U->>API: POST /api/ai/quiz (summary page)
-  API->>AI: generateObject
+  API->>AI: generateObject (questions only)
   API->>DB: insert quizzes
+  U->>API: POST /api/ai/quiz/review (wrong answers)
+  API->>AI: generateObject (targeted review)
+  API->>DB: update quizzes.review_json
+  U->>API: POST /api/ai/flashcards
+  API->>AI: generateObject (term/formula cards)
+  API->>DB: insert flashcards
 ```
 
 ---
 
-*Document generated to match repository layout and routes as of the `docs/ARCHITECTURE.md` authoring date. If you add routes or tables, update §4–§6 accordingly.*
+*Update §4–§6 and §11 whenever routes, tables, or AI flows change.*
