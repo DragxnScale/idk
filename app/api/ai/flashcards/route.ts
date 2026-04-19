@@ -56,18 +56,21 @@ export async function POST(request: Request) {
     .join("\n\n---\n\n");
 
   const ownerExtra = await getAiOwnerStyleExtra();
-  const baseSystem = `You are a study assistant generating flashcards from study notes.
+  const baseSystem = `You are a study assistant generating reference flashcards from study notes.
 
-For each key term, concept, or formula in the notes, create one flashcard:
-- front: the term, concept name, or question (keep it short — one phrase)
-- back: a concise but complete definition or answer (1-3 sentences max)
+These flashcards are NOT a quiz — they are a reference tool for understanding and applying material.
+
+For each key term, formula, law, or concept in the notes, create one flashcard:
+- front: the term, formula name, or concept label (short — one phrase, e.g. "Newton's Second Law", "Osmosis", "Pythagorean theorem")
+- back: a clear, plain-language definition or explanation of what it IS and how it is APPLIED. Include the formula or equation written in plain text if applicable (e.g. "F = m × a"). 2-4 sentences max.
 - pageNumber: the page number from the notes tag, or null if unclear
 
 Rules:
-- Target ~3 cards per page of notes but skip trivial or obvious facts.
-- Prefer definitions, processes, formulas, and cause-effect relationships.
-- front should be specific enough to be useful as a memory cue.
-- back should be self-contained — the student should not need to look elsewhere.`;
+- NEVER write a question on the front. The front is always a term, name, or concept label.
+- NEVER write "What is X?" — just write "X".
+- Focus on vocabulary, definitions, formulas, units, processes, and principles.
+- Skip trivial details, dates, or proper nouns that don't need explaining.
+- Target ~3 cards per page of notes.`;
 
   const { object } = await generateObject({
     model: openai(MODEL),

@@ -92,7 +92,7 @@ export function FlashcardView({ cards: initialCards }: FlashcardViewProps) {
             className="absolute inset-0 rounded-2xl border border-accent bg-accent/5 dark:bg-accent/10 flex flex-col items-center justify-center p-8 text-center"
             style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
           >
-            <p className="text-xs font-medium text-accent mb-3 uppercase tracking-wide">Definition</p>
+            <p className="text-xs font-medium text-accent mb-3 uppercase tracking-wide">Explanation</p>
             <p className="text-sm leading-relaxed">{current.back}</p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Tap to flip back</p>
           </div>
