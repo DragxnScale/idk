@@ -127,15 +127,15 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Authentication (NextAuth-compatible)**
 
-- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags, `quiz_min_questions`, `quiz_max_questions`.
+- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags, `quiz_min_questions`, `quiz_max_questions`, `storage_bytes` (running upload total), `storage_quota_bytes` (null = 350 MB default).
 - `accounts`, `auth_sessions`, `verification_tokens` — OAuth/session tables if extended.
 - `banned_emails` — signup/signin blocklist.
 
 **Study core**
 
 - `study_sessions` — goal type/value, start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]` of unique page indices for dedup), `document_json` (resume), `videos_json` (cached AI video recs).
-- `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`, `chapter_page_ranges` (user-defined TOC JSON), `page_offset` (PDF page alignment).
-- `textbook_catalog` — shared books: `source_url`, chapter page ranges JSON, visibility flags.
+- `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`, `chapter_page_ranges` (user-defined TOC JSON), `page_offset` (PDF page alignment), `file_size_bytes` (used for quota tracking).
+- `textbook_catalog` — shared books: `source_url`, `cached_blob_url` (single global public Blob copy; populated on first access), chapter page ranges JSON, visibility flags.
 - `session_content` — links session to document and chapter/page range.
 
 **Engagement**
@@ -202,7 +202,7 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | POST | `/api/documents/upload` | Form upload PDF → Blob (public) → `documents` row. |
 | POST | `/api/documents/register` | Register metadata after client upload completes. |
 | GET, PATCH | `/api/documents/[id]` | Get metadata or update `chapterPageRanges` / `pageOffset` / `title` for a document; owner or admin only. |
-| POST | `/api/documents/ensure-imported` | Auto-imports a catalog PDF into public Blob on first access; returns stored URL for subsequent CDN-direct loads (bypasses proxy for Fast Origin Transfer). |
+| POST | `/api/documents/ensure-imported` | Ensures a catalog PDF is on public Blob CDN. Checks `textbookCatalog.cachedBlobUrl` first (global cache). On miss, downloads and uploads once, stores URL on catalog row — all future users get the same CDN URL, eliminating per-user blob duplication. |
 | GET | `/api/documents/[id]/file` | Redirect to stored `fileUrl` (Blob) if user owns doc. |
 | GET | `/api/textbooks` | List/search catalog entries. |
 | POST | `/api/textbooks` | Authenticated: re-seeds/updates `textbook_catalog` from `lib/db/seed-textbooks`. |
@@ -221,11 +221,14 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | DELETE | `/api/user/drive` | Remove drive entry / document per body. |
 | POST | `/api/user/drive/import` | Import PDF from URL or ZIP (streams to Blob). |
 | POST | `/api/user/drive/link` | Link external URL as document. |
+| GET | `/api/user/storage` | Returns `{ usedBytes, quotaBytes, pct, usedFormatted, quotaFormatted }` for the current user. |
 | GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`). |
 | PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz question bounds). |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
 
 User-uploaded documents are accessible **only by the owner or an admin** — enforced in `GET/PATCH /api/documents/[id]` and `GET /api/user/drive`.
+
+**Storage quota** (`lib/storage.ts`): default 350 MB per user. `register` checks `user.storageBytes + fileSize > quota` before inserting; returns HTTP 413 if exceeded. `drive DELETE` subtracts the size. Admin can set per-user `storageQuotaBytes` override via `PATCH /api/admin/users/[id]`.
 
 ### 5.7 Bookmarks
 

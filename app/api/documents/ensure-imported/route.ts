@@ -1,23 +1,24 @@
 /**
  * POST /api/documents/ensure-imported
  *
- * Given a textbook catalog URL + optional catalog id, checks whether the
- * current user already has a stored Blob copy.  If they do, returns it
- * immediately (cached: true).  If not, downloads the PDF, uploads it to
- * public Vercel Blob, creates a documents row, and returns the result
- * (cached: false).
+ * Ensures a catalog PDF is available on public Vercel Blob CDN.
+ * Uses a SINGLE GLOBAL cached copy per textbook_catalog row — stored in
+ * textbookCatalog.cachedBlobUrl — instead of one copy per user.
  *
- * This removes the /api/proxy/pdf round-trip for every page read —
- * only the first open of a book costs origin bandwidth; afterwards the
- * browser loads bytes directly from Blob / CDN.
+ * Flow:
+ *   1. If catalog.cachedBlobUrl is already set → return it immediately (free).
+ *   2. Otherwise, download from sourceUrl, upload to public Blob, save the URL
+ *      on the catalog row → all future users get the cached URL at zero cost.
+ *
+ * This removes /api/proxy/pdf round-trips and prevents per-user blob duplication.
  */
 
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { documents } from "@/lib/db/schema";
+import { textbookCatalog } from "@/lib/db/schema";
 
 const FETCH_TIMEOUT_MS = 90_000;
 const MAX_PDF_BYTES = 500 * 1024 * 1024; // 500 MB
@@ -41,26 +42,23 @@ export async function POST(request: Request) {
   if (!sourceUrl || typeof sourceUrl !== "string") {
     return NextResponse.json({ error: "sourceUrl is required" }, { status: 400 });
   }
+  if (!textbookCatalogId) {
+    return NextResponse.json({ error: "textbookCatalogId is required" }, { status: 400 });
+  }
 
-  // ── 1. Check for an existing stored copy ──────────────────────────────
-  const existing = textbookCatalogId
-    ? await db.query.documents.findFirst({
-        where: and(
-          eq(documents.userId, session.user.id),
-          eq(documents.textbookCatalogId, textbookCatalogId)
-        ),
-      })
-    : null;
+  // ── 1. Check the global catalog cache ───────────────────────────────
+  const catalog = await db.query.textbookCatalog.findFirst({
+    where: eq(textbookCatalog.id, textbookCatalogId),
+  });
 
-  if (existing?.fileUrl) {
+  if (catalog?.cachedBlobUrl) {
     return NextResponse.json({
-      documentId: existing.id,
-      fileUrl: existing.fileUrl,
+      fileUrl: catalog.cachedBlobUrl,
       cached: true,
     });
   }
 
-  // ── 2. Not cached — fetch from source and upload to Blob ──────────────
+  // ── 2. Download from source ─────────────────────────────────────────
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -73,9 +71,8 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     clearTimeout(timer);
-    const msg = (e as Error).message || "Network error";
     return NextResponse.json(
-      { error: `Could not fetch PDF source: ${msg}` },
+      { error: `Could not fetch PDF source: ${(e as Error).message}` },
       { status: 502 }
     );
   } finally {
@@ -97,18 +94,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const id = crypto.randomUUID();
+  // ── 3. Upload to public Blob (one global copy) ───────────────────────
   const safeTitle = (title ?? sourceUrl.split("/").pop() ?? "document")
     .replace(/\.pdf$/i, "")
     .slice(0, 120);
-  const filename = `${session.user.id}/${id}.pdf`;
+  const filename = `catalog/${textbookCatalogId}/${safeTitle}.pdf`;
 
-  let blob: Awaited<ReturnType<typeof put>>;
+  let blobUrl: string;
   try {
-    blob = await put(filename, fetchRes.body!, {
+    const blob = await put(filename, fetchRes.body!, {
       access: "public",
       contentType: "application/pdf",
     });
+    blobUrl = blob.url;
   } catch (e) {
     return NextResponse.json(
       { error: `Blob upload failed: ${(e as Error).message}` },
@@ -116,21 +114,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const now = new Date();
-  await db.insert(documents).values({
-    id,
-    userId: session.user.id,
-    title: safeTitle,
-    sourceType: "textbook",
-    textbookCatalogId: textbookCatalogId ?? null,
-    fileUrl: blob.url,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // ── 4. Save to catalog row ───────────────────────────────────────────
+  await db
+    .update(textbookCatalog)
+    .set({ cachedBlobUrl: blobUrl })
+    .where(eq(textbookCatalog.id, textbookCatalogId));
 
   return NextResponse.json({
-    documentId: id,
-    fileUrl: blob.url,
+    fileUrl: blobUrl,
     cached: false,
   });
 }

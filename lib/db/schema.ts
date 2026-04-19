@@ -13,6 +13,8 @@ export const users = sqliteTable("users", {
   inactivityTimeout: integer("inactivity_timeout"), // minutes, null = default (3)
   quizMinQuestions: integer("quiz_min_questions"), // null = default (3)
   quizMaxQuestions: integer("quiz_max_questions"), // null = default (10)
+  storageBytes: integer("storage_bytes").default(0),         // running total of user upload bytes
+  storageQuotaBytes: integer("storage_quota_bytes"),         // null = use DEFAULT_QUOTA_BYTES
   themeId: text("theme_id"), // custom theme color set id
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
@@ -104,6 +106,7 @@ export const documents = sqliteTable("documents", {
   textbookCatalogId: text("textbook_catalog_id"),
   fileUrl: text("file_url"), // Vercel Blob URL for uploaded PDFs
   totalPages: integer("total_pages"),
+  fileSizeBytes: integer("file_size_bytes"),                 // size of uploaded blob in bytes
   chapterPageRanges: text("chapter_page_ranges"), // JSON: Record<string, [number, number]> — user-defined TOC
   pageOffset: integer("page_offset"),             // PDF page 1 = textbook page (1 + pageOffset)
   extractedText: text("extracted_text"),
@@ -118,6 +121,7 @@ export const textbookCatalog = sqliteTable("textbook_catalog", {
   isbn: text("isbn"),
   sourceType: text("source_type").notNull(), // "oer" | "user_upload"
   sourceUrl: text("source_url"),
+  cachedBlobUrl: text("cached_blob_url"),  // globally cached public Blob copy (one per catalog entry)
   chapterPageRanges: text("chapter_page_ranges"), // JSON string
   pageOffset: integer("page_offset").default(0), // book page 1 = PDF page (1 + offset)
   hidden: integer("hidden", { mode: "boolean" }).default(false),

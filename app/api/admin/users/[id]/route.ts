@@ -50,6 +50,8 @@ export async function GET(
       name: target.name ?? null,
       createdAt: target.createdAt?.toISOString() ?? null,
       inactivityTimeout: target.inactivityTimeout ?? null,
+      storageBytes: target.storageBytes ?? 0,
+      storageQuotaBytes: target.storageQuotaBytes ?? null,
     },
     sessions: sessions.map((s) => ({
       id: s.id,
@@ -81,6 +83,14 @@ export async function PATCH(
     updates.inactivityTimeout = body.inactivityTimeout > 0 ? body.inactivityTimeout : null;
   } else if (body.inactivityTimeout === null) {
     updates.inactivityTimeout = null;
+  }
+
+  // Storage quota override (null = reset to default)
+  if ("storageQuotaBytes" in body) {
+    updates.storageQuotaBytes =
+      typeof body.storageQuotaBytes === "number" && body.storageQuotaBytes > 0
+        ? body.storageQuotaBytes
+        : null;
   }
 
   if (Object.keys(updates).length === 0) {

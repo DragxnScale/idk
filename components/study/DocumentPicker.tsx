@@ -459,6 +459,14 @@ function UploadPanel({
       setStatus({ status: "uploading", progress: 0, error: undefined });
 
       try {
+        // Pre-flight quota check
+        const storageRes = await fetch("/api/user/storage");
+        if (storageRes.ok) {
+          const storage = await storageRes.json() as { usedBytes: number; quotaBytes: number; quotaFormatted: string };
+          if (storage.usedBytes + file.size > storage.quotaBytes) {
+            throw new Error(`Storage limit reached (${storage.quotaFormatted} quota). Delete some files to free space.`);
+          }
+        }
         const blobUrl = await directUpload(file, pathname, (pct, label) => {
           setStatus({ progress: pct, error: label });
         });
@@ -467,7 +475,7 @@ function UploadPanel({
         const reg = await fetch("/api/documents/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, fileUrl: blobUrl }),
+          body: JSON.stringify({ title, fileUrl: blobUrl, fileSize: file.size }),
         });
         const data = await reg.json();
         if (!reg.ok) throw new Error(data.error || "Failed to save document");

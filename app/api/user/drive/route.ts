@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { del } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { documents } from "@/lib/db/schema";
+import { documents, users } from "@/lib/db/schema";
 
 export async function GET() {
   const session = await auth();
@@ -52,6 +52,14 @@ export async function DELETE(request: Request) {
   }
 
   await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, session.user.id)));
+
+  // ── Subtract from running storage total ──────────────────────────────
+  if (doc.fileSizeBytes && doc.fileSizeBytes > 0) {
+    await db
+      .update(users)
+      .set({ storageBytes: sql`MAX(0, COALESCE(storage_bytes, 0) - ${doc.fileSizeBytes})` })
+      .where(eq(users.id, session.user.id));
+  }
 
   return NextResponse.json({ ok: true });
 }

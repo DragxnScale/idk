@@ -36,6 +36,19 @@ export default function SettingsPage() {
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
 
+  // ── Storage ────────────────────────────────────────────────────────
+  const [storage, setStorage] = useState<{
+    usedBytes: number; quotaBytes: number; pct: number;
+    usedFormatted: string; quotaFormatted: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/user/storage")
+      .then((r) => r.ok ? r.json() : null)
+      .then(setStorage)
+      .catch(() => {});
+  }, []);
+
   // ── Theme ──────────────────────────────────────────────────────────
   const [themeId, setThemeId] = useState<string>("default");
   const [themeSaving, setThemeSaving] = useState(false);
@@ -334,6 +347,36 @@ export default function SettingsPage() {
               {goalsStatus === "loading" ? "Saving…" : "Save goals"}
             </button>
           </form>
+        </section>
+
+        {/* Textbook display size */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <h2 className="text-base font-semibold mb-1">Storage</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Space used by your uploaded PDFs.
+          </p>
+          {storage ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">{storage.usedFormatted} used</span>
+                <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
+              </div>
+              <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`}
+                  style={{ width: `${storage.pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
+              {storage.pct >= 90 && (
+                <p className="text-xs text-red-500 font-medium">
+                  Storage nearly full — delete unused PDFs from My Drive to free space.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
+          )}
         </section>
 
         {/* Textbook display size */}

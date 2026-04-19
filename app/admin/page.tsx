@@ -218,6 +218,7 @@ function UsersTab() {
   const [confirmWipeAll, setConfirmWipeAll] = useState(false);
   const [wipingAll, setWipingAll] = useState(false);
   const [userInactivityTimeout, setUserInactivityTimeout] = useState<string>("");
+  const [userStorageQuotaMB, setUserStorageQuotaMB] = useState<string>("");
   const [savingInactivity, setSavingInactivity] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -307,12 +308,16 @@ function UsersTab() {
     setSelectedUser(user);
     setUserSessions(null);
     setUserInactivityTimeout("");
+    setUserStorageQuotaMB("");
     const res = await fetch(`/api/admin/users/${user.id}`);
     if (res.ok) {
       const data = await res.json();
       setUserSessions(data.sessions);
       if (data.user?.inactivityTimeout != null) {
         setUserInactivityTimeout(String(data.user.inactivityTimeout));
+      }
+      if (data.user?.storageQuotaBytes != null) {
+        setUserStorageQuotaMB(String(Math.round(data.user.storageQuotaBytes / 1024 / 1024)));
       }
     }
   }
@@ -592,6 +597,55 @@ function UsersTab() {
                 className="text-xs text-red-400 hover:underline"
               >
                 Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Storage quota override */}
+        <div className="bg-gray-900 rounded-lg p-4 mb-4">
+          <h3 className="text-sm font-semibold mb-2">Storage quota override</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Default is 350 MB. Set a custom limit for this user (in MB). Leave blank to reset to default.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              value={userStorageQuotaMB}
+              onChange={(e) => setUserStorageQuotaMB(e.target.value)}
+              placeholder="350"
+              className="w-28 rounded-lg border border-gray-700 bg-gray-950 px-3 py-1.5 text-sm"
+            />
+            <span className="text-xs text-gray-500">MB</span>
+            <button
+              onClick={async () => {
+                if (!selectedUser) return;
+                const mb = userStorageQuotaMB === "" ? null : Number(userStorageQuotaMB) * 1024 * 1024;
+                await fetch(`/api/admin/users/${selectedUser.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ storageQuotaBytes: mb }),
+                });
+              }}
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black"
+            >
+              Save
+            </button>
+            {userStorageQuotaMB !== "" && (
+              <button
+                onClick={async () => {
+                  if (!selectedUser) return;
+                  setUserStorageQuotaMB("");
+                  await fetch(`/api/admin/users/${selectedUser.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ storageQuotaBytes: null }),
+                  });
+                }}
+                className="text-xs text-red-400 hover:underline"
+              >
+                Reset to default
               </button>
             )}
           </div>
