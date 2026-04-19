@@ -421,7 +421,11 @@ export default function SettingsPage() {
     return {};
   }
   function cardGridCol(id: string): React.CSSProperties {
-    return cc(id).span === 2 ? { gridColumn: "1 / -1" } : {};
+    // In CSS columns layout, full-width = span across all columns; half-width = default (flows in one column)
+    if (cc(id).span === 2) {
+      return { columnSpan: "all", breakInside: "avoid" } as React.CSSProperties;
+    }
+    return { breakInside: "avoid" } as React.CSSProperties;
   }
 
   // Sorted visible card IDs for rendering order
@@ -443,8 +447,8 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        {/* Config-driven grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-4 items-start">
+        {/* Config-driven masonry — half-width cards flow to fill gaps, full-width cards span all columns */}
+        <div className="md:columns-2 md:gap-4 [&>*]:inline-block [&>*]:w-full">
         {(() => {
           const CS = "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4";
           const cardSectionMap: Record<string, React.ReactNode> = {
