@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { createMultipartUploader } from "@vercel/blob/client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
+import { SettingsLayoutTab } from "@/components/admin/SettingsLayoutTab";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "owner";
+type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "owner" | "layout";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -114,7 +115,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!ownerTabVisible && tab === "owner") setTab("users");
+    if (!ownerTabVisible && (tab === "owner" || tab === "layout")) setTab("users");
   }, [ownerTabVisible, tab]);
 
   if (loading) {
@@ -166,7 +167,7 @@ export default function AdminPage() {
                 "catalog",
                 "messages",
                 "storage",
-                ...(ownerTabVisible ? (["owner"] as const) : []),
+                ...(ownerTabVisible ? (["owner", "layout"] as const) : []),
               ] as Tab[]
             ).map((t) => (
               <button
@@ -188,7 +189,9 @@ export default function AdminPage() {
                         ? "Blob Storage"
                         : t === "owner"
                           ? "Owner AI"
-                          : "Users"}
+                          : t === "layout"
+                            ? "Settings Layout"
+                            : "Users"}
               </button>
             ))}
           </div>
@@ -200,6 +203,7 @@ export default function AdminPage() {
         {tab === "messages" && <MessagesTab />}
         {tab === "storage" && <StorageTab />}
         {tab === "owner" && ownerTabVisible && <OwnerAiTab />}
+        {tab === "layout" && ownerTabVisible && <SettingsLayoutTab />}
       </div>
     </main>
   );

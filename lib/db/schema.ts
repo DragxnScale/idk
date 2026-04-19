@@ -269,6 +269,14 @@ export const publicNotes = sqliteTable("public_notes", {
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
 
+// ── Global site config (single-row, id always = 1) ──────────────────────────
+
+export const globalConfig = sqliteTable("global_config", {
+  id: integer("id").primaryKey(),
+  settingsLayoutJson: text("settings_layout_json"), // JSON: SettingsLayoutConfig
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
 // ── Flashcards (generated from session AI notes) ─────────────────────────────
 
 export const flashcards = sqliteTable("flashcards", {

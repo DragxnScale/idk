@@ -514,3 +514,43 @@ sequenceDiagram
 ---
 
 *Update §4–§6 and §11 whenever routes, tables, or AI flows change.*
+
+---
+
+## §12 – Owner Settings Layout Editor
+
+### 12.1 Overview
+The super-owner can configure the settings page layout for all users via a drag-and-drop editor in the Admin Panel → **Settings Layout** tab. Changes are stored globally in the database and applied on every user's next settings page load.
+
+### 12.2 Data Model
+```
+global_config (single row, id = 1)
+  settings_layout_json  TEXT   JSON: SettingsLayoutConfig
+  updated_at            INTEGER
+```
+
+### 12.3 Type Definitions (`lib/types/settings-layout.ts`)
+- `CardConfig` — per-card properties: `id`, `visible`, `span` (1 or 2), `order`, `titleText`, `titleSize`, `descText`, `descSize`, `fontFamily`
+- `SettingsLayoutConfig` — `{ version, cards: CardConfig[] }`
+- `CARD_DEFAULTS` — default 11-card layout used when no DB config exists
+- `CARD_LABELS` — human-readable display names for the editor
+
+### 12.4 API
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/api/admin/settings-layout` | Any logged-in user | Returns current config (or defaults) |
+| PATCH | `/api/admin/settings-layout` | Super-owner only | Upserts config in `global_config` row 1 |
+
+### 12.5 Admin Editor (`components/admin/SettingsLayoutTab.tsx`)
+- **Drag-and-drop**: `@dnd-kit/core` + `@dnd-kit/sortable` with `rectSortingStrategy` for 2-column snap grid
+- **Card tiles**: show badge (Full/Half), visibility, font/size metadata; drag handle top-right
+- **Properties panel**: per-card controls for visibility toggle, width span (1 col / 2 col), heading text, heading size (xs–xl), description text, description size (xs–base), font family (default / monospace / serif)
+- **Save**: PATCH to API; **Reset**: restores `DEFAULT_CONFIG` in-memory
+
+### 12.6 Settings Page Consumption (`app/settings/page.tsx`)
+- Fetches `/api/admin/settings-layout` on mount; falls back silently to `DEFAULT_CONFIG`
+- Helper functions: `cc(id)`, `ctitle(id, default)`, `cdesc(id, default)`, `titleClass(id)`, `descClass(id)`, `cardStyle(id)`, `cardGridCol(id)`
+- All 11 cards rendered via a flat `Record<string, ReactNode>` keyed by card ID, mapped in `orderedCards` order
+- Each `<section>` receives `gridColumn` from `cc(id).span` and `fontFamily` from `cardStyle(id)`
+- Visibility filtering: `orderedCards` only includes cards where `visible === true`
+- Easter-egg sections (dog photo + credits) are appended after the config-driven cards, conditioned on `pdfCacheEnabled`

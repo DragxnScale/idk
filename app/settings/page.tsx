@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
+import { DEFAULT_CONFIG, type SettingsLayoutConfig, type CardConfig } from "@/lib/types/settings-layout";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -386,11 +387,53 @@ export default function SettingsPage() {
     }
   }
 
+  // ── Global settings layout config (owner-configurable) ────────────────────
+  const [layoutCfg, setLayoutCfg] = useState<SettingsLayoutConfig>(DEFAULT_CONFIG);
+  useEffect(() => {
+    fetch("/api/admin/settings-layout")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.config) setLayoutCfg(d.config); })
+      .catch(() => {});
+  }, []);
+
+  /** Get the config for a specific card (falls back to DEFAULT_CONFIG entry) */
+  function cc(id: string): CardConfig {
+    return (
+      layoutCfg.cards.find((c) => c.id === id) ??
+      DEFAULT_CONFIG.cards.find((c) => c.id === id) ??
+      { id, visible: true, span: 1, order: 99, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" }
+    );
+  }
+  function ctitle(id: string, def: string) { return cc(id).titleText ?? def; }
+  function cdesc(id: string, def: string) { return cc(id).descText ?? def; }
+  function titleClass(id: string, extra = "") {
+    const s = cc(id).titleSize;
+    return `text-${s} font-semibold${extra ? " " + extra : ""}`;
+  }
+  function descClass(id: string, extra = "") {
+    const s = cc(id).descSize;
+    return `text-${s} text-gray-500 dark:text-gray-400 leading-relaxed${extra ? " " + extra : ""}`;
+  }
+  function cardStyle(id: string): React.CSSProperties {
+    const f = cc(id).fontFamily;
+    if (f === "mono") return { fontFamily: "monospace" };
+    if (f === "serif") return { fontFamily: "serif" };
+    return {};
+  }
+  function cardGridCol(id: string): React.CSSProperties {
+    return cc(id).span === 2 ? { gridColumn: "1 / -1" } : {};
+  }
+
+  // Sorted visible card IDs for rendering order
+  const orderedCards = [...layoutCfg.cards]
+    .sort((a, b) => a.order - b.order)
+    .filter((c) => c.visible);
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-4xl px-6 py-10">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6 [column-span:all]">
+        <div className="flex items-center gap-4 mb-6">
           <Link
             href="/dashboard"
             className="text-sm text-gray-500 hover:text-black dark:hover:text-white underline underline-offset-4"
@@ -400,383 +443,451 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold">Settings</h1>
         </div>
 
-        {/* Daily goals */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-          <h2 className="text-base font-semibold mb-1">Daily goals</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Set targets for each day. Your progress towards these will be
-            shown on the dashboard. Leave a field blank to disable that goal.
-          </p>
-          <form onSubmit={handleGoalsSave} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  Minutes per day
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={minutesGoal}
-                    onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }}
-                    placeholder="e.g. 60"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                    min
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  Sessions per day
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={sessionsGoal}
-                    onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }}
-                    placeholder="e.g. 2"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                    sessions
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Inactivity timeout
-              </label>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
-                Pause timer &amp; ask if you&apos;re still reading after this many minutes of no interaction. Leave blank for default (3 min).
-              </p>
-              <div className="relative w-40">
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={inactivityMin}
-                  onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }}
-                  placeholder="3"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                  min
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Quiz question count
-              </label>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
-                After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;25.
-              </p>
-              <div className="flex items-center gap-3">
-                <div className="relative w-28">
-                  <input
-                    type="number"
-                    min={1}
-                    max={25}
-                    value={quizMin}
-                    onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }}
-                    placeholder="3"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                    min
-                  </span>
-                </div>
-                <span className="text-xs text-gray-400">to</span>
-                <div className="relative w-28">
-                  <input
-                    type="number"
-                    min={1}
-                    max={25}
-                    value={quizMax}
-                    onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }}
-                    placeholder="10"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                    max
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {goalsMessage && (
-              <p className={`text-sm ${goalsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                {goalsMessage}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={goalsStatus === "loading"}
-              className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-            >
-              {goalsStatus === "loading" ? "Saving…" : "Save goals"}
-            </button>
-          </form>
-        </section>
-
-
-        <div className="md:grid md:grid-cols-2 md:gap-4">
-          {/* ── Left column ── */}
-          <div>
-            {/* Account details */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <h2 className="text-base font-semibold mb-1">Account</h2>
-              {displayName && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
+        {/* Config-driven grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-4">
+        {(() => {
+          const CS = "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4";
+          const cardSectionMap: Record<string, React.ReactNode> = {
+            "daily-goals": (
+              <section key="daily-goals" style={{ ...cardGridCol("daily-goals"), ...cardStyle("daily-goals") }} className={CS}>
+                <h2 className={titleClass("daily-goals", "mb-1")}>{ctitle("daily-goals", "Daily goals")}</h2>
+                <p className={descClass("daily-goals", "mb-5")}>
+                  {cdesc("daily-goals", "Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal.")}
                 </p>
-              )}
-              <form onSubmit={handleAccountSave} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }}
-                    maxLength={64}
-                    placeholder="Your name"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                  />
-                </div>
-                {accountMessage && (
-                  <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
-                )}
-                <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                  {accountStatus === "loading" ? "Saving…" : "Save name"}
-                </button>
-              </form>
-            </section>
-
-            {/* Session defaults */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <h2 className="text-base font-semibold mb-1">Session defaults</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-                Pre-fill the goal type and target whenever you start a new session.
-              </p>
-              <form onSubmit={handleSessionDefaultSave} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Default goal type</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["time", "pages", "chapter"] as const).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => { setDefaultGoalType(type); setSessionDefaultStatus("idle"); }}
-                        className={`rounded-lg border py-2 text-sm font-medium capitalize transition ${
-                          defaultGoalType === type ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                        }`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {defaultGoalType !== undefined && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500}
-                      value={defaultTargetValue}
-                      onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }}
-                      placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"}
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                    />
-                  </div>
-                )}
-                {sessionDefaultMessage && (
-                  <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
-                )}
-                <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                  {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
-                </button>
-              </form>
-            </section>
-
-            {/* Study breaks */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-base font-semibold">Study breaks</h2>
-                <button
-                  type="button"
-                  onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
-                  role="switch"
-                  aria-checked={pomodoroEnabled}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-                {pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer."}
-              </p>
-              {pomodoroEnabled && (
-              <form onSubmit={handlePomodoroSave} className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
-                    <input type="number" min={1} max={90} value={pomodoroFocus} onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }} placeholder="25" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                <form onSubmit={handleGoalsSave} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Minutes per day</label>
+                      <div className="relative">
+                        <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Sessions per day</label>
+                      <div className="relative">
+                        <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">sessions</span>
+                      </div>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
-                    <input type="number" min={1} max={30} value={pomodoroBreak} onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }} placeholder="5" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Inactivity timeout</label>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Pause timer &amp; ask if you&apos;re still reading after this many minutes of no interaction. Leave blank for default (3 min).</p>
+                    <div className="relative w-40">
+                      <input type="number" min={1} max={30} value={inactivityMin} onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
-                    <input type="number" min={1} max={60} value={pomodoroLong} onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }} placeholder="15" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quiz question count</label>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;25.</p>
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-28">
+                        <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
+                      </div>
+                      <span className="text-xs text-gray-400">to</span>
+                      <div className="relative w-28">
+                        <input type="number" min={1} max={25} value={quizMax} onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }} placeholder="10" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">max</span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
-                    <input type="number" min={1} max={10} value={pomodoroCycles} onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }} placeholder="4" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                  </div>
-                </div>
-                {pomodoroMessage && (
-                  <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
-                )}
-                <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                  {pomodoroStatus === "loading" ? "Saving…" : "Save break settings"}
-                </button>
-              </form>
-              )}
-            </section>
-
-            {/* Textbook display size — always in left col */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <h2 className="text-base font-semibold mb-1">Textbook display size</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-                Controls how large the PDF pages appear while reading. Saved on this device.
-              </p>
-              <div className="grid grid-cols-4 gap-2">
-                {ZOOM_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => handleZoomChange(preset.value)}
-                    className={`rounded-lg border py-3 text-sm font-medium transition ${
-                      zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                    }`}
-                  >
-                    {preset.label}
-                    <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
+                  {goalsMessage && (
+                    <p className={`text-sm ${goalsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{goalsMessage}</p>
+                  )}
+                  <button type="submit" disabled={goalsStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
+                    {goalsStatus === "loading" ? "Saving…" : "Save goals"}
                   </button>
-                ))}
-              </div>
-            </section>
-          </div>
+                </form>
+              </section>
+            ),
 
-          {/* ── Right column ── */}
-          <div>
-            {/* Offline PDF cache */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-base font-semibold">Offline PDF cache</h2>
-                <button
-                  type="button"
-                  onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
-                  aria-checked={pdfCacheEnabled}
-                  role="switch"
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-                {pdfCacheEnabled
-                  ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
-                  : "Caching is off. Textbooks will always load from the network and won't be available offline."}
-              </p>
-              {pdfCacheEnabled && (
-              <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max textbooks cached</label>
-                  <div className="flex items-center gap-2">
-                    <input type="number" min={1} max={10} value={pdfCacheCount} onChange={(e) => handlePdfCacheCount(Number(e.target.value))} className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                    <span className="text-xs text-gray-400">books (1 – 10)</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max cache size</label>
-                  <div className="flex items-center gap-2">
-                    <input type="number" min={100} max={5000} step={100} value={pdfCacheMb} onChange={(e) => handlePdfCacheMb(Number(e.target.value))} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                    <span className="text-xs text-gray-400">MB (100 – 5000)</span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Default: 2 textbooks or 500 MB. Saved on this device only.</p>
-              </>
-              )}
-            </section>
-
-            {/* Upload storage */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <h2 className="text-base font-semibold mb-1">Upload storage</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">Space used by your uploaded PDFs.</p>
-              {storage ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{storage.usedFormatted} used</span>
-                    <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
-                  </div>
-                  <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`} style={{ width: `${storage.pct}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
-                  {storage.pct >= 90 && <p className="text-xs text-red-500 font-medium">Storage nearly full — delete unused PDFs from My Drive to free space.</p>}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
-              )}
-            </section>
-
-            {/* Exit password */}
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 mb-4">
-              <h2 className="text-base font-semibold mb-1">Exit password</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-                Required to end a study session early. Defaults to your login password if not changed.
-              </p>
-              <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current login password</label>
-                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoComplete="current-password" placeholder="Your login password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New exit password</label>
-                  <input type="password" value={newExitPassword} onChange={(e) => setNewExitPassword(e.target.value)} required autoComplete="new-password" placeholder="At least 4 characters" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new exit password</label>
-                  <input type="password" value={confirmExitPassword} onChange={(e) => setConfirmExitPassword(e.target.value)} required autoComplete="new-password" placeholder="Repeat new exit password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                </div>
-                {pwMessage && (
-                  <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
+            "account": (
+              <section key="account" style={{ ...cardGridCol("account"), ...cardStyle("account") }} className={CS}>
+                <h2 className={titleClass("account", "mb-1")}>{ctitle("account", "Account")}</h2>
+                {displayName && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
+                  </p>
                 )}
-                <button type="submit" disabled={pwStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
-                  {pwStatus === "loading" ? "Saving…" : "Save exit password"}
-                </button>
-              </form>
-            </section>
+                <form onSubmit={handleAccountSave} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
+                    <input type="text" value={displayName} onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }} maxLength={64} placeholder="Your name" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  {accountMessage && (
+                    <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
+                  )}
+                  <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                    {accountStatus === "loading" ? "Saving…" : "Save name"}
+                  </button>
+                </form>
+              </section>
+            ),
 
-            {/* Easter egg — dog + credits only when cache is off */}
-            {!pdfCacheEnabled && (
-            <>
+            "session-defaults": (
+              <section key="session-defaults" style={{ ...cardGridCol("session-defaults"), ...cardStyle("session-defaults") }} className={CS}>
+                <h2 className={titleClass("session-defaults", "mb-1")}>{ctitle("session-defaults", "Session defaults")}</h2>
+                <p className={descClass("session-defaults", "mb-4")}>
+                  {cdesc("session-defaults", "Pre-fill the goal type and target whenever you start a new session.")}
+                </p>
+                <form onSubmit={handleSessionDefaultSave} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Default goal type</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["time", "pages", "chapter"] as const).map((type) => (
+                        <button key={type} type="button" onClick={() => { setDefaultGoalType(type); setSessionDefaultStatus("idle"); }} className={`rounded-lg border py-2 text-sm font-medium capitalize transition ${defaultGoalType === type ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}>{type}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {defaultGoalType !== undefined && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
+                      </label>
+                      <input type="number" min={1} max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500} value={defaultTargetValue} onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }} placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    </div>
+                  )}
+                  {sessionDefaultMessage && (
+                    <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
+                  )}
+                  <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                    {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
+                  </button>
+                </form>
+              </section>
+            ),
+
+            "study-breaks": (
+              <section key="study-breaks" style={{ ...cardGridCol("study-breaks"), ...cardStyle("study-breaks") }} className={CS}>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className={titleClass("study-breaks")}>{ctitle("study-breaks", "Study breaks")}</h2>
+                  <button type="button" onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} role="switch" aria-checked={pomodoroEnabled}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+                <p className={descClass("study-breaks", "mb-4")}>
+                  {cdesc("study-breaks", pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer.")}
+                </p>
+                {pomodoroEnabled && (
+                  <form onSubmit={handlePomodoroSave} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
+                        <input type="number" min={1} max={90} value={pomodoroFocus} onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }} placeholder="25" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
+                        <input type="number" min={1} max={30} value={pomodoroBreak} onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }} placeholder="5" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
+                        <input type="number" min={1} max={60} value={pomodoroLong} onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }} placeholder="15" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
+                        <input type="number" min={1} max={10} value={pomodoroCycles} onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }} placeholder="4" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      </div>
+                    </div>
+                    {pomodoroMessage && (
+                      <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
+                    )}
+                    <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                      {pomodoroStatus === "loading" ? "Saving…" : "Save break settings"}
+                    </button>
+                  </form>
+                )}
+              </section>
+            ),
+
+            "textbook-size": (
+              <section key="textbook-size" style={{ ...cardGridCol("textbook-size"), ...cardStyle("textbook-size") }} className={CS}>
+                <h2 className={titleClass("textbook-size", "mb-1")}>{ctitle("textbook-size", "Textbook display size")}</h2>
+                <p className={descClass("textbook-size", "mb-5")}>
+                  {cdesc("textbook-size", "Controls how large the PDF pages appear while reading. Saved on this device.")}
+                </p>
+                <div className="grid grid-cols-4 gap-2">
+                  {ZOOM_PRESETS.map((preset) => (
+                    <button key={preset.value} type="button" onClick={() => handleZoomChange(preset.value)} className={`rounded-lg border py-3 text-sm font-medium transition ${zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}>
+                      {preset.label}
+                      <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ),
+
+            "pdf-cache": (
+              <section key="pdf-cache" style={{ ...cardGridCol("pdf-cache"), ...cardStyle("pdf-cache") }} className={CS}>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className={titleClass("pdf-cache")}>{ctitle("pdf-cache", "Offline PDF cache")}</h2>
+                  <button type="button" onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} aria-checked={pdfCacheEnabled} role="switch">
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+                <p className={descClass("pdf-cache", "mb-5")}>
+                  {pdfCacheEnabled
+                    ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
+                    : "Caching is off. Textbooks will always load from the network and won't be available offline."}
+                </p>
+                {pdfCacheEnabled && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max textbooks cached</label>
+                        <div className="flex items-center gap-2">
+                          <input type="number" min={1} max={10} value={pdfCacheCount} onChange={(e) => handlePdfCacheCount(Number(e.target.value))} className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                          <span className="text-xs text-gray-400">books (1 – 10)</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Max cache size</label>
+                        <div className="flex items-center gap-2">
+                          <input type="number" min={100} max={5000} step={100} value={pdfCacheMb} onChange={(e) => handlePdfCacheMb(Number(e.target.value))} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                          <span className="text-xs text-gray-400">MB (100 – 5000)</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Default: 2 textbooks or 500 MB. Saved on this device only.</p>
+                  </>
+                )}
+              </section>
+            ),
+
+            "upload-storage": (
+              <section key="upload-storage" style={{ ...cardGridCol("upload-storage"), ...cardStyle("upload-storage") }} className={CS}>
+                <h2 className={titleClass("upload-storage", "mb-1")}>{ctitle("upload-storage", "Upload storage")}</h2>
+                <p className={descClass("upload-storage", "mb-4")}>
+                  {cdesc("upload-storage", "Space used by your uploaded PDFs.")}
+                </p>
+                {storage ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{storage.usedFormatted} used</span>
+                      <span className="text-gray-500 dark:text-gray-400">{storage.quotaFormatted} limit</span>
+                    </div>
+                    <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${storage.pct >= 90 ? "bg-red-500" : storage.pct >= 70 ? "bg-amber-500" : "bg-accent"}`} style={{ width: `${storage.pct}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">{storage.pct}% of your quota used</p>
+                    {storage.pct >= 90 && <p className="text-xs text-red-500 font-medium">Storage nearly full — delete unused PDFs from My Drive to free space.</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 dark:text-gray-500 animate-pulse">Loading…</p>
+                )}
+              </section>
+            ),
+
+            "exit-password": (
+              <section key="exit-password" style={{ ...cardGridCol("exit-password"), ...cardStyle("exit-password") }} className={CS}>
+                <h2 className={titleClass("exit-password", "mb-1")}>{ctitle("exit-password", "Exit password")}</h2>
+                <p className={descClass("exit-password", "mb-5")}>
+                  {cdesc("exit-password", "Required to end a study session early. Defaults to your login password if not changed.")}
+                </p>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current login password</label>
+                    <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoComplete="current-password" placeholder="Your login password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New exit password</label>
+                    <input type="password" value={newExitPassword} onChange={(e) => setNewExitPassword(e.target.value)} required autoComplete="new-password" placeholder="At least 4 characters" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new exit password</label>
+                    <input type="password" value={confirmExitPassword} onChange={(e) => setConfirmExitPassword(e.target.value)} required autoComplete="new-password" placeholder="Repeat new exit password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                  </div>
+                  {pwMessage && (
+                    <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
+                  )}
+                  <button type="submit" disabled={pwStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
+                    {pwStatus === "loading" ? "Saving…" : "Save exit password"}
+                  </button>
+                </form>
+              </section>
+            ),
+
+            "focus-music": (
+              <section key="focus-music" style={{ ...cardGridCol("focus-music"), ...cardStyle("focus-music") }} className={CS}>
+                <h2 className={titleClass("focus-music", "mb-1")}>{ctitle("focus-music", "Focus music")}</h2>
+                <p className={descClass("focus-music", "mb-5")}>
+                  {cdesc("focus-music", "Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device.")}
+                </p>
+                <div className="flex gap-1 mb-3">
+                  <button onClick={() => setUrlMode(false)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${!urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}>Search songs</button>
+                  <button onClick={() => setUrlMode(true)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}>Paste URL</button>
+                </div>
+                {urlMode ? (
+                  <div className="flex gap-2 mb-3">
+                    <input type="url" value={pasteUrl} onChange={(e) => setPasteUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && pasteUrl.trim()) { addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) }); setPasteUrl(""); } }} placeholder="https://youtube.com/watch?v=..." className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    <button onClick={() => { if (pasteUrl.trim()) { addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) }); setPasteUrl(""); } }} className="btn-primary rounded-lg px-4 py-2 text-sm font-medium">Add</button>
+                  </div>
+                ) : (
+                  <div className="relative mb-3">
+                    <input type="text" value={searchQuery} onChange={(e) => handleSearchInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doSearch(searchQuery); }} placeholder="Search YouTube... e.g. moonlight sonata" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 pr-10" />
+                    {searching && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin dark:border-gray-600 dark:border-t-gray-300" />
+                      </div>
+                    )}
+                    {searchResults.length > 0 && (
+                      <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 max-h-64 overflow-y-auto">
+                        {searchResults.map((r) => (
+                          <button key={r.id} onClick={() => addTrack({ url: r.url, title: r.title })} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+                            {r.thumbnail && <img src={r.thumbnail} alt="" className="w-12 h-9 rounded object-cover flex-shrink-0" />}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{r.title}</p>
+                              {r.duration && <p className="text-xs text-gray-500">{r.duration}</p>}
+                            </div>
+                            <span className="text-xs text-gray-400 flex-shrink-0">+ Add</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {["lofi hip hop", "study music", "rain sounds", "classical piano", "white noise"].map((q) => (
+                    <button key={q} onClick={() => { setUrlMode(false); setSearchQuery(q); doSearch(q); }} className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition">{q}</button>
+                  ))}
+                </div>
+                {playlist.length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Playlist ({playlist.length} song{playlist.length !== 1 ? "s" : ""})</p>
+                    {playlist.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50">
+                        <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}</span>
+                        <p className="text-sm truncate flex-1 min-w-0">{t.title}</p>
+                        <button onClick={() => removeTrack(i)} className="text-red-400 hover:text-red-600 transition flex-shrink-0" title="Remove">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={clearPlaylist} className="text-xs text-red-500 hover:underline mt-1">Clear playlist</button>
+                  </div>
+                )}
+                {playlist.length === 0 && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">No songs yet. Search above to add music to your study playlist.</p>
+                )}
+              </section>
+            ),
+
+            "theme": (
+              <section key="theme" style={{ ...cardGridCol("theme"), ...cardStyle("theme") }} className={CS}>
+                <h2 className={titleClass("theme", "mb-1")}>{ctitle("theme", "Theme")}</h2>
+                <p className={descClass("theme", "mb-5")}>
+                  {cdesc("theme", "Pick a built-in theme or create your own with a color picker.")}
+                </p>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-6">
+                  {THEMES.map((t) => {
+                    const isActive = themeId === t.id;
+                    return (
+                      <button key={t.id} onClick={() => applyTheme(t.id, false)} disabled={themeSaving} className={`rounded-lg border py-2.5 text-xs font-medium transition ${isActive ? "border-accent ring-2 ring-accent/20" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}>
+                        <div className="flex justify-center gap-1 mb-1.5">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
+                        </div>
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {customThemes.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Your themes</p>
+                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                      {customThemes.map((t) => {
+                        const isActive = themeId === t.id;
+                        return (
+                          <div key={t.id} className="relative group">
+                            <button onClick={() => applyTheme(t.id, true)} disabled={themeSaving} className={`w-full rounded-lg border py-2.5 text-xs font-medium transition ${isActive ? "border-accent ring-2 ring-accent/20" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}>
+                              <div className="flex justify-center gap-1 mb-1.5">
+                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
+                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
+                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
+                              </div>
+                              <span className="block truncate px-1">{t.name}</span>
+                            </button>
+                            <button onClick={() => deleteCustomTheme(t.id)} className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 rounded-full bg-red-500 text-white text-[9px] items-center justify-center leading-none" title="Delete theme">×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-3">Create custom theme</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                      <input type="text" value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} maxLength={20} placeholder="My Theme" className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Primary</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={newThemePrimary} onChange={(e) => setNewThemePrimary(e.target.value)} className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="text-xs text-gray-400 font-mono">{newThemePrimary}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Accent</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={newThemeAccent} onChange={(e) => setNewThemeAccent(e.target.value)} className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="text-xs text-gray-400 font-mono">{newThemeAccent}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Background</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={newThemeBg} onChange={(e) => setNewThemeBg(e.target.value)} className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800" />
+                        <span className="text-xs text-gray-400 font-mono">{newThemeBg}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg p-3 mb-3 flex items-center gap-3 text-sm border" style={{ backgroundColor: newThemeBg, borderColor: newThemePrimary + "40" }}>
+                    <span className="rounded-md px-3 py-1 text-xs font-medium" style={{ backgroundColor: newThemePrimary, color: "#ffffff" }}>Button</span>
+                    <span style={{ color: newThemeAccent }} className="text-xs font-medium">Accent text</span>
+                    <span className="text-xs text-gray-500">Preview</span>
+                  </div>
+                  <button onClick={addCustomTheme} className="btn-primary rounded-lg px-4 py-2 text-sm font-medium">Save &amp; apply theme</button>
+                </div>
+              </section>
+            ),
+
+            "keyboard-shortcuts": (
+              <section key="keyboard-shortcuts" style={{ ...cardGridCol("keyboard-shortcuts"), ...cardStyle("keyboard-shortcuts") }} className={CS}>
+                <h2 className={titleClass("keyboard-shortcuts", "mb-1")}>{ctitle("keyboard-shortcuts", "Keyboard shortcuts")}</h2>
+                <p className={descClass("keyboard-shortcuts", "mb-4")}>
+                  {cdesc("keyboard-shortcuts", "Available while reading in a study session.")}
+                </p>
+                <div className="space-y-2">
+                  {[
+                    ["←  →", "Previous / Next page"],
+                    ["B", "Toggle bookmark on current page"],
+                    ["F", "Open / close search"],
+                    ["Esc", "Close search, TOC, or bookmarks panel"],
+                    ["Ctrl + scroll", "Zoom in / out"],
+                    ["Pinch", "Zoom on touch devices"],
+                  ].map(([key, desc]) => (
+                    <div key={key} className="flex items-center gap-3">
+                      <kbd className="inline-block min-w-[3.5rem] text-center rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-xs font-mono dark:border-gray-600 dark:bg-gray-800">{key}</kbd>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ),
+          };
+
+          return orderedCards.map((card) => cardSectionMap[card.id] ?? null);
+        })()}
+
+        {/* Easter egg — dog + credits only when cache is off (not in config order, always appended) */}
+        {!pdfCacheEnabled && (
+          <>
             <section className="rounded-2xl overflow-hidden mb-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl" />
@@ -786,315 +897,9 @@ export default function SettingsPage() {
                 Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!
               </p>
             </section>
-            </>
-            )}
-          </div>
-        </div>
-        {/* Focus music playlist */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
-          <h2 className="text-base font-semibold mb-1">Focus music</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Build a study playlist. Search for songs or paste a URL. Music loops
-            automatically during sessions. Saved on this device.
-          </p>
-
-          {/* Search / URL toggle */}
-          <div className="flex gap-1 mb-3">
-            <button
-              onClick={() => setUrlMode(false)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${!urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
-            >
-              Search songs
-            </button>
-            <button
-              onClick={() => setUrlMode(true)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
-            >
-              Paste URL
-            </button>
-          </div>
-
-          {urlMode ? (
-            <div className="flex gap-2 mb-3">
-              <input
-                type="url"
-                value={pasteUrl}
-                onChange={(e) => setPasteUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && pasteUrl.trim()) {
-                    addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) });
-                    setPasteUrl("");
-                  }
-                }}
-                placeholder="https://youtube.com/watch?v=..."
-                className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-              />
-              <button
-                onClick={() => {
-                  if (pasteUrl.trim()) {
-                    addTrack({ url: pasteUrl.trim(), title: pasteUrl.trim().slice(0, 60) });
-                    setPasteUrl("");
-                  }
-                }}
-                className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <div className="relative mb-3">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearchInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") doSearch(searchQuery); }}
-                placeholder="Search YouTube... e.g. moonlight sonata"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 pr-10"
-              />
-              {searching && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <div className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin dark:border-gray-600 dark:border-t-gray-300" />
-                </div>
-              )}
-              {searchResults.length > 0 && (
-                <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 max-h-64 overflow-y-auto">
-                  {searchResults.map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => addTrack({ url: r.url, title: r.title })}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition border-b border-gray-100 dark:border-gray-800 last:border-b-0"
-                    >
-                      {r.thumbnail && (
-                        <img src={r.thumbnail} alt="" className="w-12 h-9 rounded object-cover flex-shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{r.title}</p>
-                        {r.duration && <p className="text-xs text-gray-500">{r.duration}</p>}
-                      </div>
-                      <span className="text-xs text-gray-400 flex-shrink-0">+ Add</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Quick search tags */}
-          <div className="flex gap-2 flex-wrap mb-4">
-            {["lofi hip hop", "study music", "rain sounds", "classical piano", "white noise"].map((q) => (
-              <button
-                key={q}
-                onClick={() => { setUrlMode(false); setSearchQuery(q); doSearch(q); }}
-                className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 transition"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-
-          {/* Playlist */}
-          {playlist.length > 0 && (
-            <div className="space-y-1.5 mb-3">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-                Playlist ({playlist.length} song{playlist.length !== 1 ? "s" : ""})
-              </p>
-              {playlist.map((t, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50">
-                  <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}</span>
-                  <p className="text-sm truncate flex-1 min-w-0">{t.title}</p>
-                  <button
-                    onClick={() => removeTrack(i)}
-                    className="text-red-400 hover:text-red-600 transition flex-shrink-0"
-                    title="Remove"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>
-              ))}
-              <button onClick={clearPlaylist} className="text-xs text-red-500 hover:underline mt-1">
-                Clear playlist
-              </button>
-            </div>
-          )}
-
-          {playlist.length === 0 && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">
-              No songs yet. Search above to add music to your study playlist.
-            </p>
-          )}
-        </section>
-
-        {/* Custom theme */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
-          <h2 className="text-base font-semibold mb-1">Theme</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 leading-relaxed">
-            Pick a built-in theme or create your own with a color picker.
-          </p>
-
-          {/* Built-in themes */}
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-6">
-            {THEMES.map((t) => {
-              const isActive = themeId === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => applyTheme(t.id, false)}
-                  disabled={themeSaving}
-                  className={`rounded-lg border py-2.5 text-xs font-medium transition ${
-                    isActive
-                      ? "border-accent ring-2 ring-accent/20"
-                      : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                  }`}
-                >
-                  <div className="flex justify-center gap-1 mb-1.5">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
-                  </div>
-                  {t.name}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Custom themes */}
-          {customThemes.length > 0 && (
-            <div className="mb-5">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Your themes</p>
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                {customThemes.map((t) => {
-                  const isActive = themeId === t.id;
-                  return (
-                    <div key={t.id} className="relative group">
-                      <button
-                        onClick={() => applyTheme(t.id, true)}
-                        disabled={themeSaving}
-                        className={`w-full rounded-lg border py-2.5 text-xs font-medium transition ${
-                          isActive
-                            ? "border-accent ring-2 ring-accent/20"
-                            : "border-gray-300 hover:border-gray-400 dark:border-gray-600"
-                        }`}
-                      >
-                        <div className="flex justify-center gap-1 mb-1.5">
-                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.primary }} />
-                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.accent }} />
-                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.bg, border: "1px solid #d1d5db" }} />
-                        </div>
-                        <span className="block truncate px-1">{t.name}</span>
-                      </button>
-                      <button
-                        onClick={() => deleteCustomTheme(t.id)}
-                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 rounded-full bg-red-500 text-white text-[9px] items-center justify-center leading-none"
-                        title="Delete theme"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Create custom theme */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-3">Create custom theme</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={newThemeName}
-                  onChange={(e) => setNewThemeName(e.target.value)}
-                  maxLength={20}
-                  placeholder="My Theme"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Primary</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={newThemePrimary}
-                    onChange={(e) => setNewThemePrimary(e.target.value)}
-                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="text-xs text-gray-400 font-mono">{newThemePrimary}</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Accent</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={newThemeAccent}
-                    onChange={(e) => setNewThemeAccent(e.target.value)}
-                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="text-xs text-gray-400 font-mono">{newThemeAccent}</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Background</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={newThemeBg}
-                    onChange={(e) => setNewThemeBg(e.target.value)}
-                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800"
-                  />
-                  <span className="text-xs text-gray-400 font-mono">{newThemeBg}</span>
-                </div>
-              </div>
-            </div>
-            {/* Preview */}
-            <div
-              className="rounded-lg p-3 mb-3 flex items-center gap-3 text-sm border"
-              style={{ backgroundColor: newThemeBg, borderColor: newThemePrimary + "40" }}
-            >
-              <span
-                className="rounded-md px-3 py-1 text-xs font-medium"
-                style={{ backgroundColor: newThemePrimary, color: "#ffffff" }}
-              >
-                Button
-              </span>
-              <span style={{ color: newThemeAccent }} className="text-xs font-medium">Accent text</span>
-              <span className="text-xs text-gray-500">Preview</span>
-            </div>
-            <button
-              onClick={addCustomTheme}
-              className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
-            >
-              Save &amp; apply theme
-            </button>
-          </div>
-        </section>
-
-        {/* Keyboard shortcuts reference */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900 break-inside-avoid mb-4 [column-span:all]">
-          <h2 className="text-base font-semibold mb-1">Keyboard shortcuts</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-            Available while reading in a study session.
-          </p>
-          <div className="space-y-2">
-            {[
-              ["←  →", "Previous / Next page"],
-              ["B", "Toggle bookmark on current page"],
-              ["F", "Open / close search"],
-              ["Esc", "Close search, TOC, or bookmarks panel"],
-              ["Ctrl + scroll", "Zoom in / out"],
-              ["Pinch", "Zoom on touch devices"],
-            ].map(([key, desc]) => (
-              <div key={key} className="flex items-center gap-3">
-                <kbd className="inline-block min-w-[3.5rem] text-center rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-xs font-mono dark:border-gray-600 dark:bg-gray-800">
-                  {key}
-                </kbd>
-                <span className="text-sm text-gray-600 dark:text-gray-400">{desc}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+          </>
+        )}
+      </div>
         </div>{/* end outer container */}
     </main>
   );
