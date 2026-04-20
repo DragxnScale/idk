@@ -162,7 +162,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **App config**
 
-- `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra).
+- `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra, **`app_ui_copy_json`** for global UI copy v2, legacy **`settings_ui_json`** merged into `pages.settings` on read).
 
 **Operations**
 
@@ -193,9 +193,9 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | GET | `/api/admin/debug-logs` | **Super-owner only:** `{ userLogs, devLogs }` from `client_error_logs` (joined names). |
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
 | GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, and **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as. |
-| GET | `/api/app/settings-ui` | Public JSON: `{ version, elements }` — global Settings page copy/typography overrides stored in `app_settings` (`settings_ui_json`). |
-| GET | `/api/admin/settings-ui` | **Admin:** same payload as `/api/app/settings-ui`. |
-| PUT | `/api/admin/settings-ui` | **Admin:** replace `{ version, elements }` for app-wide Settings UI strings/styles. |
+| GET | `/api/app/ui-copy` | Public JSON: `{ version: 2, pages }` — global app UI copy/typography overrides per screen (`home`, `dashboard`, `session`, `settings`) stored in `app_settings` (`app_ui_copy_json`). Legacy `{ version: 1, elements }` in `settings_ui_json` is merged into `pages.settings` on read for missing keys. |
+| GET | `/api/admin/ui-copy` | **Admin:** same merged payload as `/api/app/ui-copy`. |
+| PUT | `/api/admin/ui-copy` | **Admin:** replace full `{ version: 2, pages }` for app-wide UI strings/styles. |
 
 ### 5.2 Study sessions and progress
 
@@ -447,7 +447,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 ### 7.6 PWA / Offline mode
 
-- **`components/settings/SettingsUiProvider.tsx`** — Fetches `GET /api/app/settings-ui` and applies per-key text + inline styles on the Settings page via **`SuiText`**. Admins edit the same keys in **Developer Panel → Settings UI**: a scrollable preview lists **Daily goals** through **Keyboard shortcuts** (not only the first three cards); right-click text, **Apply globally** → `PUT /api/admin/settings-ui`.
+- **`components/ui-copy/UiCopyProvider.tsx`** (wrapped in **`app/layout.tsx`**) — Fetches `GET /api/app/ui-copy` once and applies per-key text + inline styles via **`SuiText`** (`page` + `k`) on the Home page, Dashboard, Session start screen, and Settings (including credits and dog-photo alt). Admins edit in **Developer Panel → App UI**: four tabs (Home, Dashboard, Session start, Settings) with scrollable previews; right-click text, **Apply globally** → `PUT /api/admin/ui-copy`. Pure helpers live in **`lib/ui-copy-shared.ts`** so client bundles do not import `lib/db`.
 - **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
   - **Cache-first**: `/api/proxy/pdf`, **`/api/blob/serve`** (private blob streams from `lib/client` URLs), and direct Vercel Blob PDF URLs — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the “cached PDFs” counter use **distinct URLs** (one logical book), not raw Cache API entry counts. User uploads that load via **`GET /api/documents/[id]/file`** redirect to the stored blob URL; that follow-up request is cached under the blob-host rule when the file is served from a public `*.blob.vercel-storage.com` URL.
   - Turning **off** offline PDF cache in Settings runs `setPdfCacheEnabled: false` in the SW (which **`waitUntil`** deletes the PDF bucket) **and** `clearAllPdfCachesClient()` from the page so all `bowlbeacon-pdf-*` caches are removed on that device.

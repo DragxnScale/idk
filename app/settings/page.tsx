@@ -6,7 +6,7 @@ import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 import { LAYOUTS, resolveLayoutStateKey } from "@/lib/types/settings-layout";
-import { SettingsUiProvider, SuiText } from "@/components/settings/SettingsUiProvider";
+import { SuiText, useUiCopy } from "@/components/ui-copy/UiCopyProvider";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -14,6 +14,18 @@ const ZOOM_PRESETS = [
   { label: "Large", value: 1.25 },
   { label: "Extra Large", value: 1.5 },
 ];
+
+function EasterEggDog() {
+  const { getText } = useUiCopy();
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/easter-egg-dog.png"
+      alt={getText("settings", "dog-photo.alt", "A very good boy")}
+      className="w-full object-cover rounded-2xl block"
+    />
+  );
+}
 
 export default function SettingsPage() {
   // ── PDF zoom ────────────────────────────────────────────────────────
@@ -399,7 +411,6 @@ export default function SettingsPage() {
   // ── Stubs kept for backwards-compat with the existing section JSX below ───
   // The layout is now fully hardcoded, so these helpers just return the defaults.
   function ctitle(_id: string, def: string) { return def; }
-  function cdesc(_id: string, def: string) { return def; }
   function titleClass(_id: string, extra = "") {
     return `text-base font-semibold${extra ? " " + extra : ""}`;
   }
@@ -410,7 +421,7 @@ export default function SettingsPage() {
   function cardGridCol(_id: string): React.CSSProperties { return {}; }
 
   return (
-    <SettingsUiProvider>
+    <>
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-5xl px-6 py-10">
         {/* Header */}
@@ -422,7 +433,7 @@ export default function SettingsPage() {
             ← Dashboard
           </Link>
           <h1 className="text-2xl font-bold">
-            <SuiText k="settings.page-title" def="Settings" as="span" />
+            <SuiText page="settings" k="settings.page-title" def="Settings" as="span" />
           </h1>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">
@@ -437,10 +448,11 @@ export default function SettingsPage() {
             "daily-goals": (
               <section key="daily-goals" style={{ ...cardGridCol("daily-goals"), ...cardStyle("daily-goals") }} className={CS}>
                 <h2 className={titleClass("daily-goals", "mb-1")}>
-                  <SuiText k="daily-goals.title" def="Daily goals" as="span" />
+                  <SuiText page="settings" k="daily-goals.title" def="Daily goals" as="span" />
                 </h2>
                 <p className={descClass("daily-goals", "mb-5")}>
                   <SuiText
+                    page="settings"
                     k="daily-goals.desc"
                     def="Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal."
                     as="span"
@@ -450,7 +462,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        <SuiText k="daily-goals.label.minutes" def="Minutes per day" as="span" />
+                        <SuiText page="settings" k="daily-goals.label.minutes" def="Minutes per day" as="span" />
                       </label>
                       <div className="relative">
                         <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
@@ -459,7 +471,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        <SuiText k="daily-goals.label.sessions" def="Sessions per day" as="span" />
+                        <SuiText page="settings" k="daily-goals.label.sessions" def="Sessions per day" as="span" />
                       </label>
                       <div className="relative">
                         <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
@@ -469,10 +481,11 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      <SuiText k="daily-goals.label.inactivity" def="Inactivity timeout" as="span" />
+                      <SuiText page="settings" k="daily-goals.label.inactivity" def="Inactivity timeout" as="span" />
                     </label>
                     <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
                       <SuiText
+                        page="settings"
                         k="daily-goals.hint.inactivity"
                         def="Pause timer & ask if you're still reading after this many minutes of no interaction. Leave blank for default (3 min)."
                         as="span"
@@ -485,7 +498,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      <SuiText k="daily-goals.label.quiz" def="Quiz question count" as="span" />
+                      <SuiText page="settings" k="daily-goals.label.quiz" def="Quiz question count" as="span" />
                     </label>
                     <div className="mb-2 flex flex-wrap items-center gap-3">
                       <div className="relative w-28 min-w-[7rem] shrink-0">
@@ -500,6 +513,7 @@ export default function SettingsPage() {
                     </div>
                     <p className="text-xs text-gray-400 dark:text-gray-500">
                       <SuiText
+                        page="settings"
                         k="daily-goals.hint.quiz"
                         def="After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min 3, max 10). Max allowed: 25."
                         as="span"
@@ -513,7 +527,7 @@ export default function SettingsPage() {
                     {goalsStatus === "loading" ? (
                       "Saving…"
                     ) : (
-                      <SuiText k="daily-goals.save" def="Save goals" as="span" />
+                      <SuiText page="settings" k="daily-goals.save" def="Save goals" as="span" />
                     )}
                   </button>
                 </form>
@@ -523,18 +537,18 @@ export default function SettingsPage() {
             "account": (
               <section key="account" style={{ ...cardGridCol("account"), ...cardStyle("account") }} className={CS}>
                 <h2 className={titleClass("account", "mb-1")}>
-                  <SuiText k="account.title" def="Account" as="span" />
+                  <SuiText page="settings" k="account.title" def="Account" as="span" />
                 </h2>
                 {displayName && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    <SuiText k="account.signed-prefix" def="Signed in as" as="span" />{" "}
+                    <SuiText page="settings" k="account.signed-prefix" def="Signed in as" as="span" />{" "}
                     <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
                   </p>
                 )}
                 <form onSubmit={handleAccountSave} className="space-y-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      <SuiText k="account.label.display-name" def="Display name" as="span" />
+                      <SuiText page="settings" k="account.label.display-name" def="Display name" as="span" />
                     </label>
                     <input type="text" value={displayName} onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }} maxLength={64} placeholder="Your name" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                   </div>
@@ -545,7 +559,7 @@ export default function SettingsPage() {
                     {accountStatus === "loading" ? (
                       "Saving…"
                     ) : (
-                      <SuiText k="account.save" def="Save name" as="span" />
+                      <SuiText page="settings" k="account.save" def="Save name" as="span" />
                     )}
                   </button>
                 </form>
@@ -555,10 +569,11 @@ export default function SettingsPage() {
             "session-defaults": (
               <section key="session-defaults" style={{ ...cardGridCol("session-defaults"), ...cardStyle("session-defaults") }} className={CS}>
                 <h2 className={titleClass("session-defaults", "mb-1")}>
-                  <SuiText k="session-defaults.title" def="Session defaults" as="span" />
+                  <SuiText page="settings" k="session-defaults.title" def="Session defaults" as="span" />
                 </h2>
                 <p className={descClass("session-defaults", "mb-4")}>
                   <SuiText
+                    page="settings"
                     k="session-defaults.desc"
                     def="Pre-fill the goal type and target whenever you start a new session."
                     as="span"
@@ -588,7 +603,7 @@ export default function SettingsPage() {
                     {sessionDefaultStatus === "loading" ? (
                       "Saving…"
                     ) : (
-                      <SuiText k="session-defaults.save" def="Save defaults" as="span" />
+                      <SuiText page="settings" k="session-defaults.save" def="Save defaults" as="span" />
                     )}
                   </button>
                 </form>
@@ -599,7 +614,7 @@ export default function SettingsPage() {
               <section key="study-breaks" style={{ ...cardGridCol("study-breaks"), ...cardStyle("study-breaks") }} className={CS}>
                 <div className="flex items-center justify-between mb-1">
                   <h2 className={titleClass("study-breaks")}>
-                    <SuiText k="study-breaks.title" def="Study breaks" as="span" />
+                    <SuiText page="settings" k="study-breaks.title" def="Study breaks" as="span" />
                   </h2>
                   <button type="button" onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} role="switch" aria-checked={pomodoroEnabled}>
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
@@ -607,6 +622,7 @@ export default function SettingsPage() {
                 </div>
                 <p className={descClass("study-breaks", "mb-4")}>
                   <SuiText
+                    page="settings"
                     k={pomodoroEnabled ? "study-breaks.desc-on" : "study-breaks.desc-off"}
                     def={
                       pomodoroEnabled
@@ -643,7 +659,7 @@ export default function SettingsPage() {
                       {pomodoroStatus === "loading" ? (
                         "Saving…"
                       ) : (
-                        <SuiText k="study-breaks.save" def="Save break settings" as="span" />
+                        <SuiText page="settings" k="study-breaks.save" def="Save break settings" as="span" />
                       )}
                     </button>
                   </form>
@@ -654,10 +670,11 @@ export default function SettingsPage() {
             "textbook-size": (
               <section key="textbook-size" style={{ ...cardGridCol("textbook-size"), ...cardStyle("textbook-size") }} className={CS}>
                 <h2 className={titleClass("textbook-size", "mb-1")}>
-                  <SuiText k="textbook-size.title" def="Textbook display size" as="span" />
+                  <SuiText page="settings" k="textbook-size.title" def="Textbook display size" as="span" />
                 </h2>
                 <p className={descClass("textbook-size", "mb-5")}>
                   <SuiText
+                    page="settings"
                     k="textbook-size.desc"
                     def="Controls how large the PDF pages appear while reading. Saved on this device."
                     as="span"
@@ -675,7 +692,7 @@ export default function SettingsPage() {
                         onClick={() => handleZoomChange(preset.value)}
                         className={`rounded-lg border py-3 text-sm font-medium transition ${zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}
                       >
-                        <SuiText k={zk} def={preset.label} as="span" />
+                        <SuiText page="settings" k={zk} def={preset.label} as="span" />
                         <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
                       </button>
                     );
@@ -688,7 +705,7 @@ export default function SettingsPage() {
               <section key="pdf-cache" style={{ ...cardGridCol("pdf-cache"), ...cardStyle("pdf-cache") }} className={CS}>
                 <div className="flex items-center justify-between mb-1">
                   <h2 className={titleClass("pdf-cache")}>
-                    <SuiText k="pdf-cache.title" def="Offline PDF cache" as="span" />
+                    <SuiText page="settings" k="pdf-cache.title" def="Offline PDF cache" as="span" />
                   </h2>
                   <button type="button" onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} aria-checked={pdfCacheEnabled} role="switch">
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
@@ -696,6 +713,7 @@ export default function SettingsPage() {
                 </div>
                 <p className={descClass("pdf-cache", "mb-5")}>
                   <SuiText
+                    page="settings"
                     k={pdfCacheEnabled ? "pdf-cache.desc-on" : "pdf-cache.desc-off"}
                     def={
                       pdfCacheEnabled
@@ -732,10 +750,10 @@ export default function SettingsPage() {
             "upload-storage": (
               <section key="upload-storage" style={{ ...cardGridCol("upload-storage"), ...cardStyle("upload-storage") }} className={CS}>
                 <h2 className={titleClass("upload-storage", "mb-1")}>
-                  <SuiText k="upload-storage.title" def="Upload storage" as="span" />
+                  <SuiText page="settings" k="upload-storage.title" def="Upload storage" as="span" />
                 </h2>
                 <p className={descClass("upload-storage", "mb-4")}>
-                  <SuiText k="upload-storage.desc" def="Space used by your uploaded PDFs." as="span" />
+                  <SuiText page="settings" k="upload-storage.desc" def="Space used by your uploaded PDFs." as="span" />
                 </p>
                 {storage ? (
                   <div className="space-y-2">
@@ -758,10 +776,11 @@ export default function SettingsPage() {
             "exit-password": (
               <section key="exit-password" style={{ ...cardGridCol("exit-password"), ...cardStyle("exit-password") }} className={CS}>
                 <h2 className={titleClass("exit-password", "mb-1")}>
-                  <SuiText k="exit-password.title" def="Exit password" as="span" />
+                  <SuiText page="settings" k="exit-password.title" def="Exit password" as="span" />
                 </h2>
                 <p className={descClass("exit-password", "mb-5")}>
                   <SuiText
+                    page="settings"
                     k="exit-password.desc"
                     def="Required to end a study session early. Defaults to your login password if not changed."
                     as="span"
@@ -787,7 +806,7 @@ export default function SettingsPage() {
                     {pwStatus === "loading" ? (
                       "Saving…"
                     ) : (
-                      <SuiText k="exit-password.save" def="Save exit password" as="span" />
+                      <SuiText page="settings" k="exit-password.save" def="Save exit password" as="span" />
                     )}
                   </button>
                 </form>
@@ -797,10 +816,11 @@ export default function SettingsPage() {
             "focus-music": (
               <section key="focus-music" style={{ ...cardGridCol("focus-music"), ...cardStyle("focus-music") }} className={CS}>
                 <h2 className={titleClass("focus-music", "mb-1")}>
-                  <SuiText k="focus-music.title" def="Focus music" as="span" />
+                  <SuiText page="settings" k="focus-music.title" def="Focus music" as="span" />
                 </h2>
                 <p className={descClass("focus-music", "mb-5")}>
                   <SuiText
+                    page="settings"
                     k="focus-music.desc"
                     def="Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device."
                     as="span"
@@ -868,10 +888,10 @@ export default function SettingsPage() {
             "theme": (
               <section key="theme" style={{ ...cardGridCol("theme"), ...cardStyle("theme") }} className={CS}>
                 <h2 className={titleClass("theme", "mb-1")}>
-                  <SuiText k="theme.title" def="Theme" as="span" />
+                  <SuiText page="settings" k="theme.title" def="Theme" as="span" />
                 </h2>
                 <p className={descClass("theme", "mb-5")}>
-                  <SuiText k="theme.desc" def="Pick a built-in theme or create your own with a color picker." as="span" />
+                  <SuiText page="settings" k="theme.desc" def="Pick a built-in theme or create your own with a color picker." as="span" />
                 </p>
                 <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-6">
                   {THEMES.map((t) => {
@@ -953,10 +973,10 @@ export default function SettingsPage() {
             "keyboard-shortcuts": (
               <section key="keyboard-shortcuts" style={{ ...cardGridCol("keyboard-shortcuts"), ...cardStyle("keyboard-shortcuts") }} className={CS}>
                 <h2 className={titleClass("keyboard-shortcuts", "mb-1")}>
-                  <SuiText k="keyboard-shortcuts.title" def="Keyboard shortcuts" as="span" />
+                  <SuiText page="settings" k="keyboard-shortcuts.title" def="Keyboard shortcuts" as="span" />
                 </h2>
                 <p className={descClass("keyboard-shortcuts", "mb-4")}>
-                  <SuiText k="keyboard-shortcuts.desc" def="Available while reading in a study session." as="span" />
+                  <SuiText page="settings" k="keyboard-shortcuts.desc" def="Available while reading in a study session." as="span" />
                 </p>
                 <div className="space-y-2">
                   {[
@@ -978,8 +998,7 @@ export default function SettingsPage() {
 
             "dog-photo": (
               <section key="dog-photo" className="rounded-2xl overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/easter-egg-dog.png" alt="A very good boy" className="w-full object-cover rounded-2xl block" />
+                <EasterEggDog />
               </section>
             ),
 
@@ -997,7 +1016,12 @@ export default function SettingsPage() {
             "credits": (
               <section key="credits" className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 p-5">
                 <p className={descClass("credits")}>
-                  {cdesc("credits", "Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!")}
+                  <SuiText
+                    page="settings"
+                    k="credits"
+                    def="Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!"
+                    as="span"
+                  />
                 </p>
               </section>
             ),
@@ -1025,6 +1049,6 @@ export default function SettingsPage() {
       </div>
         </div>{/* end outer container */}
     </main>
-    </SettingsUiProvider>
+    </>
   );
 }

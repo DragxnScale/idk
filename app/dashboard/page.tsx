@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { HeatmapCalendar } from "@/components/dashboard/HeatmapCalendar";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 const PageViewerModal = dynamic(() => import("./PageViewerModal"), { ssr: false });
 
@@ -256,9 +257,11 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <h1 className="text-2xl font-bold">
+              <SuiText page="dashboard" k="title" def="Dashboard" as="span" />
+            </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Your study progress at a glance
+              <SuiText page="dashboard" k="subtitle" def="Your study progress at a glance" as="span" />
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -267,20 +270,20 @@ export default function DashboardPage() {
                 href="/admin"
                 className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-900/40 transition"
               >
-                Developer Mode
+                <SuiText page="dashboard" k="btn.dev" def="Developer Mode" as="span" />
               </Link>
             )}
             <Link
               href="/settings"
               className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-600"
             >
-              Settings
+              <SuiText page="dashboard" k="btn.settings" def="Settings" as="span" />
             </Link>
             <Link
               href="/study/session"
               className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium"
             >
-              New session
+              <SuiText page="dashboard" k="btn.newSession" def="New session" as="span" />
             </Link>
           </div>
         </div>
@@ -291,7 +294,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                  You have an unfinished session
+                  <SuiText page="dashboard" k="banner.unfinished" def="You have an unfinished session" as="span" />
                 </p>
                 <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
                   {stats.activeSession.goalType === "time"
@@ -309,7 +312,7 @@ export default function DashboardPage() {
                   href={`/study/session?resume=${stats.activeSession.id}`}
                   className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 transition"
                 >
-                  Resume
+                  <SuiText page="dashboard" k="banner.resume" def="Resume" as="span" />
                 </Link>
                 <button
                   onClick={() => abandonSession(stats.activeSession!.id)}
@@ -365,15 +368,21 @@ export default function DashboardPage() {
                     ? "text-amber-600 dark:text-amber-400"
                     : "text-green-600 dark:text-green-400"
                 }`}>
-                  {stats.todaySessions === 0
-                    ? "Streak at risk — study today to keep it!"
-                    : "Streak going strong — keep it up!"}
+                  {stats.todaySessions === 0 ? (
+                    <SuiText page="dashboard" k="streak.risk" def="Streak at risk — study today to keep it!" as="span" />
+                  ) : (
+                    <SuiText page="dashboard" k="streak.strong" def="Streak going strong — keep it up!" as="span" />
+                  )}
                 </p>
               </>
             ) : (
               <>
-                <p className="text-2xl font-bold leading-none text-gray-700 dark:text-gray-300">No streak yet</p>
-                <p className="text-sm mt-0.5 text-gray-500 dark:text-gray-400">Study today to start your streak!</p>
+                <p className="text-2xl font-bold leading-none text-gray-700 dark:text-gray-300">
+                  <SuiText page="dashboard" k="streak.noneTitle" def="No streak yet" as="span" />
+                </p>
+                <p className="text-sm mt-0.5 text-gray-500 dark:text-gray-400">
+                  <SuiText page="dashboard" k="streak.noneSub" def="Study today to start your streak!" as="span" />
+                </p>
               </>
             )}
           </div>
@@ -389,12 +398,14 @@ export default function DashboardPage() {
         {(stats.dailyMinutesGoal || stats.dailySessionsGoal) && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold">Today&apos;s Goals</h2>
+              <h2 className="text-sm font-semibold">
+                <SuiText page="dashboard" k="goals.title" def="Today's Goals" as="span" />
+              </h2>
               <Link
                 href="/settings"
                 className="text-xs text-gray-500 underline underline-offset-4 dark:text-gray-400"
               >
-                Edit
+                <SuiText page="dashboard" k="goals.edit" def="Edit" as="span" />
               </Link>
             </div>
             <div className="space-y-4">
@@ -420,7 +431,9 @@ export default function DashboardPage() {
 
         {/* Weekly chart */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="text-sm font-semibold mb-4">This Week</h2>
+          <h2 className="text-sm font-semibold mb-4">
+            <SuiText page="dashboard" k="week.title" def="This Week" as="span" />
+          </h2>
           <div className="flex items-end gap-2">
             {stats.weekDays.map((day) => {
               const barPx =

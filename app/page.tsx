@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 export default function HomePage() {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -44,7 +45,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
             <img src="/favicon.png" alt="" className="w-7 h-7 rounded-md" />
-            Bowl Beacon
+            <SuiText page="home" k="nav.brand" def="Bowl Beacon" as="span" />
           </Link>
           <nav className="flex items-center gap-3">
             {!isStandalone && (
@@ -53,20 +54,20 @@ export default function HomePage() {
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 flex items-center gap-1.5"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Download App
+                <SuiText page="home" k="nav.download" def="Download App" as="span" />
               </button>
             )}
             <Link
               href="/auth/signin"
               className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
             >
-              Sign in
+              <SuiText page="home" k="nav.signin" def="Sign in" as="span" />
             </Link>
             <Link
               href="/auth/signup"
               className="btn-primary rounded-lg px-4 py-1.5 text-sm font-medium"
             >
-              Get started
+              <SuiText page="home" k="nav.getstarted" def="Get started" as="span" />
             </Link>
           </nav>
         </div>
@@ -76,27 +77,30 @@ export default function HomePage() {
       <section className="mx-auto max-w-5xl px-6 py-20 md:py-28">
         <div className="max-w-2xl">
           <h1 className="text-4xl font-bold tracking-tight md:text-5xl">
-            Study smarter,
+            <SuiText page="home" k="hero.line1" def="Study smarter," as="span" />
             <br />
-            stay focused.
+            <SuiText page="home" k="hero.line2" def="stay focused." as="span" />
           </h1>
           <p className="mt-5 text-lg text-gray-600 leading-relaxed dark:text-gray-400">
-            Upload a PDF or pick a textbook, set your timer, and start reading.
-            Bowl Beacon keeps you on track with focus enforcement, AI-generated
-            notes, end-of-session quizzes, and personalized review material.
+            <SuiText
+              page="home"
+              k="hero.body"
+              def="Upload a PDF or pick a textbook, set your timer, and start reading. Bowl Beacon keeps you on track with focus enforcement, AI-generated notes, end-of-session quizzes, and personalized review material."
+              as="span"
+            />
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/auth/signup"
               className="btn-primary rounded-lg px-6 py-3 text-sm font-medium shadow-sm transition"
             >
-              Start studying free
+              <SuiText page="home" k="hero.cta1" def="Start studying free" as="span" />
             </Link>
             <Link
               href="/dashboard"
               className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium transition hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
             >
-              View dashboard
+              <SuiText page="home" k="hero.cta2" def="View dashboard" as="span" />
             </Link>
             {canInstall && (
               <button
@@ -104,7 +108,7 @@ export default function HomePage() {
                 className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium transition hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 flex items-center gap-2"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Download App
+                <SuiText page="home" k="hero.cta3" def="Download App" as="span" />
               </button>
             )}
           </div>
@@ -115,36 +119,48 @@ export default function HomePage() {
       <section className="border-t border-gray-200 bg-white py-16 dark:border-gray-800 dark:bg-gray-900">
         <div className="mx-auto max-w-5xl px-6">
           <h2 className="text-2xl font-bold mb-10 text-center">
-            Everything you need to study effectively
+            <SuiText page="home" k="features.title" def="Everything you need to study effectively" as="span" />
           </h2>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             <FeatureCard
               icon="📖"
+              titleKey="features.f1.title"
+              descKey="features.f1.desc"
               title="In-app reading"
               description="Upload PDFs or browse our textbook catalog. Read right inside the app with a page-by-page viewer."
             />
             <FeatureCard
               icon="🎯"
+              titleKey="features.f2.title"
+              descKey="features.f2.desc"
               title="Focus enforcement"
               description="Timer pauses when you leave the tab. Fullscreen mode for distraction-free studying."
             />
             <FeatureCard
               icon="🤖"
+              titleKey="features.f3.title"
+              descKey="features.f3.desc"
               title="AI-powered notes"
               description="Generate study notes from the pages you read. Key concepts highlighted and organized automatically."
             />
             <FeatureCard
               icon="📝"
+              titleKey="features.f4.title"
+              descKey="features.f4.desc"
               title="Quizzes"
               description="End every session with an auto-generated quiz to test your understanding of the material."
             />
             <FeatureCard
               icon="📊"
+              titleKey="features.f5.title"
+              descKey="features.f5.desc"
               title="Progress tracking"
               description="Track your study time, sessions, and streaks. See your weekly activity at a glance."
             />
             <FeatureCard
               icon="🎬"
+              titleKey="features.f6.title"
+              descKey="features.f6.desc"
               title="Review & videos"
               description="Get personalized review material and curated video suggestions to reinforce your learning."
             />
@@ -155,15 +171,22 @@ export default function HomePage() {
       {/* CTA */}
       <section className="py-16 px-6">
         <div className="mx-auto max-w-xl text-center">
-          <h2 className="text-2xl font-bold mb-4">Ready to study?</h2>
+          <h2 className="text-2xl font-bold mb-4">
+            <SuiText page="home" k="cta.title" def="Ready to study?" as="span" />
+          </h2>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Create a free account and start your first session in under a minute.
+            <SuiText
+              page="home"
+              k="cta.body"
+              def="Create a free account and start your first session in under a minute."
+              as="span"
+            />
           </p>
           <Link
             href="/auth/signup"
             className="btn-primary inline-block rounded-lg px-8 py-3 text-sm font-medium shadow-sm"
           >
-            Get started
+            <SuiText page="home" k="cta.button" def="Get started" as="span" />
           </Link>
         </div>
       </section>
@@ -172,7 +195,9 @@ export default function HomePage() {
       {showIosGuide && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowIosGuide(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-2xl mb-4 sm:mb-0" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold mb-3">Install Bowl Beacon</h3>
+            <h3 className="text-base font-semibold mb-3">
+              <SuiText page="home" k="install.title" def="Install Bowl Beacon" as="span" />
+            </h3>
             {isIos ? (
               <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
                 <p className="flex items-center gap-2">
@@ -206,7 +231,7 @@ export default function HomePage() {
               </div>
             )}
             <button onClick={() => setShowIosGuide(false)} className="mt-5 w-full btn-primary rounded-lg py-2.5 text-sm font-medium">
-              Got it
+              <SuiText page="home" k="install.gotit" def="Got it" as="span" />
             </button>
           </div>
         </div>
@@ -215,7 +240,9 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-gray-200 py-8 dark:border-gray-800">
         <div className="mx-auto max-w-5xl px-6 flex flex-wrap items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-          <p>Bowl Beacon</p>
+          <p>
+            <SuiText page="home" k="footer.brand" def="Bowl Beacon" as="span" />
+          </p>
           <div className="flex gap-4">
             <Link href="/dashboard" className="hover:underline">
               Dashboard
@@ -237,17 +264,23 @@ function FeatureCard({
   icon,
   title,
   description,
+  titleKey,
+  descKey,
 }: {
   icon: string;
   title: string;
   description: string;
+  titleKey: string;
+  descKey: string;
 }) {
   return (
     <div className="rounded-xl border border-gray-200 p-6 dark:border-gray-800">
       <span className="text-2xl">{icon}</span>
-      <h3 className="mt-3 text-sm font-semibold">{title}</h3>
+      <h3 className="mt-3 text-sm font-semibold">
+        <SuiText page="home" k={titleKey} def={title} as="span" />
+      </h3>
       <p className="mt-1.5 text-sm text-gray-600 leading-relaxed dark:text-gray-400">
-        {description}
+        <SuiText page="home" k={descKey} def={description} as="span" />
       </p>
     </div>
   );

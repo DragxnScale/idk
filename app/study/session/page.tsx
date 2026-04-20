@@ -14,6 +14,7 @@ import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOff
 import { PomodoroTimer } from "@/components/study/PomodoroTimer";
 import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
 import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -841,9 +842,16 @@ function StudySessionInner() {
       <main className="min-h-screen px-6 py-10 md:px-10 max-w-2xl mx-auto">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-8">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold mb-2">Start a study session</h1>
+            <h1 className="text-2xl font-bold mb-2">
+              <SuiText page="session" k="setup.title" def="Start a study session" as="span" />
+            </h1>
             <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
-              Pick your reading material, set a goal, and start studying.
+              <SuiText
+                page="session"
+                k="setup.subtitle"
+                def="Pick your reading material, set a goal, and start studying."
+                as="span"
+              />
             </p>
           </div>
           <div
@@ -851,24 +859,35 @@ function StudySessionInner() {
             title="PDFs stored in your browser offline cache (service worker). Turn on in Settings → Offline PDF cache."
           >
             {!pdfCacheOn ? (
-              <span className="text-gray-500 dark:text-gray-400">PDF caching off</span>
+              <span className="text-gray-500 dark:text-gray-400">
+                <SuiText page="session" k="pdf.off" def="PDF caching off" as="span" />
+              </span>
             ) : pdfCacheEntryCount !== null ? (
               <>
                 <span className="font-medium text-gray-700 dark:text-gray-300">
                   {pdfCacheEntryCount}
                 </span>
                 {" "}
-                cached PDF{pdfCacheEntryCount === 1 ? "" : "s"}
+                <SuiText
+                  page="session"
+                  k={pdfCacheEntryCount === 1 ? "pdf.cachedOne" : "pdf.cachedMany"}
+                  def={pdfCacheEntryCount === 1 ? "cached PDF" : "cached PDFs"}
+                  as="span"
+                />
               </>
             ) : (
-              <span className="opacity-70">Cached PDFs: …</span>
+              <span className="opacity-70">
+                <SuiText page="session" k="pdf.loading" def="Cached PDFs: …" as="span" />
+              </span>
             )}
           </div>
         </div>
 
         {/* Step 1: Document */}
         <section className="mb-8">
-          <h2 className="text-lg font-semibold mb-3">1. Reading material</h2>
+          <h2 className="text-lg font-semibold mb-3">
+            <SuiText page="session" k="step.material" def="1. Reading material" as="span" />
+          </h2>
           {selectedDoc ? (
             <div className="space-y-2">
               <div className="flex items-center gap-3 rounded-lg border border-green-300 bg-green-50 p-3 dark:border-green-700 dark:bg-green-900/20">
@@ -889,7 +908,7 @@ function StudySessionInner() {
               {importingDoc && (
                 <p className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 pl-1">
                   <span className="inline-block h-3 w-3 rounded-full border border-gray-400 border-t-transparent animate-spin" />
-                  Preparing your book for fast loading…
+                  <SuiText page="session" k="import.preparing" def="Preparing your book for fast loading…" as="span" />
                 </p>
               )}
               {importError && (
@@ -903,7 +922,9 @@ function StudySessionInner() {
 
         {/* Step 2: Goal */}
         <section className="mb-8">
-          <h2 className="text-lg font-semibold mb-3">2. Study goal</h2>
+          <h2 className="text-lg font-semibold mb-3">
+            <SuiText page="session" k="step.goal" def="2. Study goal" as="span" />
+          </h2>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -921,7 +942,9 @@ function StudySessionInner() {
             className="space-y-5"
           >
             <div>
-              <label className="block text-sm font-medium mb-1.5">Goal type</label>
+              <label className="block text-sm font-medium mb-1.5">
+                <SuiText page="session" k="label.goalType" def="Goal type" as="span" />
+              </label>
               <select
                 value={goalType}
                 onChange={(e) => {
@@ -938,7 +961,9 @@ function StudySessionInner() {
 
             {goalType === "time" ? (
               <div>
-                <label className="block text-sm font-medium mb-1.5">Minutes</label>
+                <label className="block text-sm font-medium mb-1.5">
+                  <SuiText page="session" k="label.minutes" def="Minutes" as="span" />
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -1027,17 +1052,17 @@ function StudySessionInner() {
               {starting ? (
                 <>
                   <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                  Starting…
+                  <SuiText page="session" k="btn.starting" def="Starting…" as="span" />
                 </>
               ) : (
-                "Start session"
+                <SuiText page="session" k="btn.start" def="Start session" as="span" />
               )}
             </button>
           </form>
         </section>
 
         <Link href="/" className="inline-block text-sm underline underline-offset-4">
-          Back to home
+          <SuiText page="session" k="link.home" def="Back to home" as="span" />
         </Link>
       </main>
     );

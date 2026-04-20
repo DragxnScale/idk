@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppChrome } from "@/components/AppChrome";
+import { UiCopyProvider } from "@/components/ui-copy/UiCopyProvider";
 
 export const metadata: Metadata = {
   title: "Bowl Beacon",
@@ -47,8 +48,10 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen">
-        <AppChrome />
-        {children}
+        <UiCopyProvider>
+          <AppChrome />
+          {children}
+        </UiCopyProvider>
       </body>
     </html>
   );

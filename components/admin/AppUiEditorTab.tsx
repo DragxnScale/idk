@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
-import type { SettingsUiElement } from "@/lib/settings-ui";
+import {
+  compoundKey,
+  ensureAllPages,
+  parseCompoundKey,
+  type UiCopyElement,
+  type UiCopyPayload,
+  type UiPageId,
+  UI_PAGE_IDS,
+} from "@/lib/ui-copy-shared";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -12,7 +20,7 @@ const ZOOM_PRESETS = [
 
 const ZOOM_KEYS = ["textbook-zoom-small", "textbook-zoom-normal", "textbook-zoom-large", "textbook-zoom-xl"] as const;
 
-function styleFromEl(el: SettingsUiElement | undefined): React.CSSProperties {
+function styleFromEl(el: UiCopyElement | undefined): React.CSSProperties {
   if (!el) return {};
   const s: React.CSSProperties = {};
   if (el.fontFamily) s.fontFamily = el.fontFamily;
@@ -23,22 +31,35 @@ function styleFromEl(el: SettingsUiElement | undefined): React.CSSProperties {
   return s;
 }
 
-export function SettingsUiEditorTab() {
-  const [draft, setDraft] = useState<Record<string, SettingsUiElement>>({});
+const PAGE_TAB_LABEL: Record<UiPageId, string> = {
+  home: "Home",
+  dashboard: "Dashboard",
+  session: "Session start",
+  settings: "Settings",
+};
+
+export function AppUiEditorTab() {
+  const [draft, setDraft] = useState<Record<UiPageId, Record<string, UiCopyElement>>>(() =>
+    ensureAllPages({})
+  );
+  const [pageTab, setPageTab] = useState<UiPageId>("home");
   const [loading, setLoading] = useState(true);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [undoStack, setUndoStack] = useState<{ key: string; prev: SettingsUiElement | undefined }[]>([]);
+  const [activeCompound, setActiveCompound] = useState<string | null>(null);
+  const [undoStack, setUndoStack] = useState<{ compound: string; prev: UiCopyElement | undefined }[]>([]);
   const [applyStatus, setApplyStatus] = useState<"idle" | "saving" | "ok" | "err">("idle");
 
   useEffect(() => {
-    fetch("/api/admin/settings-ui")
-      .then((r) => (r.ok ? r.json() : { elements: {} }))
-      .then((d: { elements?: Record<string, SettingsUiElement> }) => setDraft(d.elements ?? {}))
-      .catch(() => setDraft({}))
+    fetch("/api/admin/ui-copy")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: UiCopyPayload | null) => {
+        if (d?.pages) setDraft(ensureAllPages(d.pages));
+      })
+      .catch(() => setDraft(ensureAllPages({})))
       .finally(() => setLoading(false));
   }, []);
 
-  const el = activeKey ? draft[activeKey] : undefined;
+  const activeParsed = activeCompound ? parseCompoundKey(activeCompound) : null;
+  const el = activeParsed ? draft[activeParsed.page]?.[activeParsed.k] : undefined;
 
   const formText = el?.text ?? "";
   const formFont = el?.fontFamily ?? "";
@@ -50,40 +71,57 @@ export function SettingsUiEditorTab() {
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  const openEditor = useCallback((suiKey: string) => {
-    setUndoStack((prev) => [...prev, { key: suiKey, prev: draftRef.current[suiKey] }]);
-    setActiveKey(suiKey);
+  const openEditor = useCallback((compound: string) => {
+    const parsed = parseCompoundKey(compound);
+    if (!parsed) return;
+    setUndoStack((prev) => [
+      ...prev,
+      { compound, prev: draftRef.current[parsed.page]?.[parsed.k] },
+    ]);
+    setActiveCompound(compound);
   }, []);
 
   const undoOne = useCallback(() => {
     setUndoStack((prev) => {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
+      const parsed = parseCompoundKey(last.compound);
+      if (!parsed) return prev.slice(0, -1);
       setDraft((d) => {
         const next = { ...d };
-        if (last.prev === undefined) delete next[last.key];
-        else next[last.key] = last.prev;
+        const pg = { ...(next[parsed.page] ?? {}) };
+        if (last.prev === undefined) delete pg[parsed.k];
+        else pg[parsed.k] = last.prev;
+        next[parsed.page] = pg;
         return next;
       });
       return prev.slice(0, -1);
     });
   }, []);
 
-  const updateActive = useCallback((patch: Partial<SettingsUiElement>) => {
-    if (!activeKey) return;
-    setDraft((d) => ({
-      ...d,
-      [activeKey]: { ...d[activeKey], ...patch },
-    }));
-  }, [activeKey]);
+  const updateActive = useCallback(
+    (patch: Partial<UiCopyElement>) => {
+      if (!activeCompound) return;
+      const parsed = parseCompoundKey(activeCompound);
+      if (!parsed) return;
+      setDraft((d) => ({
+        ...d,
+        [parsed.page]: {
+          ...d[parsed.page],
+          [parsed.k]: { ...d[parsed.page]?.[parsed.k], ...patch },
+        },
+      }));
+    },
+    [activeCompound]
+  );
 
   const applyGlobal = useCallback(async () => {
     setApplyStatus("saving");
     try {
-      const res = await fetch("/api/admin/settings-ui", {
+      const res = await fetch("/api/admin/ui-copy", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: 1, elements: draft }),
+        body: JSON.stringify({ version: 2, pages: ensureAllPages(draft) }),
       });
       if (!res.ok) throw new Error("save failed");
       setApplyStatus("ok");
@@ -105,16 +143,17 @@ export function SettingsUiEditorTab() {
       className?: string;
       as?: keyof JSX.IntrinsicElements;
     }) {
-      const row = draft[suiKey];
+      const row = draft[pageTab]?.[suiKey];
       const style = styleFromEl(row);
       const text = row?.text ?? def;
+      const compound = compoundKey(pageTab, suiKey);
       return (
         <Tag
           className={`${className ?? ""} cursor-context-menu rounded px-0.5 decoration-inherit hover:ring-1 hover:ring-slate-500/40`}
           style={style}
           onContextMenu={(e) => {
             e.preventDefault();
-            openEditor(suiKey);
+            openEditor(compound);
           }}
         >
           {text}
@@ -122,7 +161,7 @@ export function SettingsUiEditorTab() {
       );
     }
     return Inner;
-  }, [draft, openEditor]);
+  }, [draft, openEditor, pageTab]);
 
   if (loading) {
     return <p className="text-gray-400 animate-pulse">Loading editor…</p>;
@@ -131,9 +170,9 @@ export function SettingsUiEditorTab() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-gray-400 max-w-2xl">
-        Full-page preview of Settings: scroll for session defaults, study breaks, PDF cache, exit password, upload storage, focus music, theme, and shortcuts.{" "}
-        <strong className="text-gray-200">Right-click</strong> any text to edit.{" "}
-        <strong className="text-gray-200">Undo</strong> then <strong className="text-gray-200">Apply globally</strong> saves to the live Settings page.
+        Choose a screen (Home, Dashboard, Session start, or Settings).{" "}
+        <strong className="text-gray-200">Right-click</strong> any text to edit typography.{" "}
+        <strong className="text-gray-200">Undo</strong> then <strong className="text-gray-200">Apply globally</strong> saves all pages to the live app.
       </p>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -157,7 +196,205 @@ export function SettingsUiEditorTab() {
         {applyStatus === "err" && <span className="text-sm text-red-400">Could not save.</span>}
       </div>
 
+      <div className="flex flex-wrap gap-2 mb-4">
+        {UI_PAGE_IDS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setPageTab(id)}
+            className={`rounded-lg border px-4 py-2 text-sm transition ${
+              pageTab === id
+                ? "border-white bg-slate-800 text-white"
+                : "border-gray-600 text-gray-400 hover:border-gray-400"
+            }`}
+          >
+            {PAGE_TAB_LABEL[id]}
+          </button>
+        ))}
+      </div>
+
       <div className="max-h-[min(78vh,960px)] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-6 md:p-8 text-slate-100">
+        {pageTab === "home" && (
+          <div className="space-y-8">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-4">
+              <span className="text-lg font-bold">
+                <Editable suiKey="nav.brand" def="Bowl Beacon" />
+              </span>
+              <div className="flex gap-2 text-sm">
+                <span className="text-slate-400">
+                  <Editable suiKey="nav.download" def="Download App" />
+                </span>
+                <span className="text-slate-400">
+                  <Editable suiKey="nav.signin" def="Sign in" />
+                </span>
+                <span className="rounded bg-blue-600 px-2 py-1 text-xs text-white">
+                  <Editable suiKey="nav.getstarted" def="Get started" />
+                </span>
+              </div>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-white">
+                <Editable suiKey="hero.line1" def="Study smarter," as="span" />
+                <br />
+                <Editable suiKey="hero.line2" def="stay focused." as="span" />
+              </h1>
+              <p className="mt-4 text-sm text-slate-400 leading-relaxed max-w-xl">
+                <Editable
+                  suiKey="hero.body"
+                  def="Upload a PDF or pick a textbook, set your timer, and start reading. Bowl Beacon keeps you on track with focus enforcement, AI-generated notes, end-of-session quizzes, and personalized review material."
+                  as="span"
+                />
+              </p>
+              <div className="mt-6 flex flex-wrap gap-2">
+                <span className="rounded bg-blue-600 px-3 py-2 text-xs">
+                  <Editable suiKey="hero.cta1" def="Start studying free" />
+                </span>
+                <span className="rounded border border-slate-600 px-3 py-2 text-xs">
+                  <Editable suiKey="hero.cta2" def="View dashboard" />
+                </span>
+                <span className="rounded border border-slate-600 px-3 py-2 text-xs">
+                  <Editable suiKey="hero.cta3" def="Download App" />
+                </span>
+              </div>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-center mb-4">
+                <Editable suiKey="features.title" def="Everything you need to study effectively" />
+              </h2>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {(
+                  [
+                    ["f1", "In-app reading", "Upload PDFs or browse our textbook catalog."],
+                    ["f2", "Focus enforcement", "Timer pauses when you leave the tab."],
+                    ["f3", "AI-powered notes", "Generate study notes from the pages you read."],
+                    ["f4", "Quizzes", "End every session with an auto-generated quiz."],
+                    ["f5", "Progress tracking", "Track your study time, sessions, and streaks."],
+                    ["f6", "Review & videos", "Get personalized review material and curated videos."],
+                  ] as const
+                ).map(([k, t, d]) => (
+                  <div key={k} className="rounded-lg border border-slate-700 p-3">
+                    <Editable suiKey={`features.${k}.title`} def={t} />
+                    <p className="mt-1 text-xs text-slate-500">
+                      <Editable suiKey={`features.${k}.desc`} def={d} as="span" />
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="text-center border-t border-slate-700 pt-6">
+              <span className="text-lg font-bold text-white block mb-2">
+                <Editable suiKey="cta.title" def="Ready to study?" />
+              </span>
+              <p className="text-sm text-slate-400 mb-3">
+                <Editable
+                  suiKey="cta.body"
+                  def="Create a free account and start your first session in under a minute."
+                  as="span"
+                />
+              </p>
+              <span className="inline-block rounded bg-blue-600 px-4 py-2 text-xs">
+                <Editable suiKey="cta.button" def="Get started" />
+              </span>
+            </div>
+          </div>
+        )}
+
+        {pageTab === "dashboard" && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-white">
+                  <Editable suiKey="title" def="Dashboard" />
+                </h1>
+                <p className="text-sm text-slate-500 mt-1">
+                  <Editable suiKey="subtitle" def="Your study progress at a glance" as="span" />
+                </p>
+              </div>
+              <div className="flex gap-2 text-sm">
+                <span className="rounded border border-red-800 px-2 py-1 text-red-400">
+                  <Editable suiKey="btn.dev" def="Developer Mode" />
+                </span>
+                <span className="rounded border border-slate-600 px-2 py-1">
+                  <Editable suiKey="btn.settings" def="Settings" />
+                </span>
+                <span className="rounded bg-blue-600 px-2 py-1 text-white">
+                  <Editable suiKey="btn.newSession" def="New session" />
+                </span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-700 bg-amber-900/20 p-4">
+              <p className="text-sm font-semibold text-amber-300">
+                <Editable suiKey="banner.unfinished" def="You have an unfinished session" />
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-700 p-4">
+              <p className="text-2xl font-bold text-green-300">3 days</p>
+              <p className="text-sm text-green-400">
+                <Editable suiKey="streak.strong" def="Streak going strong — keep it up!" as="span" />
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <section className="rounded-xl border border-slate-700 p-4">
+                <h2 className="text-sm font-semibold">
+                  <Editable suiKey="goals.title" def="Today's Goals" />
+                </h2>
+              </section>
+              <section className="rounded-xl border border-slate-700 p-4">
+                <h2 className="text-sm font-semibold">
+                  <Editable suiKey="week.title" def="This Week" />
+                </h2>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {pageTab === "session" && (
+          <div className="space-y-6">
+            <div className="flex justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-white mb-2">
+                  <Editable suiKey="setup.title" def="Start a study session" />
+                </h1>
+                <p className="text-sm text-slate-400">
+                  <Editable
+                    suiKey="setup.subtitle"
+                    def="Pick your reading material, set a goal, and start studying."
+                    as="span"
+                  />
+                </p>
+              </div>
+              <div className="text-xs text-slate-500 text-right max-w-[10rem]">
+                <Editable suiKey="pdf.off" def="PDF caching off" as="span" />
+              </div>
+            </div>
+            <section>
+              <h2 className="text-lg font-semibold mb-2">
+                <Editable suiKey="step.material" def="1. Reading material" />
+              </h2>
+              <p className="text-xs text-slate-500">…</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-semibold mb-2">
+                <Editable suiKey="step.goal" def="2. Study goal" />
+              </h2>
+              <label className="text-sm text-slate-400 block">
+                <Editable suiKey="label.goalType" def="Goal type" />
+              </label>
+              <label className="text-sm text-slate-400 block mt-2">
+                <Editable suiKey="label.minutes" def="Minutes" />
+              </label>
+            </section>
+            <div className="rounded-lg bg-blue-600 py-2.5 text-center text-sm font-medium text-white">
+              <Editable suiKey="btn.start" def="Start session" />
+            </div>
+            <p className="text-sm text-slate-500">
+              <Editable suiKey="link.home" def="Back to home" as="span" />
+            </p>
+          </div>
+        )}
+
+        {pageTab === "settings" && (
+        <>
         <div className="flex items-center gap-4 mb-6">
           <span className="text-sm text-slate-500 underline underline-offset-4">← Dashboard</span>
           <h2 className="text-2xl font-bold text-white">
@@ -435,14 +672,30 @@ export function SettingsUiEditorTab() {
               </li>
             </ul>
           </section>
+
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+            <h3 className="text-base font-semibold mb-1">Credits &amp; easter egg</h3>
+            <p className="text-sm text-slate-400 mb-2 leading-relaxed">
+              <Editable
+                suiKey="credits"
+                def="Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!"
+                as="span"
+              />
+            </p>
+            <p className="text-xs text-slate-500">
+              Dog photo alt text: <Editable suiKey="dog-photo.alt" def="A very good boy" />
+            </p>
+          </section>
         </div>
+        </>
+        )}
       </div>
 
-      {activeKey && (
+      {activeCompound && (
         <div className="fixed bottom-6 right-6 z-50 w-full max-w-md rounded-2xl border border-slate-600 bg-slate-900 p-5 shadow-2xl">
           <div className="flex justify-between items-start mb-3">
-            <h4 className="text-sm font-semibold text-white">Edit: {activeKey}</h4>
-            <button type="button" className="text-slate-400 hover:text-white text-lg leading-none" onClick={() => setActiveKey(null)} aria-label="Close">
+            <h4 className="text-sm font-semibold text-white">Edit: {activeCompound}</h4>
+            <button type="button" className="text-slate-400 hover:text-white text-lg leading-none" onClick={() => setActiveCompound(null)} aria-label="Close">
               ×
             </button>
           </div>
