@@ -37,26 +37,21 @@ async function logServerFailure(userId: string | null, email: string | null, err
 const MAX_QUESTIONS = 15;
 const DEFAULT_Q = 10;
 
-const questionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("mc"),
-    question: z.string(),
-    options: z.array(z.string()).length(4),
-    correctIndex: z.number().int().min(0).max(3),
-    topic: z.string(),
-    explanation: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("sa"),
-    question: z.string(),
-    answer: z.string(),
-    topic: z.string(),
-    explanation: z.string().optional(),
-  }),
-]);
+// OpenAI structured outputs reject `oneOf` / discriminated unions, so we use a
+// single flat schema where every field is always present and normalise
+// per-type in TypeScript after the call.
+const flatQuestionSchema = z.object({
+  type: z.enum(["mc", "sa"]),
+  question: z.string(),
+  options: z.array(z.string()).length(4),
+  correctIndex: z.number().int().min(0).max(3),
+  answer: z.string(),
+  topic: z.string(),
+  explanation: z.string(),
+});
 
 const payloadSchema = z.object({
-  questions: z.array(questionSchema).min(1).max(MAX_QUESTIONS),
+  questions: z.array(flatQuestionSchema).min(1).max(MAX_QUESTIONS),
 });
 
 function shuffleMc(q: VelocityQuestion): VelocityQuestion {
@@ -129,14 +124,20 @@ export async function POST(request: Request) {
 
 Generate exactly ${DEFAULT_Q} punchy questions that test the most essential concepts from the reading.
 
-Rules:
-- Mix question types: roughly 60% "mc" (multiple choice) and 40% "sa" (short answer).
-- Questions must be SHORT — one sentence, ideally under 120 characters — so they read quickly in a typewriter.
-- For "mc" questions provide exactly 4 concise options and a 0-based correctIndex.
-- For "sa" questions provide a single canonical "answer" — a short noun phrase (1-4 words) that a student would type. Avoid multi-clause answers.
-- Every question has a short "topic" label (2-5 words) naming the concept being tested — used to identify growth areas.
-- Prioritise foundational ideas over trivia. Vary the correct MC answer position.
-- Optionally include a one-sentence "explanation" for each question.`;
+SCHEMA (EVERY FIELD MUST BE PRESENT ON EVERY QUESTION — no exceptions):
+- type: "mc" or "sa"
+- question: one short sentence, ideally under 120 characters
+- options: ALWAYS an array of exactly 4 strings
+- correctIndex: integer 0–3
+- answer: a short canonical answer string (1–4 words)
+- topic: short topic label (2–5 words) naming the concept
+- explanation: one short sentence explaining why the answer is correct
+
+Per-type rules:
+- "mc" (multiple choice, ~60% of questions): "options" holds 4 plausible options, "correctIndex" points at the correct one, and "answer" MUST equal options[correctIndex] verbatim. Vary the correct position across questions — don't always put it at index 0.
+- "sa" (short answer, ~40% of questions): "answer" is the canonical short noun phrase the student should type. Because the schema still requires 4 options, set "options" to four plausible-but-incorrect distractor phrases (used only as extra hints) and "correctIndex" to 0. The student will type free text — the distractors are not shown.
+
+Prioritise foundational ideas over trivia. Keep explanations short and concrete.`;
 
     const { object } = await generateObject({
       model: openai(MODEL),
@@ -149,11 +150,12 @@ Rules:
 
     const questions: VelocityQuestion[] = object.questions.map((q) => {
       if (q.type === "mc") {
+        const correctIdx = Math.min(3, Math.max(0, q.correctIndex)) as 0 | 1 | 2 | 3;
         return shuffleMc({
           type: "mc",
           question: q.question,
           options: q.options as [string, string, string, string],
-          correctIndex: q.correctIndex as 0 | 1 | 2 | 3,
+          correctIndex: correctIdx,
           topic: q.topic,
           explanation: q.explanation,
         });

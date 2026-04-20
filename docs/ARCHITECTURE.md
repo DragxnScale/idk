@@ -351,7 +351,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | `/api/ai/quiz/review` | POST | `generateObject` | updates `quizzes.review_json` + `score` |
 | `/api/ai/videos` | GET, POST | `generateObject` + Zod `videoSchema` | `study_sessions.videos_json` |
 | `/api/ai/flashcards` | POST, GET | `generateObject` + Zod `flashcardSchema` | `flashcards` table |
-| `/api/ai/velocity` | POST, GET | `generateObject` + discriminated-union Zod (`mc` / `sa`) | `velocity_games.questions_json` |
+| `/api/ai/velocity` | POST, GET | `generateObject` + **flat** Zod schema (OpenAI structured outputs reject `oneOf`, so both MC and SA share one object shape — per-type normalisation happens in TS) | `velocity_games.questions_json` |
 | `/api/ai/velocity/complete` | POST | `generateObject` for growth-areas review | `velocity_games.results_json` / `review_json` / `accuracy` / `avg_reaction_ms` |
 
 **Notes (POST)**  
