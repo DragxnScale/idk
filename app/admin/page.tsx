@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { createMultipartUploader } from "@vercel/blob/client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
+import { SettingsUiEditorTab } from "@/components/admin/SettingsUiEditorTab";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
+type Tab = "users" | "settingsUi" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -162,6 +163,7 @@ export default function AdminPage() {
             {(
               [
                 "users",
+                "settingsUi",
                 "upload",
                 "catalog",
                 "messages",
@@ -178,7 +180,9 @@ export default function AdminPage() {
                     : "border-transparent text-gray-500 hover:text-gray-300"
                 }`}
               >
-                {t === "upload"
+                {t === "settingsUi"
+                  ? "Settings UI"
+                  : t === "upload"
                   ? "Upload to Archive"
                   : t === "catalog"
                     ? "Textbook Catalog"
@@ -197,6 +201,7 @@ export default function AdminPage() {
         </div>
 
         {tab === "users" && <UsersTab />}
+        {tab === "settingsUi" && <SettingsUiEditorTab />}
         {tab === "upload" && <UploadTab />}
         {tab === "catalog" && <CatalogTab />}
         {tab === "messages" && <MessagesTab />}

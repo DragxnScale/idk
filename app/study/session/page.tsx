@@ -14,7 +14,6 @@ import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOff
 import { PomodoroTimer } from "@/components/study/PomodoroTimer";
 import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
 import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
-import { reportPdfCacheSnapshot } from "@/lib/client/pdf-cache-diagnostics";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -97,14 +96,6 @@ function StudySessionInner() {
   const [pdfCacheOn, setPdfCacheOn] = useState(() =>
     typeof window !== "undefined" ? readPdfCacheEnabled() : true
   );
-
-  // Owner-only: one snapshot to Debug log (super-owner) for SW + prefs context.
-  useEffect(() => {
-    void reportPdfCacheSnapshot("study-session-setup-mounted", {
-      resumeId: resumeId ?? null,
-      pdfCachePref: readPdfCacheEnabled(),
-    });
-  }, [resumeId]);
 
   // Offline PDF cache: distinct PDF count from SW (setup screen). When caching is off, count stays 0.
   useEffect(() => {
@@ -1159,6 +1150,7 @@ function StudySessionInner() {
               onConfirmEnd={handleEnd}
               locked
               sessionEndingRef={sessionEndingRef}
+              requireExitPassword={!isOfflineId(sessionId ?? "")}
             />
           </div>
         </header>

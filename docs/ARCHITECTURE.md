@@ -189,10 +189,13 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/api/debug/client-error` | Stores `kind: user` (optional session; anonymous allowed). |
-| POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). The study app also batches PDF-cache telemetry here via `lib/client/pdf-cache-diagnostics.ts` (`[pdf-cache] batch (N events)`). |
+| POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). |
 | GET | `/api/admin/debug-logs` | **Super-owner only:** `{ userLogs, devLogs }` from `client_error_logs` (joined names). |
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
 | GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, and **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as. |
+| GET | `/api/app/settings-ui` | Public JSON: `{ version, elements }` — global Settings page copy/typography overrides stored in `app_settings` (`settings_ui_json`). |
+| GET | `/api/admin/settings-ui` | **Admin:** same payload as `/api/app/settings-ui`. |
+| PUT | `/api/admin/settings-ui` | **Admin:** replace `{ version, elements }` for app-wide Settings UI strings/styles. |
 
 ### 5.2 Study sessions and progress
 
@@ -401,7 +404,7 @@ Query: `sessionId`. Returns existing cards sorted by page number.
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
-| `/admin` | Admin dashboard (guarded; **Debug log** tab is super-owner only, next to Owner AI). |
+| `/admin` | Admin dashboard (guarded; **Settings UI** tab for global copy/typography; **Debug log** / **Owner AI** super-owner only). |
 
 Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error` (`kind: user`); **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`). Owner feature notes use **`reportDevDebug`** from `lib/dev-debug.ts` → `/api/debug/dev-log`.
 
@@ -443,7 +446,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 ### 7.6 PWA / Offline mode
 
-- **`lib/client/pdf-cache-diagnostics.ts`** — For the super-owner only, batches events (e.g. from `fetchPdfCacheEntryCount`, study session setup mount, Settings PDF-cache toggle) and POSTs once to `/api/debug/dev-log` with SW registration snapshot and `bowlbeacon*` cache names.
+- **`components/settings/SettingsUiProvider.tsx`** — Fetches `GET /api/app/settings-ui` and applies per-key text + inline styles on the Settings page via **`SuiText`**. Admins edit the same keys in **Developer Panel → Settings UI** (right-click preview, **Apply globally** → `PUT /api/admin/settings-ui`).
 - **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
   - **Cache-first**: `/api/proxy/pdf`, **`/api/blob/serve`** (private blob streams from `lib/client` URLs), and direct Vercel Blob PDF URLs — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the “cached PDFs” counter use **distinct URLs** (one logical book), not raw Cache API entry counts. User uploads that load via **`GET /api/documents/[id]/file`** redirect to the stored blob URL; that follow-up request is cached under the blob-host rule when the file is served from a public `*.blob.vercel-storage.com` URL.
   - Turning **off** offline PDF cache in Settings runs `setPdfCacheEnabled: false` in the SW (which **`waitUntil`** deletes the PDF bucket) **and** `clearAllPdfCachesClient()` from the page so all `bowlbeacon-pdf-*` caches are removed on that device.
@@ -464,7 +467,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 - **Debug logs**: `GET /api/admin/debug-logs`, `POST /api/debug/dev-log` — **super-owner only** (`requireSuperOwner`). User browser errors still post anonymously or signed-in to `POST /api/debug/client-error` without admin access to read.
 - **Admin**: `requireAdmin` checks `users.isAdmin`; `requireSuperOwner` checks hardcoded super-admin email.
 - **PDF proxy**: host allowlist only — arbitrary URLs cannot be fetched.
-- **Exit flow**: stopping a locked session requires `/api/auth/verify-exit`.
+- **Exit flow**: stopping a locked session normally requires `/api/auth/verify-exit`. **Offline-queued** sessions (`offline-*` id from `lib/offline-session.ts`) set `requireExitPassword={false}` on **`OverrideFlow`** so exit does not call the API when the network is unavailable.
 - **Blob**: `/api/blob/health` and `/api/admin/blob-token` are admin-only; `/api/admin/archive-token` returns only `{ ok, configured }` — never raw keys.
 - **Secrets**: never commit `.env.local`; `.env.production` and `*credentials*.json` are in `.gitignore`.
 

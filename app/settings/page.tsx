@@ -6,7 +6,7 @@ import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 import { LAYOUTS, resolveLayoutStateKey } from "@/lib/types/settings-layout";
-import { reportPdfCacheTelemetry } from "@/lib/client/pdf-cache-diagnostics";
+import { SettingsUiProvider, SuiText } from "@/components/settings/SettingsUiProvider";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -155,7 +155,6 @@ export default function SettingsPage() {
   function handlePdfCacheEnabled(enabled: boolean) {
     setPdfCacheEnabledState(enabled);
     localStorage.setItem("bowlbeacon-pdf-cache-enabled", String(enabled));
-    reportPdfCacheTelemetry({ step: "settings-pdf-cache-toggle", enabled });
     void navigator.serviceWorker?.ready.then(async (reg) => {
       reg.active?.postMessage({ type: "setPdfCacheEnabled", enabled });
       if (!enabled) {
@@ -411,6 +410,7 @@ export default function SettingsPage() {
   function cardGridCol(_id: string): React.CSSProperties { return {}; }
 
   return (
+    <SettingsUiProvider>
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-5xl px-6 py-10">
         {/* Header */}
@@ -421,7 +421,9 @@ export default function SettingsPage() {
           >
             ← Dashboard
           </Link>
-          <h1 className="text-2xl font-bold">Settings</h1>
+          <h1 className="text-2xl font-bold">
+            <SuiText k="settings.page-title" def="Settings" as="span" />
+          </h1>
         </div>
 
         {/* Hardcoded per-state layout: TOP full-width → 2-col LEFT+RIGHT → BOTTOM full-width */}
@@ -431,21 +433,31 @@ export default function SettingsPage() {
           const cardSectionMap: Record<string, React.ReactNode> = {
             "daily-goals": (
               <section key="daily-goals" style={{ ...cardGridCol("daily-goals"), ...cardStyle("daily-goals") }} className={CS}>
-                <h2 className={titleClass("daily-goals", "mb-1")}>{ctitle("daily-goals", "Daily goals")}</h2>
+                <h2 className={titleClass("daily-goals", "mb-1")}>
+                  <SuiText k="daily-goals.title" def="Daily goals" as="span" />
+                </h2>
                 <p className={descClass("daily-goals", "mb-5")}>
-                  {cdesc("daily-goals", "Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal.")}
+                  <SuiText
+                    k="daily-goals.desc"
+                    def="Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal."
+                    as="span"
+                  />
                 </p>
                 <form onSubmit={handleGoalsSave} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Minutes per day</label>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        <SuiText k="daily-goals.label.minutes" def="Minutes per day" as="span" />
+                      </label>
                       <div className="relative">
                         <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Sessions per day</label>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        <SuiText k="daily-goals.label.sessions" def="Sessions per day" as="span" />
+                      </label>
                       <div className="relative">
                         <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">sessions</span>
@@ -453,16 +465,32 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Inactivity timeout</label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Pause timer &amp; ask if you&apos;re still reading after this many minutes of no interaction. Leave blank for default (3 min).</p>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      <SuiText k="daily-goals.label.inactivity" def="Inactivity timeout" as="span" />
+                    </label>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                      <SuiText
+                        k="daily-goals.hint.inactivity"
+                        def="Pause timer & ask if you're still reading after this many minutes of no interaction. Leave blank for default (3 min)."
+                        as="span"
+                      />
+                    </p>
                     <div className="relative w-40">
                       <input type="number" min={1} max={30} value={inactivityMin} onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quiz question count</label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min&nbsp;3, max&nbsp;10). Max allowed:&nbsp;25.</p>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      <SuiText k="daily-goals.label.quiz" def="Quiz question count" as="span" />
+                    </label>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                      <SuiText
+                        k="daily-goals.hint.quiz"
+                        def="After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min 3, max 10). Max allowed: 25."
+                        as="span"
+                      />
+                    </p>
                     <div className="flex items-center gap-3">
                       <div className="relative w-28">
                         <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
@@ -479,7 +507,11 @@ export default function SettingsPage() {
                     <p className={`text-sm ${goalsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{goalsMessage}</p>
                   )}
                   <button type="submit" disabled={goalsStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
-                    {goalsStatus === "loading" ? "Saving…" : "Save goals"}
+                    {goalsStatus === "loading" ? (
+                      "Saving…"
+                    ) : (
+                      <SuiText k="daily-goals.save" def="Save goals" as="span" />
+                    )}
                   </button>
                 </form>
               </section>
@@ -487,22 +519,31 @@ export default function SettingsPage() {
 
             "account": (
               <section key="account" style={{ ...cardGridCol("account"), ...cardStyle("account") }} className={CS}>
-                <h2 className={titleClass("account", "mb-1")}>{ctitle("account", "Account")}</h2>
+                <h2 className={titleClass("account", "mb-1")}>
+                  <SuiText k="account.title" def="Account" as="span" />
+                </h2>
                 {displayName && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    Signed in as <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
+                    <SuiText k="account.signed-prefix" def="Signed in as" as="span" />{" "}
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">{displayName}</span>
                   </p>
                 )}
                 <form onSubmit={handleAccountSave} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Display name</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      <SuiText k="account.label.display-name" def="Display name" as="span" />
+                    </label>
                     <input type="text" value={displayName} onChange={(e) => { setDisplayName(e.target.value); setAccountStatus("idle"); }} maxLength={64} placeholder="Your name" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                   </div>
                   {accountMessage && (
                     <p className={`text-sm ${accountStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{accountMessage}</p>
                   )}
                   <button type="submit" disabled={accountStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                    {accountStatus === "loading" ? "Saving…" : "Save name"}
+                    {accountStatus === "loading" ? (
+                      "Saving…"
+                    ) : (
+                      <SuiText k="account.save" def="Save name" as="span" />
+                    )}
                   </button>
                 </form>
               </section>
@@ -585,17 +626,33 @@ export default function SettingsPage() {
 
             "textbook-size": (
               <section key="textbook-size" style={{ ...cardGridCol("textbook-size"), ...cardStyle("textbook-size") }} className={CS}>
-                <h2 className={titleClass("textbook-size", "mb-1")}>{ctitle("textbook-size", "Textbook display size")}</h2>
+                <h2 className={titleClass("textbook-size", "mb-1")}>
+                  <SuiText k="textbook-size.title" def="Textbook display size" as="span" />
+                </h2>
                 <p className={descClass("textbook-size", "mb-5")}>
-                  {cdesc("textbook-size", "Controls how large the PDF pages appear while reading. Saved on this device.")}
+                  <SuiText
+                    k="textbook-size.desc"
+                    def="Controls how large the PDF pages appear while reading. Saved on this device."
+                    as="span"
+                  />
                 </p>
                 <div className="grid grid-cols-4 gap-2">
-                  {ZOOM_PRESETS.map((preset) => (
-                    <button key={preset.value} type="button" onClick={() => handleZoomChange(preset.value)} className={`rounded-lg border py-3 text-sm font-medium transition ${zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}>
-                      {preset.label}
-                      <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
-                    </button>
-                  ))}
+                  {ZOOM_PRESETS.map((preset) => {
+                    const zoomKeys = ["textbook-zoom-small", "textbook-zoom-normal", "textbook-zoom-large", "textbook-zoom-xl"] as const;
+                    const idx = ZOOM_PRESETS.findIndex((p) => p.value === preset.value);
+                    const zk = zoomKeys[idx] ?? "textbook-zoom-normal";
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => handleZoomChange(preset.value)}
+                        className={`rounded-lg border py-3 text-sm font-medium transition ${zoom === preset.value ? "btn-primary border-accent" : "border-gray-300 hover:border-gray-400 dark:border-gray-600"}`}
+                      >
+                        <SuiText k={zk} def={preset.label} as="span" />
+                        <span className="block text-xs opacity-60 mt-0.5">{Math.round(preset.value * 100)}%</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             ),
@@ -911,5 +968,6 @@ export default function SettingsPage() {
       </div>
         </div>{/* end outer container */}
     </main>
+    </SettingsUiProvider>
   );
 }

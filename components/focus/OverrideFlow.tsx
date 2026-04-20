@@ -5,6 +5,10 @@ import { useRef, useState, useEffect, useCallback } from "react";
 interface OverrideFlowProps {
   onConfirmEnd: () => void;
   /**
+   * When false, ending the session never calls verify-exit (e.g. offline-queued sessions).
+   */
+  requireExitPassword?: boolean;
+  /**
    * When true, intercept fullscreenchange events and require the exit password
    * to leave fullscreen. On cancel, fullscreen is re-entered automatically.
    */
@@ -17,7 +21,12 @@ interface OverrideFlowProps {
   sessionEndingRef?: React.RefObject<boolean>;
 }
 
-export function OverrideFlow({ onConfirmEnd, locked = false, sessionEndingRef }: OverrideFlowProps) {
+export function OverrideFlow({
+  onConfirmEnd,
+  locked = false,
+  sessionEndingRef,
+  requireExitPassword = true,
+}: OverrideFlowProps) {
   const [showModal, setShowModal] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +52,12 @@ export function OverrideFlow({ onConfirmEnd, locked = false, sessionEndingRef }:
       if (selfEndingRef.current) return;       // we triggered the exit — ignore
       if (sessionEndingRef?.current) return;   // parent triggered — ignore
 
+      if (!requireExitPassword) {
+        selfEndingRef.current = true;
+        onConfirmEnd();
+        return;
+      }
+
       // Unexpected exit (Escape, browser chrome, etc.) — show password modal
       setShowModal(true);
       setPassword("");
@@ -52,9 +67,14 @@ export function OverrideFlow({ onConfirmEnd, locked = false, sessionEndingRef }:
 
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, [locked, sessionEndingRef]);
+  }, [locked, sessionEndingRef, requireExitPassword, onConfirmEnd]);
 
   function open() {
+    if (!requireExitPassword) {
+      selfEndingRef.current = true;
+      onConfirmEnd();
+      return;
+    }
     setShowModal(true);
     setPassword("");
     setError(null);
