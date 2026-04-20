@@ -1,327 +1,68 @@
-// Shared types for the owner-configurable settings page layout.
+// Hardcoded settings page layout spec, keyed on the two user toggles that
+// change how much empty space there is on the page.
 //
-// v2 introduces 4 independently configurable layout states, keyed by the
-// (pdfCacheEnabled, pomodoroEnabled) tuple. The settings page picks the
-// appropriate state at render time, and the admin editor lets the owner
-// customise each state individually.
+// The settings page has 3 regions:
+//   * TOP    — full-width cards above the 2-column flow (e.g. daily goals)
+//   * LEFT   — half-width cards in the left column (top-to-bottom)
+//   * RIGHT  — half-width cards in the right column (top-to-bottom)
+//   * BOTTOM — full-width cards below the 2-column flow
+//
+// Each layout state defines which card IDs appear in which region, and in
+// which order. The settings page consumes this spec directly; there is no
+// runtime config or admin editor.
 
-export type FontFamily = "inherit" | "mono" | "serif";
-export type TitleSize  = "xs" | "sm" | "base" | "lg" | "xl";
-export type TextSize   = "xs" | "sm" | "base";
-export type CardSpan   = 1 | 2; // 1 = half-width column, 2 = full-width
-
-export interface CardConfig {
-  /** Stable identifier that maps to a section in settings/page.tsx */
-  id: string;
-  /** Whether this card is rendered at all */
-  visible: boolean;
-  /** 1 = half-width (one column), 2 = full-width (spans both columns) */
-  span: CardSpan;
-  /** Render order (0-based, ascending) */
-  order: number;
-  /** Override the section heading text; null = keep default */
-  titleText: string | null;
-  /** Tailwind size token for the heading */
-  titleSize: TitleSize;
-  /** Override the section description paragraph; null = keep default */
-  descText: string | null;
-  /** Tailwind size token for description text */
-  descSize: TextSize;
-  /** CSS font-family override */
-  fontFamily: FontFamily;
-}
-
-/**
- * The four independently configurable states, keyed by:
- *   (pdfCacheEnabled, pomodoroEnabled)
- *
- * - cacheOff_breaksOff
- * - cacheOff_breaksOn
- * - cacheOn_breaksOff
- * - cacheOn_breaksOn
- */
 export type LayoutStateKey =
   | "cacheOff_breaksOff"
   | "cacheOff_breaksOn"
   | "cacheOn_breaksOff"
   | "cacheOn_breaksOn";
 
-export const LAYOUT_STATE_KEYS: LayoutStateKey[] = [
-  "cacheOff_breaksOff",
-  "cacheOff_breaksOn",
-  "cacheOn_breaksOff",
-  "cacheOn_breaksOn",
-];
-
-export const LAYOUT_STATE_LABELS: Record<LayoutStateKey, string> = {
-  cacheOff_breaksOff: "Cache OFF · Breaks OFF",
-  cacheOff_breaksOn:  "Cache OFF · Breaks ON",
-  cacheOn_breaksOff:  "Cache ON · Breaks OFF",
-  cacheOn_breaksOn:   "Cache ON · Breaks ON",
-};
-
-export interface SettingsLayoutConfig {
-  version: number;
-  /** Per-state cards. Every LayoutStateKey must be populated. */
-  states: Record<LayoutStateKey, CardConfig[]>;
+export interface LayoutSpec {
+  top:    string[];
+  left:   string[];
+  right:  string[];
+  bottom: string[];
 }
 
-// ── Default definitions ──────────────────────────────────────────────────────
+// ── Hardcoded layouts ────────────────────────────────────────────────────────
 
-/** Base card list — used as the foundation when building each state's default. */
-const BASE_CARDS: CardConfig[] = [
-  { id: "daily-goals",          visible: true, span: 2, order:  0, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "account",              visible: true, span: 1, order:  1, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "session-defaults",     visible: true, span: 1, order:  2, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "study-breaks",         visible: true, span: 1, order:  3, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "textbook-size",        visible: true, span: 1, order:  4, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "pdf-cache",            visible: true, span: 1, order:  5, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "upload-storage",       visible: true, span: 1, order:  6, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "exit-password",        visible: true, span: 1, order:  7, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "dog-photo",            visible: true, span: 1, order:  8, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "credits",              visible: true, span: 1, order:  9, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "focus-music",          visible: true, span: 2, order: 10, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "theme",                visible: true, span: 2, order: 11, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-  { id: "keyboard-shortcuts",   visible: true, span: 2, order: 12, titleText: null, titleSize: "base", descText: null, descSize: "sm", fontFamily: "inherit" },
-];
+const COMMON_TOP    = ["daily-goals"];
+const COMMON_BOTTOM = ["focus-music", "theme", "keyboard-shortcuts"];
 
-/** Ordered IDs of all known cards (used for consistency checks) */
-export const ALL_CARD_IDS: string[] = BASE_CARDS.map((c) => c.id);
-
-/** Shallow clone helper */
-function cloneCards(src: CardConfig[]): CardConfig[] {
-  return src.map((c) => ({ ...c }));
-}
-
-/** Apply a set of patches (by id) on top of a base clone and re-sequence orders. */
-function withPatches(patches: Record<string, Partial<CardConfig>>): CardConfig[] {
-  const cards = cloneCards(BASE_CARDS);
-  for (const c of cards) {
-    const p = patches[c.id];
-    if (p) Object.assign(c, p);
-  }
-  // Re-sequence order to the numeric order already on the card (no gaps, stable)
-  cards.sort((a, b) => a.order - b.order);
-  cards.forEach((c, i) => (c.order = i));
-  return cards;
-}
-
-// ── Per-state defaults ───────────────────────────────────────────────────────
-//
-// State rules driven by user feedback:
-//  - cache OFF + breaks OFF → storage & pdf-cache on the left, show dog + credits to fill the right gap
-//  - cache OFF + breaks ON  → pdf-cache on the left, show dog + credits
-//  - cache ON  + breaks OFF → hide dog + credits (no gap to fill)
-//  - cache ON  + breaks ON  → show only credits text (no dog), no gap
-
-// cache OFF, breaks OFF — biggest empty space on the right, fill with dog + credits
-const STATE_CACHE_OFF_BREAKS_OFF: CardConfig[] = withPatches({
-  // left column (odd orders): account, session-defaults, pdf-cache, upload-storage
-  "account":         { order: 1 },
-  "session-defaults":{ order: 3 },
-  "pdf-cache":       { order: 5 },
-  "upload-storage":  { order: 7 },
-  // right column (even orders): study-breaks (off/hidden visually?), textbook-size, exit-password, dog, credits
-  "study-breaks":    { order: 2 },
-  "textbook-size":   { order: 4 },
-  "exit-password":   { order: 6 },
-  "dog-photo":       { order: 8,  visible: true },
-  "credits":         { order: 9,  visible: true },
-});
-
-// cache OFF, breaks ON — pdf-cache on the left to fill gap, dog + credits on right
-const STATE_CACHE_OFF_BREAKS_ON: CardConfig[] = withPatches({
-  "account":         { order: 1 },
-  "session-defaults":{ order: 3 },
-  "pdf-cache":       { order: 5 }, // left column
-  "upload-storage":  { order: 7 },
-  "study-breaks":    { order: 2 }, // right column
-  "textbook-size":   { order: 4 },
-  "exit-password":   { order: 6 },
-  "dog-photo":       { order: 8,  visible: true },
-  "credits":         { order: 9,  visible: true },
-});
-
-// cache ON, breaks OFF — no gap, hide dog + credits
-const STATE_CACHE_ON_BREAKS_OFF: CardConfig[] = withPatches({
-  "dog-photo": { visible: false },
-  "credits":   { visible: false },
-});
-
-// cache ON, breaks ON — minor gap, show credits text only (no dog)
-const STATE_CACHE_ON_BREAKS_ON: CardConfig[] = withPatches({
-  "dog-photo": { visible: false },
-  "credits":   { visible: true },
-});
-
-/** Current config version. Bumped to 3 to force-migrate any v2 configs that
- *  were saved before the easter-egg visibility rules were enforced. */
-export const CURRENT_CONFIG_VERSION = 3;
-
-export const DEFAULT_CONFIG: SettingsLayoutConfig = {
-  version: CURRENT_CONFIG_VERSION,
-  states: {
-    cacheOff_breaksOff: STATE_CACHE_OFF_BREAKS_OFF,
-    cacheOff_breaksOn:  STATE_CACHE_OFF_BREAKS_ON,
-    cacheOn_breaksOff:  STATE_CACHE_ON_BREAKS_OFF,
-    cacheOn_breaksOn:   STATE_CACHE_ON_BREAKS_ON,
+export const LAYOUTS: Record<LayoutStateKey, LayoutSpec> = {
+  // Cache OFF + Breaks OFF — biggest empty space on the right, fill with dog + credits.
+  // Right column: textbook display → upload storage → dog → credits.
+  cacheOff_breaksOff: {
+    top: COMMON_TOP,
+    left:  ["account", "session-defaults", "study-breaks", "pdf-cache", "exit-password"],
+    right: ["textbook-size", "upload-storage", "dog-photo", "credits"],
+    bottom: COMMON_BOTTOM,
   },
-};
 
-// ── Migration / merge helpers ────────────────────────────────────────────────
+  // Cache OFF + Breaks ON — breaks panel is tall, so move session-defaults to
+  // the right column. Right column: upload storage → session defaults → dog → credits.
+  cacheOff_breaksOn: {
+    top: COMMON_TOP,
+    left:  ["account", "study-breaks", "textbook-size", "pdf-cache", "exit-password"],
+    right: ["upload-storage", "session-defaults", "dog-photo", "credits"],
+    bottom: COMMON_BOTTOM,
+  },
 
-/**
- * v1 config shape (single `cards` array). Kept for migration only.
- */
-interface LegacyV1Config {
-  version?: number;
-  cards?: CardConfig[];
-}
+  // Cache ON + Breaks OFF — no gap, dog + credits hidden.
+  cacheOn_breaksOff: {
+    top: COMMON_TOP,
+    left:  ["account", "session-defaults", "textbook-size", "upload-storage"],
+    right: ["study-breaks", "pdf-cache", "exit-password"],
+    bottom: COMMON_BOTTOM,
+  },
 
-function mergeCardList(loaded: CardConfig[] | undefined, fallback: CardConfig[]): CardConfig[] {
-  if (!loaded || loaded.length === 0) return cloneCards(fallback);
-  const byId = new Map(loaded.map((c) => [c.id, c]));
-  const maxOrder = loaded.reduce((m, c) => Math.max(m, c.order), -1);
-  const merged: CardConfig[] = cloneCards(loaded);
-  let nextOrder = maxOrder + 1;
-  for (const d of BASE_CARDS) {
-    if (!byId.has(d.id)) merged.push({ ...d, order: nextOrder++ });
-  }
-  return merged;
-}
-
-/**
- * v2 → v3 hard-reset for a single state.
- *
- * Earlier v2 configs had two bugs that can't be fixed by partial merging:
- *   1. dog-photo and credits were seeded with visible=true in every state
- *      (incl. states with no gap), causing a rendering sliver.
- *   2. dog/credits `order` values placed them *after* the full-width cards
- *      (focus-music / theme / keyboard-shortcuts), so they rendered at the
- *      very bottom of the page instead of in the right-column gap.
- *
- * This function therefore rebuilds the card list entirely from
- * DEFAULT_CONFIG for the state, preserving only the user-facing text and
- * style customizations (title text, title size, desc text, desc size, font
- * family) from the loaded config. Structural properties (order, span,
- * visibility) are reset to the v3 defaults.
- */
-function applyEasterEggRulesForState(cards: CardConfig[], state: LayoutStateKey): CardConfig[] {
-  const defaults = DEFAULT_CONFIG.states[state];
-  const loadedById = new Map(cards.map((c) => [c.id, c]));
-  return defaults.map((def) => {
-    const user = loadedById.get(def.id);
-    if (!user) return { ...def };
-    return {
-      ...def,
-      titleText:  user.titleText,
-      titleSize:  user.titleSize,
-      descText:   user.descText,
-      descSize:   user.descSize,
-      fontFamily: user.fontFamily,
-    };
-  });
-}
-
-/**
- * Merges a loaded config with DEFAULT_CONFIG so any new cards or states
- * added in a later app version are present even if the DB has an older
- * saved config.
- *
- * Handles three shapes:
- *   - Missing / null → DEFAULT_CONFIG
- *   - Legacy v1 { version, cards } → use `cards` as the starting point for every state,
- *     but force the easter-egg visibility to match each state's default (so the dog
- *     doesn't render on states that have no gap to fill).
- *   - v2 { version, states } → per-state merge against BASE_CARDS
- */
-export function mergeWithDefaults(
-  loaded: SettingsLayoutConfig | LegacyV1Config | null | undefined,
-): SettingsLayoutConfig {
-  if (!loaded) return DEFAULT_CONFIG;
-
-  // Legacy v1 migration: seed every state with the old single cards list,
-  // applying per-state easter-egg visibility rules so the dog doesn't show
-  // up on states where it shouldn't fill a gap.
-  if ("cards" in loaded && loaded.cards && !("states" in loaded)) {
-    const legacyCards = mergeCardList(loaded.cards, BASE_CARDS);
-    return {
-      version: 2,
-      states: {
-        cacheOff_breaksOff: applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOff_breaksOff"),
-        cacheOff_breaksOn:  applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOff_breaksOn"),
-        cacheOn_breaksOff:  applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOn_breaksOff"),
-        cacheOn_breaksOn:   applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOn_breaksOn"),
-      },
-    };
-  }
-
-  // v2+ per-state merge
-  const loadedV2 = loaded as SettingsLayoutConfig;
-  const loadedVersion = loadedV2.version ?? 2;
-  const states = {} as Record<LayoutStateKey, CardConfig[]>;
-  for (const key of LAYOUT_STATE_KEYS) {
-    const src = loadedV2.states?.[key];
-    const fallback = DEFAULT_CONFIG.states[key];
-    let merged = mergeCardList(src, fallback);
-
-    // v2 → v3: force-apply easter-egg visibility rules (earlier v2 configs
-    // may have the dog + credits visible on every state, which causes a
-    // rendering sliver when there's no gap to fill).
-    if (loadedVersion < 3) {
-      merged = applyEasterEggRulesForState(merged, key);
-    }
-
-    states[key] = merged;
-  }
-  return { version: CURRENT_CONFIG_VERSION, states };
-}
-
-/** Human-readable labels shown in the admin editor */
-export const CARD_LABELS: Record<string, string> = {
-  "daily-goals":        "Daily goals",
-  "account":            "Account",
-  "session-defaults":   "Session defaults",
-  "study-breaks":       "Study breaks",
-  "textbook-size":      "Textbook display size",
-  "pdf-cache":          "Offline PDF cache",
-  "upload-storage":     "Upload storage",
-  "exit-password":      "Exit password",
-  "dog-photo":          "Dog photo (easter egg)",
-  "credits":            "Credits text (easter egg)",
-  "focus-music":        "Focus music",
-  "theme":              "Theme",
-  "keyboard-shortcuts": "Keyboard shortcuts",
-};
-
-/** Default descriptions — mirrors the text on the real settings page, used by the admin editor preview */
-export const CARD_DEFAULT_DESCRIPTIONS: Record<string, string> = {
-  "daily-goals":
-    "Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal.",
-  "account":
-    "Signed in as your display name.",
-  "session-defaults":
-    "Pre-fill the goal type and target whenever you start a new session.",
-  "study-breaks":
-    "Cycles between focus and break intervals during study sessions.",
-  "textbook-size":
-    "Controls how large the PDF pages appear while reading. Saved on this device.",
-  "pdf-cache":
-    "Caches recently-opened PDFs so you can keep studying without internet.",
-  "upload-storage":
-    "Space used by your uploaded PDFs.",
-  "exit-password":
-    "Required to end a study session early. Defaults to your login password if not changed.",
-  "dog-photo":
-    "",
-  "credits":
-    "Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!",
-  "focus-music":
-    "Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device.",
-  "theme":
-    "Pick a built-in theme or create your own with a color picker.",
-  "keyboard-shortcuts":
-    "Available while reading in a study session.",
+  // Cache ON + Breaks ON — small gap, show credits only.
+  cacheOn_breaksOn: {
+    top: COMMON_TOP,
+    left:  ["account", "session-defaults", "pdf-cache", "exit-password"],
+    right: ["study-breaks", "textbook-size", "upload-storage", "credits"],
+    bottom: COMMON_BOTTOM,
+  },
 };
 
 /** Resolve the runtime LayoutStateKey from the two user toggles */

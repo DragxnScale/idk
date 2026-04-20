@@ -517,71 +517,51 @@ sequenceDiagram
 
 ---
 
-## §12 – Owner Settings Layout Editor
+## §12 – Settings Page Layout (hardcoded, state-aware)
 
 ### 12.1 Overview
-The super-owner can configure the settings page layout for all users via a drag-and-drop editor in the Admin Panel → **Settings Layout** tab. The layout is stored globally and applied on every user's next settings page load.
+The settings page has **4 hardcoded layouts**, one per combination of the two user toggles that change how much empty space there is on the page. No admin editor, no DB config, no runtime fetch — the layout is pure client code in `lib/types/settings-layout.ts`.
 
-**v2 (state-aware) layout**: the settings page has **4 independent layouts**, one per combination of the two user toggles that cause empty space on the page:
+| State key             | PDF cache | Study breaks | What's in the right column |
+|-----------------------|-----------|--------------|-----------------------------|
+| `cacheOff_breaksOff`  | OFF       | OFF          | Textbook size → Upload storage → Dog → Credits |
+| `cacheOff_breaksOn`   | OFF       | ON           | Upload storage → Session defaults → Dog → Credits |
+| `cacheOn_breaksOff`   | ON        | OFF          | Study breaks → PDF cache → Exit password (no easter eggs) |
+| `cacheOn_breaksOn`    | ON        | ON           | Study breaks → Textbook size → Upload storage → Credits |
 
-| State key             | PDF cache | Study breaks | Typical use |
-|-----------------------|-----------|--------------|-------------|
-| `cacheOff_breaksOff`  | OFF       | OFF          | Largest gap → fill with dog + credits, swap cards between columns |
-| `cacheOff_breaksOn`   | OFF       | ON           | Cache inputs hidden on left, dog + credits fill right |
-| `cacheOn_breaksOff`   | ON        | OFF          | No gap → hide dog + credits |
-| `cacheOn_breaksOn`    | ON        | ON           | Minor gap → show credits only, hide dog |
+At runtime `resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` picks the active key; the settings page reads `LAYOUTS[key]` and renders the 4 regions:
+- `top`    — full-width cards above the 2-column flow (Daily goals)
+- `left`   — half-width cards in the left flex column (top-to-bottom)
+- `right`  — half-width cards in the right flex column (top-to-bottom)
+- `bottom` — full-width cards below the 2-column flow (Focus music, Theme, Keyboard shortcuts)
 
-At runtime the settings page resolves the active key via `resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` and uses that state's ordered card list for rendering.
-
-### 12.2 Data Model
+### 12.2 Types (`lib/types/settings-layout.ts`)
+```ts
+export type LayoutStateKey = "cacheOff_breaksOff" | "cacheOff_breaksOn" | "cacheOn_breaksOff" | "cacheOn_breaksOn";
+export interface LayoutSpec { top: string[]; left: string[]; right: string[]; bottom: string[]; }
+export const LAYOUTS: Record<LayoutStateKey, LayoutSpec>;
+export function resolveLayoutStateKey(pdfCacheEnabled: boolean, pomodoroEnabled: boolean): LayoutStateKey;
 ```
-global_config (single row, id = 1)
-  settings_layout_json  TEXT   JSON: SettingsLayoutConfig (v2)
-  updated_at            INTEGER
-```
-JSON shape:
-```json
-{
-  "version": 2,
-  "states": {
-    "cacheOff_breaksOff": [ CardConfig, ... ],
-    "cacheOff_breaksOn":  [ CardConfig, ... ],
-    "cacheOn_breaksOff":  [ CardConfig, ... ],
-    "cacheOn_breaksOn":   [ CardConfig, ... ]
-  }
-}
-```
+No `CardConfig`, `SettingsLayoutConfig`, `mergeWithDefaults`, or admin-editor types exist — the previous config-driven layout was scrapped because the CSS-columns masonry approach couldn't place specific cards in specific columns reliably.
 
-### 12.3 Type Definitions (`lib/types/settings-layout.ts`)
-- `CardConfig` — per-card properties: `id`, `visible`, `span` (1 or 2), `order`, `titleText`, `titleSize`, `descText`, `descSize`, `fontFamily`
-- `LayoutStateKey` — union of the four state keys above
-- `SettingsLayoutConfig` — `{ version: 2, states: Record<LayoutStateKey, CardConfig[]> }`
-- `DEFAULT_CONFIG` — pre-populated defaults for all 4 states
-- `LAYOUT_STATE_KEYS`, `LAYOUT_STATE_LABELS` — iteration helpers
-- `resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` — runtime picker
-- `mergeWithDefaults(loaded)` — handles three input shapes:
-  1. Missing / null → `DEFAULT_CONFIG`
-  2. Legacy v1 `{ version, cards }` → migrated by seeding the single card list into all 4 states
-  3. v2 `{ version, states }` → per-state merge against base cards (fills in newly-added cards)
+### 12.3 Settings Page Rendering (`app/settings/page.tsx`)
+1. `activeStateKey = resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` recomputes on every render; toggling either setting re-positions cards live without a page reload.
+2. A local `cardSectionMap: Record<string, ReactNode>` defines every section once.
+3. A `renderRegion(ids)` helper maps a list of IDs from `LAYOUTS[key]` to its JSX.
+4. The render tree is:
+   ```
+   <div>
+     {renderRegion(spec.top)}
+     <div className="md:grid md:grid-cols-2 md:gap-4">
+       <div className="flex flex-col gap-4">{renderRegion(spec.left)}</div>
+       <div className="flex flex-col gap-4">{renderRegion(spec.right)}</div>
+     </div>
+     {renderRegion(spec.bottom)}
+   </div>
+   ```
+5. Stub helpers (`ctitle`, `cdesc`, `titleClass`, `descClass`, `cardStyle`, `cardGridCol`) are kept so the existing section JSX continues to compile — they all return the default values now that config-driven overrides have been removed.
 
-### 12.4 API
-| Method | Route | Auth | Description |
-|--------|-------|------|-------------|
-| GET | `/api/admin/settings-layout` | Any logged-in user | Returns current config (normalised through `mergeWithDefaults`) |
-| PATCH | `/api/admin/settings-layout` | Super-owner only | Upserts v2 config in `global_config` row 1; validates every state key is an array |
-
-### 12.5 Admin Editor (`components/admin/SettingsLayoutTab.tsx`)
-- **State selector** at the top of the editor: 4 buttons (one per state) let the owner switch which layout they're editing. All edits (drag, visibility, text, span, font, etc.) apply only to the currently selected state.
-- **Copy-from helper**: a strip of small buttons copies another state's card list into the current one (with confirmation).
-- **Drag-and-drop**: `@dnd-kit/core` `useDraggable` + `useDroppable`. Pure-swap logic — dragging card A onto card B exchanges only their `order` values, so all other cards stay visually stationary.
-- **Card tiles**: show badge (Full/Half), visibility, font/size metadata; drag handle top-right.
-- **Properties panel**: per-card controls for visibility toggle, width span (1 col / 2 col), heading text, heading size (xs–xl), description text, description size (xs–base), font family (default / monospace / serif).
-- **Save**: PATCH full 4-state config to API. **Reset this state**: restores one state to its default. **Reset all**: restores every state to `DEFAULT_CONFIG`.
-
-### 12.6 Settings Page Consumption (`app/settings/page.tsx`)
-- Fetches `/api/admin/settings-layout` on mount; falls back silently to `DEFAULT_CONFIG`
-- `activeStateKey = resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled)` recomputes on every render, so toggling either setting re-shuffles the layout live (without a page reload)
-- `activeStateCards = layoutCfg.states[activeStateKey]` feeds all helper functions: `cc(id)`, `ctitle`, `cdesc`, `titleClass`, `descClass`, `cardStyle`, `cardGridCol`
-- `orderedCards` = active state cards sorted by `order`, filtered by `visible`
-- CSS columns (`md:columns-2`) used for masonry flow; full-width cards set `columnSpan: "all"`; all cards set `breakInside: "avoid"` so the tall dog image can never be split across a column
-- Dog + credits visibility is **entirely driven by the state's `visible` flag** — no hardcoded conditionals on `pdfCacheEnabled` remain
+### 12.4 Deprecated (not removed)
+- `global_config` table in `lib/db/schema.ts` is still defined but **unused**. It was the storage backing for the scrapped admin editor. Left in place to avoid a destructive schema migration; can be dropped safely any time.
+- No API route at `/api/admin/settings-layout` exists any more.
+- No `SettingsLayoutTab` admin tab exists any more.
