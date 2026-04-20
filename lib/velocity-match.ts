@@ -12,6 +12,8 @@ export const SPEED_MS_PER_CHAR: Record<VelocitySpeed, number> = {
 export type VelocityQuestion =
   | {
       type: "mc";
+      roundType: "tossup" | "bonus";
+      pairId: string;
       question: string;
       options: [string, string, string, string];
       correctIndex: 0 | 1 | 2 | 3;
@@ -20,6 +22,8 @@ export type VelocityQuestion =
     }
   | {
       type: "sa";
+      roundType: "tossup" | "bonus";
+      pairId: string;
       question: string;
       answer: string;
       topic: string;

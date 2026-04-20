@@ -19,6 +19,7 @@ export interface VelocityAttempt {
   correct: boolean;
   reactionMs: number | null;
   type: "mc" | "sa";
+  roundType?: "tossup" | "bonus";
   /** True if the user buzzed before the stem finished typing (a "neg" in NSB terms). */
   interrupt?: boolean;
   /** False when the user never buzzed and the grace window expired. */
@@ -74,6 +75,10 @@ function buildScript(q: VelocityQuestion): string[] {
     return [q.question, q.options[0], q.options[1], q.options[2], q.options[3]];
   }
   return [q.question];
+}
+
+function getRoundType(index: number): "tossup" | "bonus" {
+  return index % 2 === 0 ? "tossup" : "bonus";
 }
 
 /** Minimal synth-tone helper — avoids shipping any audio asset. */
@@ -141,6 +146,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     correctAnswer: string;
     reason?: string;
     interrupt: boolean;
+    roundType: "tossup" | "bonus";
     points: number;
   } | null>(null);
 
@@ -199,9 +205,9 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     (attempt: VelocityAttempt) => {
       clearTimers();
       setAnswerMsLeft(null);
-      // Scoring mirrors the server: +10 correct, -4 interrupt-neg, 0 otherwise.
+      // Scoring mirrors the server: +4 tossup, +10 bonus, -4 interrupt-neg.
       let points = 0;
-      if (attempt.correct) points = 10;
+      if (attempt.correct) points = attempt.roundType === "tossup" ? 4 : 10;
       else if (attempt.interrupt && attempt.buzzed !== false) points = -4;
       const enriched: VelocityAttempt = { ...attempt, points };
       setAttempts((prev) => [...prev, enriched]);
@@ -213,6 +219,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         correctAnswer: attempt.correctAnswer,
         reason: attempt.graderReason,
         interrupt: !!attempt.interrupt,
+        roundType: attempt.roundType ?? "tossup",
         points,
       });
       playSound(attempt.correct ? "correct" : "wrong");
@@ -233,11 +240,12 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       correct: false,
       reactionMs: null,
       type: current.type,
+      roundType: current.roundType ?? getRoundType(qIndex),
       interrupt: false,
       buzzed: false,
       explanation: current.explanation,
     });
-  }, [current, finalizeAttempt]);
+  }, [current, finalizeAttempt, qIndex]);
 
   /** Post-buzz countdown expired — whatever is in the input counts, but unlike
    *  a normal submit we never call the AI grader (they ran out of time). */
@@ -253,12 +261,13 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       correct: false,
       reactionMs: ANSWER_TIME_MS,
       type: current.type,
+      roundType: current.roundType ?? getRoundType(qIndex),
       interrupt: interruptRef.current,
       buzzed: true,
       explanation: current.explanation,
       graderReason: "Ran out of time to answer.",
     });
-  }, [current, answerText, finalizeAttempt]);
+  }, [current, answerText, finalizeAttempt, qIndex]);
 
   const handleBuzz = useCallback(() => {
     if (phase !== "reading") return;
@@ -369,6 +378,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         correct,
         reactionMs,
         type: "mc",
+        roundType: current.roundType ?? getRoundType(qIndex),
         interrupt,
         buzzed: true,
         explanation: current.explanation,
@@ -417,16 +427,27 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       correct,
       reactionMs,
       type: "sa",
+      roundType: current.roundType ?? getRoundType(qIndex),
       interrupt,
       buzzed: true,
       explanation: current.explanation,
       graderReason: reason,
     });
-  }, [phase, current, startedAt, answerText, finalizeAttempt]);
+  }, [phase, current, startedAt, answerText, finalizeAttempt, qIndex]);
 
   const nextQuestion = useCallback(async () => {
     setFeedback(null);
-    const nextIdx = qIndex + 1;
+    let nextIdx = qIndex + 1;
+    // Gate bonus visibility: if toss-up is missed, skip its paired bonus.
+    if (
+      current?.roundType === "tossup" &&
+      feedback &&
+      !feedback.correct &&
+      questions[nextIdx]?.roundType === "bonus" &&
+      questions[nextIdx]?.pairId === current.pairId
+    ) {
+      nextIdx += 1;
+    }
     if (nextIdx < total) {
       setQIndex(nextIdx);
       setPhase("reading");
@@ -483,7 +504,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       setSubmitting(false);
       setPhase("results");
     }
-  }, [attempts, qIndex, total, velocityGameId]);
+  }, [attempts, qIndex, total, velocityGameId, current, feedback, questions]);
 
   const startGame = useCallback(() => {
     setAttempts([]);
@@ -544,6 +565,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
             </span>
           )}
           <span className="uppercase tracking-wide">
+            {(current.roundType ?? getRoundType(qIndex)) === "tossup" ? "Toss-up" : "Bonus"} ·{" "}
             {current.type === "mc" ? "Multiple choice" : "Short answer"}
           </span>
         </div>
@@ -671,7 +693,11 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         >
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">
-              {feedback.correct ? "Correct!" : feedback.interrupt ? "Neg — buzzed too early." : "Not quite."}
+              {feedback.correct
+                ? `${feedback.roundType === "tossup" ? "Toss-up" : "Bonus"} correct!`
+                : feedback.interrupt
+                  ? "Neg — buzzed too early."
+                  : "Not quite."}
             </p>
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-bold ${
@@ -773,7 +799,8 @@ function Pregame({
           Scoring
         </p>
         <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-          <li><strong className="text-green-700 dark:text-green-400">+10</strong> correct answer</li>
+          <li><strong className="text-green-700 dark:text-green-400">+4</strong> toss-up correct</li>
+          <li><strong className="text-green-700 dark:text-green-400">+10</strong> bonus correct</li>
           <li><strong className="text-red-700 dark:text-red-400">−4</strong> neg (buzz before the stem finishes, then answer wrong)</li>
           <li><strong>0</strong> wrong after the full read, or never buzzed</li>
           <li>You have <strong>5s</strong> to answer after buzzing.</li>
@@ -894,7 +921,8 @@ function Results({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Q{i + 1} · {a.topic} · {a.type === "mc" ? "MC" : "SA"}
+                        Q{i + 1} · {(a.roundType ?? getRoundType(i)) === "tossup" ? "Toss-up" : "Bonus"} · {a.topic} ·{" "}
+                        {a.type === "mc" ? "MC" : "SA"}
                       </p>
                       <div className="flex items-center gap-2">
                         <span className={`text-[11px] font-semibold uppercase ${statusColor}`}>

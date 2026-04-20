@@ -34,13 +34,16 @@ async function logServerFailure(userId: string | null, email: string | null, err
   }
 }
 
-const MAX_QUESTIONS = 30;
-const DEFAULT_Q = 25;
+const PAIR_COUNT = 25;
+const MAX_QUESTIONS = PAIR_COUNT * 2;
+const DEFAULT_Q = PAIR_COUNT * 2;
 
 // OpenAI structured outputs reject `oneOf` / discriminated unions, so we use a
 // single flat schema where every field is always present and normalise
 // per-type in TypeScript after the call.
 const flatQuestionSchema = z.object({
+  roundType: z.enum(["tossup", "bonus"]),
+  pairId: z.string(),
   type: z.enum(["mc", "sa"]),
   question: z.string(),
   options: z.array(z.string()).length(4),
@@ -120,16 +123,24 @@ export async function POST(request: Request) {
     const notesContext = notes.map((n) => n.content).join("\n\n");
     const ownerExtra = await getAiOwnerStyleExtra();
 
-    const baseSystem = `You are writing exactly ${DEFAULT_Q} rapid-fire quiz-bowl style science questions on the reading, in the style of the NSB (National Science Bowl) middle/high-school competition.
+    const baseSystem = `You are writing exactly ${DEFAULT_Q} quiz-bowl style science questions from the reading, formatted as ${PAIR_COUNT} toss-up/bonus pairs for NSB-style play.
 
 VOICE & FORMAT
 - Questions are ONE punchy sentence a moderator could read aloud — ideally under 120 characters.
 - No meta phrasing like "Based on the reading…" or "According to the text…".
 - Prioritise the most foundational, examinable concepts. Skip trivia and anecdotes.
+- Output order MUST alternate strictly: tossup, bonus, tossup, bonus, ... until ${DEFAULT_Q} total.
 
 TYPES (output "type" as "mc" or "sa"; aim for ~60% mc / ~40% sa)
 - "mc" (multiple choice): 4 crisp answer options in "options", one is correct. "correctIndex" (0–3) points at it and "answer" MUST equal options[correctIndex] verbatim. Vary the correct position across questions.
 - "sa" (short answer): "answer" is a SHORT canonical reply — a noun, number, name, formula, or 1–4 word phrase. Because the schema still requires 4 "options", fill them with four plausible-but-incorrect distractor phrases; they are never shown to the user.
+
+PAIRING RULES (critical):
+- Every toss-up MUST be followed by its matching bonus.
+- The bonus must be directly or closely related to its toss-up (same concept family/topic, not random adjacent content).
+- The bonus should be slightly harder than its toss-up (more specific, one step deeper, or with a tighter distractor set).
+- Set "roundType" to "tossup" or "bonus" correctly.
+- Use the same "pairId" for the toss-up and its bonus. Pair IDs can be "1", "2", ... "${PAIR_COUNT}".
 
 HARD BANS for short-answer questions — do NOT write questions where any of these apply:
 - The answer is a full sentence or clause.
@@ -153,7 +164,7 @@ SA:
 - "Who was the first American woman to fly in space?" answer: "Sally Ride"
 
 SCHEMA — every field is REQUIRED on EVERY question:
-- type, question, options (4 strings), correctIndex (0–3), answer, topic (2–5 words labelling the concept), explanation (one short sentence).`;
+- roundType, pairId, type, question, options (4 strings), correctIndex (0–3), answer, topic (2–5 words labelling the concept), explanation (one short sentence).`;
 
     const { object } = await generateObject({
       model: openai(MODEL),
@@ -164,10 +175,14 @@ SCHEMA — every field is REQUIRED on EVERY question:
       }`,
     });
 
-    const questions: VelocityQuestion[] = object.questions.map((q) => {
+    const questions: VelocityQuestion[] = object.questions.map((q, i) => {
+      const roundType = q.roundType ?? (i % 2 === 0 ? "tossup" : "bonus");
+      const pairId = (q.pairId && q.pairId.trim()) || String(Math.floor(i / 2) + 1);
       if (q.type === "mc") {
         const correctIdx = Math.min(3, Math.max(0, q.correctIndex)) as 0 | 1 | 2 | 3;
         return shuffleMc({
+          roundType,
+          pairId,
           type: "mc",
           question: q.question,
           options: q.options as [string, string, string, string],
@@ -177,6 +192,8 @@ SCHEMA — every field is REQUIRED on EVERY question:
         });
       }
       return {
+        roundType,
+        pairId,
         type: "sa",
         question: q.question,
         answer: q.answer,
@@ -185,11 +202,19 @@ SCHEMA — every field is REQUIRED on EVERY question:
       };
     });
 
+    const normalisedQuestions = questions
+      .slice(0, DEFAULT_Q)
+      .map((q, i) => ({
+        ...q,
+        roundType: i % 2 === 0 ? "tossup" : "bonus",
+        pairId: String(Math.floor(i / 2) + 1),
+      })) as VelocityQuestion[];
+
     const id = crypto.randomUUID();
     await db.insert(velocityGames).values({
       id,
       sessionId,
-      questionsJson: JSON.stringify(questions),
+      questionsJson: JSON.stringify(normalisedQuestions),
       resultsJson: null,
       reviewJson: null,
       accuracy: null,
@@ -198,7 +223,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
       completedAt: null,
     });
 
-    return NextResponse.json({ id, questions });
+    return NextResponse.json({ id, questions: normalisedQuestions });
   } catch (err) {
     await logServerFailure(user.id, user.email ?? null, err, {
       route: "POST /api/ai/velocity",

@@ -41,6 +41,7 @@ const attemptSchema = z.object({
   correct: z.boolean(),
   reactionMs: z.number().int().min(0).nullable(),
   type: z.enum(["mc", "sa"]),
+  roundType: z.enum(["tossup", "bonus"]).optional(),
   /** True if the user buzzed before the stem finished typing. */
   interrupt: z.boolean().optional(),
   /** Grader explanation (SA) surfaced on the results review. */
@@ -60,13 +61,15 @@ const bodySchema = z.object({
 
 /**
  * NSB-inspired scoring:
- *  - Correct answer: +10 points
+ *  - Correct toss-up: +4 points
+ *  - Correct bonus: +10 points
  *  - Wrong answer after buzzing IN the stem (interrupt / neg): -4
  *  - Wrong answer after hearing the full stem (and options, if MC): 0
  *  - Never buzzed (timeout): 0
  */
-function scoreAttempt(a: z.infer<typeof attemptSchema>): number {
-  if (a.correct) return 10;
+function scoreAttempt(a: z.infer<typeof attemptSchema>, index: number): number {
+  const roundType = a.roundType ?? (index % 2 === 0 ? "tossup" : "bonus");
+  if (a.correct) return roundType === "tossup" ? 4 : 10;
   if (a.interrupt && a.buzzed !== false) return -4;
   return 0;
 }
@@ -120,7 +123,11 @@ export async function POST(request: Request) {
 
   // Server-side scoring: recompute points for every attempt so the client can't
   // forge them, and track the longest streak + number of negs.
-  const scored = attempts.map((a) => ({ ...a, points: scoreAttempt(a) }));
+  const scored = attempts.map((a, index) => ({
+    ...a,
+    roundType: a.roundType ?? (index % 2 === 0 ? "tossup" : "bonus"),
+    points: scoreAttempt(a, index),
+  }));
   const score = scored.reduce((s, a) => s + a.points, 0);
   const negCount = scored.filter((a) => a.points < 0).length;
   let streakBest = 0;
