@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/admin";
+import { studySessions } from "@/lib/db/schema";
 
 export async function GET() {
   let appUser;
@@ -96,6 +98,35 @@ export async function GET() {
 
   const activeSession = rows.find((r) => !r.endedAt);
 
+  let activeStudyGoal: {
+    id: string;
+    targetValue: number;
+    completedMinutes: number;
+  } | null = null;
+  if (activeSession?.studyGoalId) {
+    const g = await db.query.studyGoals.findFirst({
+      where: (row, { eq: e }) => e(row.id, activeSession.studyGoalId!),
+    });
+    if (g && g.userId === appUser.id) {
+      const [agg] = await db
+        .select({
+          total: sql<number>`coalesce(sum(${studySessions.totalFocusedMinutes}), 0)`,
+        })
+        .from(studySessions)
+        .where(
+          and(
+            eq(studySessions.studyGoalId, g.id),
+            isNotNull(studySessions.endedAt)
+          )
+        );
+      activeStudyGoal = {
+        id: g.id,
+        targetValue: g.targetValue,
+        completedMinutes: Number(agg?.total ?? 0),
+      };
+    }
+  }
+
   const todayPages = todaySessions.reduce((s, r) => s + (r.pagesVisited ?? 0), 0);
 
   return NextResponse.json({
@@ -122,6 +153,8 @@ export async function GET() {
           totalFocusedMinutes: activeSession.totalFocusedMinutes ?? 0,
           lastPageIndex: activeSession.lastPageIndex ?? null,
           documentJson: activeSession.documentJson ?? null,
+          sessionState: activeSession.sessionState ?? "live",
+          studyGoal: activeStudyGoal,
         }
       : null,
     recentSessions: rows

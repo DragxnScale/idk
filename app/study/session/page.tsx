@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Timer, type GoalType } from "@/components/study/Timer";
 import { VisibilityGuard } from "@/components/focus/VisibilityGuard";
 import { OverrideFlow } from "@/components/focus/OverrideFlow";
@@ -41,7 +41,16 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+type StudyGoalRow = {
+  id: string;
+  goalType: string;
+  targetValue: number;
+  documentJson: string | null;
+  completedMinutes: number;
+};
+
 function StudySessionInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const resumeId = searchParams.get("resume");
 
@@ -64,7 +73,15 @@ function StudySessionInner() {
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [activeSession, setActiveSession] = useState<{ id: string; goalType: string; targetValue: number; totalFocusedMinutes: number } | null>(null);
+  const [activeSession, setActiveSession] = useState<{
+    id: string;
+    goalType: string;
+    targetValue: number;
+    totalFocusedMinutes: number;
+    lastPageIndex?: number | null;
+    sessionState?: string;
+    studyGoal?: { id: string; targetValue: number; completedMinutes: number } | null;
+  } | null>(null);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [checkingActive, setCheckingActive] = useState(true);
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
@@ -87,11 +104,24 @@ function StudySessionInner() {
   const ytKickedRef = useRef(false);
 
   const focusedMinutesRef = useRef(0);
+  const currentPageRef = useRef(1);
+  const [liveFocusedMinutes, setLiveFocusedMinutes] = useState(0);
   const lastSavedRef = useRef(0);
   const accumulatedTextRef = useRef("");
   const visitedPagesRef = useRef<Set<number>>(new Set());
   const sessionEndingRef = useRef(false);
   const resumeHandled = useRef(false);
+  const [resumeLastPageIndex, setResumeLastPageIndex] = useState<number | null>(null);
+  const [showResumePagePrompt, setShowResumePagePrompt] = useState(false);
+  const [elapsedBootstrapSeconds, setElapsedBootstrapSeconds] = useState(0);
+  const [timerNonce, setTimerNonce] = useState(0);
+  const [linkedStudyGoalId, setLinkedStudyGoalId] = useState<string | null>(null);
+  const [studyGoalPriorMinutes, setStudyGoalPriorMinutes] = useState<number | null>(null);
+  const [studyGoalTotalTarget, setStudyGoalTotalTarget] = useState<number | null>(null);
+  const [studyGoalsList, setStudyGoalsList] = useState<StudyGoalRow[]>([]);
+  const [multiSessionTotalTarget, setMultiSessionTotalTarget] = useState(120);
+  const [continueStudyGoalId, setContinueStudyGoalId] = useState("");
+  const [multiSessionNew, setMultiSessionNew] = useState(false);
   const lastActivityRef = useRef(Date.now());
   const [pdfCacheEntryCount, setPdfCacheEntryCount] = useState<number | null>(null);
   const [pdfCacheOn, setPdfCacheOn] = useState(() =>
@@ -160,6 +190,16 @@ function StudySessionInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Active multi-session goals (dropdown on setup)
+  useEffect(() => {
+    fetch("/api/study/goals")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: StudyGoalRow[]) =>
+        setStudyGoalsList(Array.isArray(rows) ? rows : [])
+      )
+      .catch(() => {});
+  }, []);
+
   // Check for active session / handle resume
   useEffect(() => {
     if (resumeHandled.current) return;
@@ -177,11 +217,33 @@ function StudySessionInner() {
           setSessionId(active.id);
           setGoalType(active.goalType as GoalType);
           setTargetValue(active.targetValue);
-          focusedMinutesRef.current = active.totalFocusedMinutes ?? 0;
-          lastSavedRef.current = active.totalFocusedMinutes ?? 0;
+          const mins = active.totalFocusedMinutes ?? 0;
+          focusedMinutesRef.current = mins;
+          lastSavedRef.current = mins;
+          setLiveFocusedMinutes(mins);
+          setElapsedBootstrapSeconds(Math.round(mins * 60));
+          setTimerNonce((n) => n + 1);
           if (active.documentJson) {
             try { setSelectedDoc(JSON.parse(active.documentJson)); } catch {}
           }
+          const lp = active.lastPageIndex;
+          if (typeof lp === "number" && lp >= 1) {
+            setResumeLastPageIndex(lp);
+            currentPageRef.current = lp;
+            setCurrentPage(lp);
+            setShowResumePagePrompt(lp > 1);
+          }
+          if (active.studyGoal) {
+            setLinkedStudyGoalId(active.studyGoal.id);
+            setStudyGoalPriorMinutes(active.studyGoal.completedMinutes);
+            setStudyGoalTotalTarget(active.studyGoal.targetValue);
+          }
+          setIsPaused(false);
+          fetch("/api/study/sessions", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: active.id, sessionState: "live" }),
+          }).catch(() => {});
           try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch {}
           setCheckingActive(false);
         } else {
@@ -529,16 +591,48 @@ function StudySessionInner() {
           completed: false,
         });
         setSessionId(tempId);
+        setElapsedBootstrapSeconds(0);
+        setTimerNonce((n) => n + 1);
+        setLiveFocusedMinutes(0);
+        setLinkedStudyGoalId(null);
         setStarting(false);
         return;
       }
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
+      const payload: Record<string, unknown> = {
+        goalType,
+        targetValue,
+        documentJson: docPayload,
+      };
+      if (goalType === "time") {
+        if (multiSessionNew && multiSessionTotalTarget >= 1) {
+          payload.newMultiSessionGoal = {
+            targetTotalMinutes: multiSessionTotalTarget,
+          };
+          setStudyGoalPriorMinutes(0);
+          setStudyGoalTotalTarget(multiSessionTotalTarget);
+        } else if (continueStudyGoalId) {
+          payload.continueStudyGoalId = continueStudyGoalId;
+          const g = studyGoalsList.find((x) => x.id === continueStudyGoalId);
+          if (g) {
+            setStudyGoalPriorMinutes(g.completedMinutes);
+            setStudyGoalTotalTarget(g.targetValue);
+          }
+        } else {
+          setStudyGoalPriorMinutes(null);
+          setStudyGoalTotalTarget(null);
+        }
+      } else {
+        setStudyGoalPriorMinutes(null);
+        setStudyGoalTotalTarget(null);
+      }
+
       const res = await fetch("/api/study/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalType, targetValue, documentJson: docPayload }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -548,6 +642,15 @@ function StudySessionInner() {
       }
       const data = await res.json();
       setSessionId(data.id);
+      setElapsedBootstrapSeconds(0);
+      setTimerNonce((n) => n + 1);
+      setLiveFocusedMinutes(0);
+      setResumeLastPageIndex(null);
+      if (typeof data.studyGoalId === "string") {
+        setLinkedStudyGoalId(data.studyGoalId);
+      } else {
+        setLinkedStudyGoalId(null);
+      }
     } catch (e) {
       // If a network error occurs mid-attempt, fall back to offline mode
       if (
@@ -573,9 +676,16 @@ function StudySessionInner() {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setStarting(false);
     }
-  }, [goalType, targetValue, selectedDoc, selectedChapters]);
-
-  const currentPageRef = useRef(1);
+  }, [
+    goalType,
+    targetValue,
+    selectedDoc,
+    selectedChapters,
+    multiSessionNew,
+    multiSessionTotalTarget,
+    continueStudyGoalId,
+    studyGoalsList,
+  ]);
 
   const saveProgress = useCallback(
     async (minutes: number) => {
@@ -764,8 +874,34 @@ function StudySessionInner() {
     setShowAbandonConfirm(false);
   }
 
+  const pauseAndLeave = useCallback(async () => {
+    if (!sessionId || isOfflineId(sessionId)) {
+      router.push("/dashboard");
+      return;
+    }
+    try {
+      await fetch("/api/study/sessions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          sessionState: "paused",
+          totalFocusedMinutes: focusedMinutesRef.current,
+          lastPageIndex: currentPageRef.current,
+          pagesVisited: visitedPagesRef.current.size,
+          visitedPagesList: Array.from(visitedPagesRef.current),
+        }),
+      });
+    } catch {
+      // still navigate so user isn't stuck
+    }
+    router.push("/dashboard");
+  }, [router, sessionId]);
+
   const pdfUrl = getPdfUrl();
   const startPage = getStartPage();
+  const pdfInitialPage =
+    resumeLastPageIndex != null ? resumeLastPageIndex : startPage;
 
   // If there's no PDF to load, the timer can start immediately
   useEffect(() => {
@@ -790,13 +926,30 @@ function StudySessionInner() {
             You have an unfinished session
           </h2>
           <p className="text-sm text-amber-700 dark:text-amber-400 mb-1">
-            {activeSession.goalType === "time"
-              ? `${activeSession.targetValue} min goal`
-              : `${activeSession.targetValue} chapter${activeSession.targetValue !== 1 ? "s" : ""}`}
-            {" · "}{activeSession.totalFocusedMinutes}m studied so far
+            {(activeSession.sessionState ?? "live") === "paused" ? (
+              <>
+                <span className="font-medium text-amber-900 dark:text-amber-200">
+                  Paused — pick up where you left off.
+                </span>{" "}
+                {activeSession.goalType === "time"
+                  ? `${activeSession.targetValue} min this sitting`
+                  : `${activeSession.targetValue} chapter${activeSession.targetValue !== 1 ? "s" : ""}`}
+                {" · "}{activeSession.totalFocusedMinutes}m studied
+                {typeof activeSession.lastPageIndex === "number"
+                  ? ` · page ${activeSession.lastPageIndex}`
+                  : ""}
+              </>
+            ) : (
+              <>
+                {activeSession.goalType === "time"
+                  ? `${activeSession.targetValue} min goal`
+                  : `${activeSession.targetValue} chapter${activeSession.targetValue !== 1 ? "s" : ""}`}
+                {" · "}{activeSession.totalFocusedMinutes}m studied so far
+              </>
+            )}
           </p>
           <p className="text-sm text-amber-600 dark:text-amber-500 mb-5">
-            You need to resume or end it before starting a new session.
+            Resume to continue, or end this session before starting a new one.
           </p>
           <div className="flex gap-3">
             <Link
@@ -936,6 +1089,14 @@ function StudySessionInner() {
                 setError(`Select exactly ${targetValue} chapter${targetValue !== 1 ? "s" : ""}`);
                 return;
               }
+              if (
+                goalType === "time" &&
+                multiSessionNew &&
+                (!multiSessionTotalTarget || multiSessionTotalTarget < 1)
+              ) {
+                setError("Enter a total minute target for your cumulative goal (at least 1).");
+                return;
+              }
               try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch {}
               handleStart();
             }}
@@ -951,6 +1112,8 @@ function StudySessionInner() {
                   setGoalType(e.target.value as GoalType);
                   setSelectedChapters([]);
                   setTargetValue(e.target.value === "time" ? 25 : 1);
+                  setMultiSessionNew(false);
+                  setContinueStudyGoalId("");
                 }}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
               >
@@ -960,19 +1123,83 @@ function StudySessionInner() {
             </div>
 
             {goalType === "time" ? (
-              <div>
-                <label className="block text-sm font-medium mb-1.5">
-                  <SuiText page="session" k="label.minutes" def="Minutes" as="span" />
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={240}
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">
+                    <SuiText page="session" k="label.minutes" def="Minutes (this sitting)" as="span" />
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={targetValue}
+                    onChange={(e) => setTargetValue(Number(e.target.value))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Timer target for this session. Use cumulative options below to track a larger goal across multiple sessions.
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3 bg-gray-50/80 dark:bg-gray-900/40">
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                    Multi-session goal (optional)
+                  </p>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-1 rounded border-gray-300"
+                      checked={multiSessionNew}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setMultiSessionNew(on);
+                        if (on) setContinueStudyGoalId("");
+                      }}
+                    />
+                    <span>
+                      Start a new cumulative time goal (total minutes across several sessions until you finish)
+                    </span>
+                  </label>
+                  {multiSessionNew && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                        Total minutes to reach (all sessions combined)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100000}
+                        value={multiSessionTotalTarget}
+                        onChange={(e) =>
+                          setMultiSessionTotalTarget(Number(e.target.value))
+                        }
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                      />
+                    </div>
+                  )}
+                  {!multiSessionNew && studyGoalsList.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                        Or continue an active cumulative goal
+                      </label>
+                      <select
+                        value={continueStudyGoalId}
+                        onChange={(e) =>
+                          setContinueStudyGoalId(e.target.value)
+                        }
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                      >
+                        <option value="">— None —</option>
+                        {studyGoalsList.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            Progress {g.completedMinutes} / {g.targetValue} min total
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <>
                 <div>
@@ -1171,6 +1398,16 @@ function StudySessionInner() {
             >
               {showNotes ? "Hide Notes" : "AI Notes"}
             </button>
+            {!isOfflineId(sessionId ?? "") && (
+              <button
+                type="button"
+                onClick={pauseAndLeave}
+                className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+                title="Save progress, pause the session, and return to the dashboard"
+              >
+                Pause & leave
+              </button>
+            )}
             <OverrideFlow
               onConfirmEnd={handleEnd}
               locked
@@ -1185,15 +1422,34 @@ function StudySessionInner() {
           {/* Timer sidebar */}
           <aside className="flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 p-4 sm:p-6 lg:w-64 max-h-40 lg:max-h-none overflow-auto">
             <Timer
+              key={`${sessionId}-${timerNonce}`}
               goalType={goalType}
               targetValue={targetValue}
+              initialElapsedSeconds={elapsedBootstrapSeconds}
               isPaused={isPaused || !docReady || (pomodoroEnabled && pomodoroBreakActive)}
               onTick={(mins) => {
                 focusedMinutesRef.current = mins;
+                setLiveFocusedMinutes(mins);
                 saveProgress(mins);
               }}
               onGoalReached={handleEnd}
             />
+            {studyGoalTotalTarget != null &&
+              linkedStudyGoalId &&
+              goalType === "time" && (
+              <p className="mt-3 text-xs text-emerald-800 dark:text-emerald-300 leading-snug">
+                Cumulative goal:{" "}
+                <span className="font-semibold tabular-nums">
+                  {Math.min(
+                    (studyGoalPriorMinutes ?? 0) + liveFocusedMinutes,
+                    studyGoalTotalTarget
+                  )}{" "}
+                  / {studyGoalTotalTarget} min
+                </span>
+                {" "}
+                (completed sessions + this sitting)
+              </p>
+            )}
             {pomodoroEnabled && sessionId && (
               <div className="mt-4">
                 <PomodoroTimer
@@ -1255,7 +1511,7 @@ function StudySessionInner() {
             {pdfUrl ? (
               <PdfViewer
                 url={pdfUrl}
-                initialPage={startPage}
+                initialPage={pdfInitialPage}
                 jumpToPage={jumpTarget}
                 documentId={selectedDoc?.documentId}
                 sessionId={sessionId ?? undefined}
@@ -1287,6 +1543,46 @@ function StudySessionInner() {
             />
           </aside>
         </div>
+
+        {/* Resume: continue from saved page */}
+        {showResumePagePrompt && resumeLastPageIndex != null && (
+          <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="mx-4 max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900 dark:border dark:border-gray-700">
+              <p className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
+                Continue where you left off?
+              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                Last page tracked:{" "}
+                <span className="font-medium text-gray-900 dark:text-gray-100">
+                  page {resumeLastPageIndex}
+                </span>
+                . The reader is already open there — continue reading, or jump back to the start.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition"
+                  onClick={() => setShowResumePagePrompt(false)}
+                >
+                  Continue on page {resumeLastPageIndex}
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                  onClick={() => {
+                    setResumeLastPageIndex(null);
+                    setJumpTarget(1);
+                    currentPageRef.current = 1;
+                    setCurrentPage(1);
+                    setShowResumePagePrompt(false);
+                  }}
+                >
+                  Start from page 1
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Inactivity prompt overlay */}
         {inactivityPrompt && (

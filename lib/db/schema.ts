@@ -85,6 +85,20 @@ export const bannedEmails = sqliteTable("banned_emails", {
 
 // ── Study app tables ─────────────────────────────────────────────────
 
+/** Cumulative time goal across multiple study sessions (e.g. 300 min total). */
+export const studyGoals = sqliteTable("study_goals", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  goalType: text("goal_type").notNull(), // "time"
+  targetValue: integer("target_value").notNull(), // total minutes across linked sessions
+  documentJson: text("document_json"), // optional: same doc as first session for UI filtering
+  status: text("status").notNull().default("active"), // active | completed
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
 export const studySessions = sqliteTable("study_sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -98,6 +112,10 @@ export const studySessions = sqliteTable("study_sessions", {
   pagesVisited: integer("pages_visited"),
   visitedPagesList: text("visited_pages_list"), // JSON: number[] of unique page indices visited
   lastPageIndex: integer("last_page_index"),
+  sessionState: text("session_state").default("live"), // live | paused — paused sessions are not auto-closed on new POST
+  studyGoalId: text("study_goal_id").references(() => studyGoals.id, {
+    onDelete: "set null",
+  }),
   videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
   documentJson: text("document_json"), // JSON: serialized SelectedDocument for resume
   createdAt: integer("created_at", { mode: "timestamp" }),

@@ -133,7 +133,8 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Study core**
 
-- `study_sessions` — goal type/value, start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]` of unique page indices for dedup), `document_json` (resume), `videos_json` (cached AI video recs).
+- `study_goals` — cumulative **multi-session time goals**: `goal_type` (`time`), `target_value` (total focused minutes across linked sessions), optional `document_json`, `status` (`active`|`completed`), `completed_at`.
+- `study_sessions` — goal type/value (per-session “sitting” target), start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]`), `document_json` (resume), `videos_json` (cached AI video recs). **`session_state`** (`live`|`paused`): paused rows are kept open when starting another session is blocked; **`study_goal_id`** optionally links to `study_goals` for cumulative progress across ended sessions until the goal total is reached.
 - `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`, `chapter_page_ranges` (user-defined TOC JSON), `page_offset` (PDF page alignment), `file_size_bytes` (used for quota tracking).
 - `textbook_catalog` — shared books: `source_url`, `cached_blob_url` (single global public Blob copy; populated on first access), chapter page ranges JSON, visibility flags.
 - `session_content` — links session to document and chapter/page range.
@@ -203,10 +204,11 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/study/sessions` | List current user's sessions (recent). |
-| POST | `/api/study/sessions` | Start session; closes other open sessions for user; accepts `documentJson`. |
-| PATCH | `/api/study/sessions` | Update session fields: `totalFocusedMinutes`, `endedAt`, `pagesVisited`, `visitedPagesList`, etc. |
+| POST | `/api/study/sessions` | Start session; **auto-closes only other `live` open sessions** (paused sessions stay open); accepts `documentJson`; optional **`newMultiSessionGoal: { targetTotalMinutes }`** (creates `study_goals` + links session) or **`continueStudyGoalId`** (resume cumulative goal). Response may include **`studyGoalId`**. |
+| PATCH | `/api/study/sessions` | Update session fields: `totalFocusedMinutes`, `endedAt`, `pagesVisited`, `visitedPagesList`, **`sessionState`** (`live`|`paused`). Ending a session (`endedAt`) recomputes linked **`study_goals`** completion when sum of ended-session minutes reaches `target_value`. |
+| GET | `/api/study/goals` | Active cumulative goals with progress (`completedMinutes` from ended sessions only). |
 | GET | `/api/study/sessions/[id]` | Single session for user. |
-| GET | `/api/study/stats` | Aggregated stats (streak, weekly chart, goals), active session info. |
+| GET | `/api/study/stats` | Aggregated stats (streak, weekly chart, goals), active session info incl. **`sessionState`**, **`studyGoal`** summary when linked. |
 | GET | `/api/study/chapters-read` | Chapter reading progress helper. |
 
 ### 5.3 Page visits
@@ -429,7 +431,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | `/` | Landing, install prompts, nav to auth. |
 | `/auth/signin`, `/auth/signup` | Credentials auth. |
 | `/dashboard` | Stats, **streak card**, **textbook progress**, bookmarks, planner, countdowns. |
-| `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX. |
+| `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX; **Pause & leave** (`sessionState` paused); resume with **`?resume=`** restores timer + **`lastPageIndex`** + optional cumulative goal progress; optional **multi-session cumulative time goal** at start (`GET /api/study/goals` dropdown or new total). |
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
@@ -441,7 +443,7 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 **Study (`components/study/`)**
 
-- **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`.
+- **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`; optional **`initialElapsedSeconds`** for resume (parent remounts via `key`).
 - **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`. After upload completes, shows `UploadedDocEditor` — lets the user enter a per-chapter TOC (chapter label + PDF start/end page) and a page offset; saves to `PATCH /api/documents/[id]`; the chapter data is then available immediately in the session.
 - **`PdfViewer.tsx`** — `react-pdf`; zoom, search, TOC, bookmarks/highlights, page visit batching, `onPageText` for AI.
 - **`AiNotesPanel.tsx`** — Generates/displays notes per page; accepts `textbookCatalogId` for shared cache; page numbers shown relative to chapter start.
@@ -539,9 +541,9 @@ sequenceDiagram
   participant DB as Database
   participant AI as OpenAI
 
-  U->>SP: Start session + pick document
+  U->>SP: Start session + pick document (+ optional cumulative goal)
   SP->>API: POST /api/study/sessions
-  API->>DB: insert study_sessions
+  API->>DB: insert study_sessions (+ optional study_goals)
   SP->>PV: Load PDF (public Blob URL)
   PV->>SP: onPageText(page, text)
   SP->>API: POST /api/ai/notes (+ textbookCatalogId)
