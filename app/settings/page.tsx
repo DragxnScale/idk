@@ -154,8 +154,12 @@ export default function SettingsPage() {
   function handlePdfCacheEnabled(enabled: boolean) {
     setPdfCacheEnabledState(enabled);
     localStorage.setItem("bowlbeacon-pdf-cache-enabled", String(enabled));
-    navigator.serviceWorker?.ready.then((reg) => {
+    void navigator.serviceWorker?.ready.then(async (reg) => {
       reg.active?.postMessage({ type: "setPdfCacheEnabled", enabled });
+      if (!enabled) {
+        const { clearAllPdfCachesClient } = await import("@/lib/client/pdf-cache-prefs");
+        await clearAllPdfCachesClient();
+      }
     }).catch(() => {});
   }
 

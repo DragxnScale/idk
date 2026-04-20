@@ -1,8 +1,18 @@
-/** Ask the service worker how many PDF responses are stored (proxy + blob URLs). */
+import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
+
+/** Ask the service worker how many distinct cached PDF URLs exist (proxy + blob). */
 
 export function fetchPdfCacheEntryCount(): Promise<number | null> {
   return new Promise((resolve) => {
-    if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
+    if (typeof navigator === "undefined") {
+      resolve(null);
+      return;
+    }
+    if (!readPdfCacheEnabled()) {
+      resolve(0);
+      return;
+    }
+    if (!navigator.serviceWorker?.controller) {
       resolve(null);
       return;
     }

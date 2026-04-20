@@ -13,6 +13,7 @@ import { loadPlaylist, savePlaylist, parseYouTubeId, isYouTubeUrl, resolveYouTub
 import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOfflineId } from "@/lib/offline-session";
 import { PomodoroTimer } from "@/components/study/PomodoroTimer";
 import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
+import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -92,18 +93,26 @@ function StudySessionInner() {
   const resumeHandled = useRef(false);
   const lastActivityRef = useRef(Date.now());
   const [pdfCacheEntryCount, setPdfCacheEntryCount] = useState<number | null>(null);
+  const [pdfCacheOn, setPdfCacheOn] = useState(() =>
+    typeof window !== "undefined" ? readPdfCacheEnabled() : true
+  );
 
-  // Offline PDF cache: entry count from service worker (shown on setup screen only)
+  // Offline PDF cache: distinct PDF count from SW (setup screen). When caching is off, count stays 0.
   useEffect(() => {
     let cancelled = false;
-    fetchPdfCacheEntryCount().then((n) => {
-      if (!cancelled) setPdfCacheEntryCount(n);
-    });
-    const id = window.setInterval(() => {
+    function tick() {
+      const on = readPdfCacheEnabled();
+      setPdfCacheOn(on);
+      if (!on) {
+        setPdfCacheEntryCount(0);
+        return;
+      }
       fetchPdfCacheEntryCount().then((n) => {
         if (!cancelled) setPdfCacheEntryCount(n);
       });
-    }, 15000);
+    }
+    tick();
+    const id = window.setInterval(tick, 15000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -839,9 +848,11 @@ function StudySessionInner() {
           </div>
           <div
             className="shrink-0 text-sm text-gray-500 dark:text-gray-400 sm:text-right tabular-nums"
-            title="PDFs stored in your browser offline cache (service worker)"
+            title="PDFs stored in your browser offline cache (service worker). Turn on in Settings → Offline PDF cache."
           >
-            {pdfCacheEntryCount !== null ? (
+            {!pdfCacheOn ? (
+              <span className="text-gray-500 dark:text-gray-400">PDF caching off</span>
+            ) : pdfCacheEntryCount !== null ? (
               <>
                 <span className="font-medium text-gray-700 dark:text-gray-300">
                   {pdfCacheEntryCount}

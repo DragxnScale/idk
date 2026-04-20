@@ -217,6 +217,13 @@ self.addEventListener("message", (event) => {
   }
   if (event.data?.type === "setPdfCacheEnabled") {
     pdfCacheEnabled = !!event.data.enabled;
-    if (!pdfCacheEnabled) caches.delete(PDF_CACHE).catch(() => {});
+    if (!pdfCacheEnabled) {
+      const del = caches.delete(PDF_CACHE);
+      if (typeof event.waitUntil === "function") {
+        event.waitUntil(del);
+      } else {
+        del.catch(() => {});
+      }
+    }
   }
 });
