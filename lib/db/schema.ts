@@ -290,6 +290,22 @@ export const flashcards = sqliteTable("flashcards", {
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
+// ── Velocity reaction-speed minigame ─────────────────────────────────────
+
+export const velocityGames = sqliteTable("velocity_games", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => studySessions.id, { onDelete: "cascade" }),
+  questionsJson: text("questions_json").notNull(), // JSON: VelocityQuestion[]
+  resultsJson: text("results_json"), // JSON: VelocityResults (per-question attempts, accuracy, reaction stats)
+  reviewJson: text("review_json"), // JSON: { growthAreas: string[], videoSuggestions: {title,searchQuery,reason}[] }
+  accuracy: integer("accuracy"), // 0-100
+  avgReactionMs: integer("avg_reaction_ms"),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
 // ── Client debug errors (posted from browser; admin reads) ───────────────
 
 export const clientErrorLogs = sqliteTable("client_error_logs", {

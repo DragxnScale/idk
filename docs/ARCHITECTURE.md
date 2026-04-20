@@ -155,6 +155,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 - `public_notes` — shared notes cache per `textbook_catalog_id` + `page_number` + `prompt_version`. Cache hit = zero AI tokens for subsequent users on same page. Bump `PUBLIC_NOTE_PROMPT_VERSION` in `app/api/ai/notes/route.ts` to invalidate on prompt change.
 - `quizzes` — `questions_json`, `review_json`, optional `score` / `total_questions`.
 - `flashcards` — `session_id`, `front`, `back`, `page_number`; cascades on session delete.
+- `velocity_games` — reaction-speed minigame run per session. Columns: `questions_json` (mixed MC + short-answer `VelocityQuestion[]`), `results_json` (per-attempt record + accuracy / reaction stats), `review_json` (`growthAreas[]` + `videoSuggestions[]`), `accuracy`, `avg_reaction_ms`, `created_at`, `completed_at`. Cascades on session delete.
 
 **Pomodoro / user preferences**
 
@@ -350,6 +351,8 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | `/api/ai/quiz/review` | POST | `generateObject` | updates `quizzes.review_json` + `score` |
 | `/api/ai/videos` | GET, POST | `generateObject` + Zod `videoSchema` | `study_sessions.videos_json` |
 | `/api/ai/flashcards` | POST, GET | `generateObject` + Zod `flashcardSchema` | `flashcards` table |
+| `/api/ai/velocity` | POST, GET | `generateObject` + discriminated-union Zod (`mc` / `sa`) | `velocity_games.questions_json` |
+| `/api/ai/velocity/complete` | POST | `generateObject` for growth-areas review | `velocity_games.results_json` / `review_json` / `accuracy` / `avg_reaction_ms` |
 
 **Notes (POST)**  
 Body: `sessionId`, `pageNumber`, `pageText`, optional `textbookCatalogId`.  
@@ -376,10 +379,24 @@ Body: `sessionId`. Fetches all `ai_notes` for the session. Calls `generateObject
 **Flashcards (GET)**  
 Query: `sessionId`. Returns existing cards sorted by page number.
 
+**Velocity (POST)**  
+Body: `sessionId`, `accumulatedText`. Generates 10 rapid-fire questions mixing multiple choice (4-option, labelled **W / X / Y / Z** in the UI) and short-answer. Schema is a Zod discriminated union on `type: "mc" | "sa"`. MC options are Fisher-Yates shuffled before persisting. Returns the full `VelocityQuestion[]` and a new `velocityGameId`.
+
+**Velocity (GET)**  
+Query: `sessionId`. Returns cached questions + any saved `results` / `review` / `accuracy` / `avgReactionMs`.
+
+**Velocity Complete (POST)**  
+Body: `velocityGameId`, `attempts[]`. Computes accuracy, avg / fastest / slowest reaction, then calls `generateObject` to produce `growthAreas[]` (topic + actionable tip) and `videoSuggestions[]` targeted at the learner's weak spots. Persists everything to `velocity_games`.
+
+**Matching rules** (`lib/velocity-match.ts`, client-safe):
+- **MC**: accepts a single letter (`W/X/Y/Z`, case-insensitive) *or* verbatim option text (case- and punctuation-insensitive).
+- **SA**: token-based Levenshtein. Every **content** token from the canonical answer must have a typo-tolerant match (≤30% edit distance per token) in the user's answer; stopwords ignored. Example: `"microwave background"` is rejected for `"cosmic microwave background"` (missing `cosmic`), while `"cosmic mcirowave backround"` is accepted.
+
 ### 6.4 Frontend integration
 
 - **`components/study/AiNotesPanel.tsx`**: calls `POST /api/ai/notes` per page (or batch). Accepts `textbookCatalogId` prop to enable public cache. Fetches existing notes from DB on mount to persist state across hide/show. Displays page numbers relative to the chapter start (`absolutePage - startPage + 1`).
-- **`app/study/session/[id]/summary/page.tsx`**: tabs for Overview, Notes, Quiz, Review, and **Flashcards**. Loads notes/quiz/flashcards via GET on mount. Triggers POST endpoints on demand. After quiz completion calls `POST /api/ai/quiz/review` with wrong answers only.
+- **`app/study/session/[id]/summary/page.tsx`**: tabs for Overview, Notes, Quiz, Review, **Flashcards**, and **Velocity**. Loads notes/quiz/flashcards/velocity via GET on mount. Triggers POST endpoints on demand. After quiz completion calls `POST /api/ai/quiz/review` with wrong answers only.
+- **`components/study/VelocityGame.tsx`**: the reaction-speed minigame. Pregame menu picks typewriter speed (`slow` 70ms/char, `medium` 40ms/char, `fast` 20ms/char — see `SPEED_MS_PER_CHAR`). Each question reveals character-by-character via `setInterval`. `Space` (keydown) **or** clicking the large red **BUZZ** circle immediately clears the typewriter timer, logs the reaction time, and reveals an autofocused text input — MC answers accept `W/X/Y/Z` or verbatim option text, SA answers are checked with `isShortAnswerCorrect`. A 4s post-read grace window auto-marks the question wrong with `reactionMs: null` if the user never buzzes. Results screen shows accuracy, avg/fastest/slowest reaction, AI-generated growth areas, and YouTube video recommendations.
 - **`components/study/QuizView.tsx`**: tracks `wrongAnswers` state; passes them to `onComplete`.
 - **`components/study/ReviewPanel.tsx`**: shows personalised review from wrong answers, or congratulations on a perfect score.
 - **`components/study/FlashcardView.tsx`**: 3D CSS flip animation, previous/next navigation, card counter, shuffle button.

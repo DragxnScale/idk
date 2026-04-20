@@ -1,6 +1,6 @@
 {
   "name": "bowl-beacon",
-  "version": "2.92",
+  "version": "2.93",
   "private": true,
   "scripts": {
     "dev": "next dev",

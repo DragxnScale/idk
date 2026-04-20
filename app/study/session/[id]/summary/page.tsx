@@ -7,6 +7,11 @@ import { aiNoteContentToHtml, stripLatexForAiNotes } from "@/lib/ai-notes-render
 import { QuizView, type WrongAnswer } from "@/components/study/QuizView";
 import { ReviewPanel } from "@/components/study/ReviewPanel";
 import { FlashcardView, type Flashcard } from "@/components/study/FlashcardView";
+import {
+  VelocityGame,
+  type VelocityResultsPayload,
+} from "@/components/study/VelocityGame";
+import type { VelocityQuestion } from "@/lib/velocity-match";
 
 interface QuizQuestion {
   question: string;
@@ -42,7 +47,7 @@ interface SessionInfo {
   lastPageIndex: number | null;
 }
 
-type Tab = "stats" | "notes" | "quiz" | "review" | "flashcards";
+type Tab = "stats" | "notes" | "quiz" | "review" | "flashcards" | "velocity";
 
 export default function SessionSummaryPage() {
   const params = useParams<{ id: string }>();
@@ -65,6 +70,11 @@ export default function SessionSummaryPage() {
   const [flashcardList, setFlashcardList] = useState<Flashcard[]>([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
   const [flashcardsError, setFlashcardsError] = useState("");
+  const [velocityId, setVelocityId] = useState<string | null>(null);
+  const [velocityQuestions, setVelocityQuestions] = useState<VelocityQuestion[]>([]);
+  const [velocityResults, setVelocityResults] = useState<VelocityResultsPayload | null>(null);
+  const [velocityLoading, setVelocityLoading] = useState(false);
+  const [velocityError, setVelocityError] = useState("");
 
   function handleExport() {
     const lines: string[] = [];
@@ -157,7 +167,54 @@ export default function SessionSummaryPage() {
         if (data?.cards?.length) setFlashcardList(data.cards);
       })
       .catch(() => {});
+
+    // Load cached Velocity minigame, if any
+    fetch(`/api/ai/velocity?sessionId=${sessionId}`)
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setVelocityId(data.id);
+        setVelocityQuestions(data.questions ?? []);
+        if (data.results) {
+          setVelocityResults({
+            accuracy: data.accuracy ?? data.results.accuracy ?? 0,
+            correctCount: data.results.correctCount ?? 0,
+            total: data.results.total ?? (data.questions?.length ?? 0),
+            avgReactionMs: data.avgReactionMs ?? data.results.avgReactionMs ?? null,
+            fastestMs: data.results.fastestMs ?? null,
+            slowestMs: data.results.slowestMs ?? null,
+            review: data.review ?? null,
+          });
+        }
+      })
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  const generateVelocity = useCallback(async () => {
+    const storedText = sessionStorage.getItem(`session-text-${sessionId}`);
+    if (!storedText || storedText.length < 50) {
+      setVelocityError("No reading text available. Read some PDF pages during your session to unlock Velocity.");
+      return;
+    }
+    setVelocityLoading(true);
+    setVelocityError("");
+    try {
+      const res = await fetch("/api/ai/velocity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, accumulatedText: storedText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to generate Velocity questions");
+      setVelocityId(data.id);
+      setVelocityQuestions(data.questions ?? []);
+      setVelocityResults(null);
+    } catch (e) {
+      setVelocityError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setVelocityLoading(false);
+    }
   }, [sessionId]);
 
   const generateVideos = useCallback(async (text?: string) => {
@@ -265,6 +322,7 @@ export default function SessionSummaryPage() {
     { key: "quiz", label: "Quiz", count: questions.length },
     { key: "review", label: "Review" },
     { key: "flashcards", label: "Flashcards", count: flashcardList.length > 0 ? flashcardList.length : undefined },
+    { key: "velocity", label: "Velocity", count: velocityQuestions.length > 0 ? velocityQuestions.length : undefined },
   ];
 
   const duration =
@@ -629,6 +687,42 @@ export default function SessionSummaryPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ── Velocity tab ────────────────────────────────────────── */}
+        {tab === "velocity" && (
+          <>
+            {velocityQuestions.length > 0 && velocityId ? (
+              <VelocityGame
+                key={velocityId + (velocityResults ? ":done" : ":fresh")}
+                velocityGameId={velocityId}
+                questions={velocityQuestions}
+                initialResults={velocityResults}
+                onReplay={() => {
+                  setVelocityResults(null);
+                }}
+              />
+            ) : (
+              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
+                <h3 className="text-lg font-bold">Velocity</h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                  A rapid-fire reaction quiz on what you just read. Questions type out at your chosen speed — buzz in with{" "}
+                  <kbd className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono dark:bg-gray-800">Space</kbd>{" "}
+                  the moment you know the answer.
+                </p>
+                <button
+                  onClick={generateVelocity}
+                  disabled={velocityLoading}
+                  className="btn-primary mt-5 rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-50"
+                >
+                  {velocityLoading ? "Generating…" : "Generate Velocity"}
+                </button>
+                {velocityError && (
+                  <p className="mt-3 text-sm text-red-600 dark:text-red-400">{velocityError}</p>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Bottom nav */}
