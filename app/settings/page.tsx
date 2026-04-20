@@ -491,13 +491,13 @@ export default function SettingsPage() {
                         as="span"
                       />
                     </p>
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-28">
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <div className="relative w-28 min-w-[7rem] shrink-0">
                         <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
                       </div>
-                      <span className="text-xs text-gray-400">to</span>
-                      <div className="relative w-28">
+                      <span className="text-xs text-gray-400 shrink-0">to</span>
+                      <div className="relative w-28 min-w-[7rem] shrink-0">
                         <input type="number" min={1} max={25} value={quizMax} onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }} placeholder="10" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">max</span>
                       </div>
