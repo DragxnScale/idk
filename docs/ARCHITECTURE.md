@@ -351,7 +351,8 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | `/api/ai/quiz/review` | POST | `generateObject` | updates `quizzes.review_json` + `score` |
 | `/api/ai/videos` | GET, POST | `generateObject` + Zod `videoSchema` | `study_sessions.videos_json` |
 | `/api/ai/flashcards` | POST, GET | `generateObject` + Zod `flashcardSchema` | `flashcards` table |
-| `/api/ai/velocity` | POST, GET | `generateObject` + **flat** Zod schema (OpenAI structured outputs reject `oneOf`, so both MC and SA share one object shape — per-type normalisation happens in TS) | `velocity_games.questions_json` |
+| `/api/ai/velocity` | POST, GET | `generateObject` + **flat** Zod schema (OpenAI structured outputs reject `oneOf`, so both MC and SA share one object shape — per-type normalisation happens in TS). Prompt is NSB/quiz-bowl style with hard bans on essay-style SAs ("why" / "explain" / multi-part) | `velocity_games.questions_json` |
+| `/api/ai/velocity/grade` | POST | `generateObject` that accepts/rejects a user short-answer against the canonical answer — fast-path via `isShortAnswerCorrect` for obvious hits, otherwise AI decides synonyms / typos / missing-distinguishing-word cases | — (stateless) |
 | `/api/ai/velocity/complete` | POST | `generateObject` for growth-areas review | `velocity_games.results_json` / `review_json` / `accuracy` / `avg_reaction_ms` |
 
 **Notes (POST)**  
@@ -379,13 +380,16 @@ Body: `sessionId`. Fetches all `ai_notes` for the session. Calls `generateObject
 **Flashcards (GET)**  
 Query: `sessionId`. Returns existing cards sorted by page number.
 
-**Velocity (POST)**  
-Body: `sessionId`, `accumulatedText`. Generates 10 rapid-fire questions mixing multiple choice (4-option, labelled **W / X / Y / Z** in the UI) and short-answer. Schema is a Zod discriminated union on `type: "mc" | "sa"`. MC options are Fisher-Yates shuffled before persisting. Returns the full `VelocityQuestion[]` and a new `velocityGameId`.
+**Velocity (POST)**
+Body: `sessionId`, `accumulatedText`. Generates 10 rapid-fire questions mixing multiple choice (4-option, labelled **W / X / Y / Z** in the UI) and short-answer. The generation prompt is modelled on the NSB middle-school Science Bowl format — punchy one-sentence stems, short noun / number / name answers for SA, few-shot anchored on real NSB examples. Hard bans on SA stems that start with "Why" / "Explain" / "Describe" / "How does" / "What is the difference between" or that require multi-clause reasoning — those topics are re-cast as MC instead. Output uses a **flat** Zod schema (OpenAI's JSON-schema response format rejects `oneOf`): all four `options` + `correctIndex` + `answer` are always present, and the route normalises each question back into the `VelocityQuestion` discriminated union in TypeScript. MC options are Fisher-Yates shuffled before persisting. Returns the full `VelocityQuestion[]` and a new `velocityGameId`.
 
 **Velocity (GET)**  
 Query: `sessionId`. Returns cached questions + any saved `results` / `review` / `accuracy` / `avgReactionMs`.
 
-**Velocity Complete (POST)**  
+**Velocity Grade (POST)**
+Body: `{ question, correctAnswer, userAnswer, topic? }`. Stateless, per-question grader for the minigame's short-answer phase. First runs `isShortAnswerCorrect` locally — on a clean typo-tolerant hit it returns `{ correct: true, source: "local" }` without a round-trip. Otherwise it calls `generateObject` with a strict accept/reject rubric (synonyms / casing / minor typos → accept; wrong specific entity or missing distinguishing word → reject) and returns `{ correct, reason, source: "ai" }`. AI failures fall back to `{ correct: false, source: "fallback" }` and log a `kind: "dev"` row to `client_error_logs` prefixed `[velocity/grade]`.
+
+**Velocity Complete (POST)**
 Body: `velocityGameId`, `attempts[]`. Computes accuracy, avg / fastest / slowest reaction, then calls `generateObject` to produce `growthAreas[]` (topic + actionable tip) and `videoSuggestions[]` targeted at the learner's weak spots. Persists everything to `velocity_games`.
 
 **Error reporting**  
@@ -399,7 +403,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 
 - **`components/study/AiNotesPanel.tsx`**: calls `POST /api/ai/notes` per page (or batch). Accepts `textbookCatalogId` prop to enable public cache. Fetches existing notes from DB on mount to persist state across hide/show. Displays page numbers relative to the chapter start (`absolutePage - startPage + 1`).
 - **`app/study/session/[id]/summary/page.tsx`**: tabs for Overview, Notes, Quiz, Review, **Flashcards**, and **Velocity**. Loads notes/quiz/flashcards/velocity via GET on mount. Triggers POST endpoints on demand. After quiz completion calls `POST /api/ai/quiz/review` with wrong answers only.
-- **`components/study/VelocityGame.tsx`**: the reaction-speed minigame. Pregame menu picks typewriter speed (`slow` 70ms/char, `medium` 40ms/char, `fast` 20ms/char — see `SPEED_MS_PER_CHAR`). Each question reveals character-by-character via `setInterval`. `Space` (keydown) **or** clicking the large red **BUZZ** circle immediately clears the typewriter timer, logs the reaction time, and reveals an autofocused text input — MC answers accept `W/X/Y/Z` or verbatim option text, SA answers are checked with `isShortAnswerCorrect`. A 4s post-read grace window auto-marks the question wrong with `reactionMs: null` if the user never buzzes. Results screen shows accuracy, avg/fastest/slowest reaction, AI-generated growth areas, and YouTube video recommendations.
+- **`components/study/VelocityGame.tsx`**: the reaction-speed minigame. Pregame menu picks typewriter speed (`slow` 70ms/char, `medium` 40ms/char, `fast` 20ms/char — see `SPEED_MS_PER_CHAR`). Each question is driven by a **reveal script**: line 0 is the question stem, and for MC questions lines 1–4 are the four options. The typewriter walks the script line-by-line via `setInterval` with a ~300ms gap between lines — so **MC options stay hidden until the stem finishes, then appear one at a time** (each row types out after the previous one completes, quiz-bowl style). `Space` (keydown) **or** clicking the large red **BUZZ** circle immediately clears every timer, logs the reaction time, and reveals an autofocused text input. MC answers accept `W/X/Y/Z` or verbatim option text via `matchMultipleChoice`; **short answers are graded by AI** through `POST /api/ai/velocity/grade` (the submit button shows a *Checking…* state while the round-trip is in flight, so the UX is explicit about the pause). A 4s post-read grace window auto-marks the question wrong with `reactionMs: null` if the user never buzzes. Feedback surfaces the grader's one-sentence reason alongside the generator's explanation. Results screen shows accuracy, avg/fastest/slowest reaction, AI-generated growth areas, and YouTube video recommendations.
 - **`components/study/QuizView.tsx`**: tracks `wrongAnswers` state; passes them to `onComplete`.
 - **`components/study/ReviewPanel.tsx`**: shows personalised review from wrong answers, or congratulations on a perfect score.
 - **`components/study/FlashcardView.tsx`**: 3D CSS flip animation, previous/next navigation, card counter, shuffle button.

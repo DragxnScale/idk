@@ -1,0 +1,126 @@
+import { NextResponse } from "next/server";
+import { generateObject } from "ai";
+import { z } from "zod";
+import { getAppUser } from "@/lib/app-user";
+import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { db } from "@/lib/db";
+import { clientErrorLogs } from "@/lib/db/schema";
+import { isShortAnswerCorrect } from "@/lib/velocity-match";
+
+const bodySchema = z.object({
+  question: z.string().min(1).max(2000),
+  correctAnswer: z.string().min(1).max(500),
+  userAnswer: z.string().max(500),
+  topic: z.string().max(200).optional(),
+});
+
+const gradeSchema = z.object({
+  correct: z.boolean(),
+  reason: z.string(),
+});
+
+async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
+  const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
+  const stack = err instanceof Error ? err.stack ?? null : null;
+  let extraJson: string | null = null;
+  try {
+    extraJson = extra != null ? JSON.stringify(extra).slice(0, 16000) : null;
+  } catch {}
+  try {
+    await db.insert(clientErrorLogs).values({
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      kind: "dev",
+      userId,
+      email,
+      message: `[velocity/grade] ${message}`.slice(0, 4000),
+      stack: stack?.slice(0, 32000) ?? null,
+      url: null,
+      userAgent: null,
+      extra: extraJson,
+    });
+  } catch {
+    /* logging must never throw */
+  }
+}
+
+export async function POST(request: Request) {
+  const user = await getAppUser();
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+  const { question, correctAnswer, userAnswer, topic } = parsed.data;
+
+  const trimmed = userAnswer.trim();
+  if (!trimmed) {
+    return NextResponse.json({
+      correct: false,
+      reason: "No answer provided.",
+      source: "local",
+    });
+  }
+
+  // Fast path — obvious typo-tolerant exact match (never over-accepts, just catches
+  // clean hits without a round-trip to the AI).
+  if (isShortAnswerCorrect(trimmed, correctAnswer)) {
+    return NextResponse.json({
+      correct: true,
+      reason: "Matches the canonical answer.",
+      source: "local",
+    });
+  }
+
+  if (!isAiConfigured()) {
+    return NextResponse.json(
+      { error: "AI grader not configured" },
+      { status: 503 }
+    );
+  }
+
+  const system = `You are grading a short-answer reaction quiz question (NSB / quiz-bowl style).
+
+Decide whether the user's answer should be accepted against the canonical correct answer.
+
+ACCEPT when:
+- The user's answer means the same thing as the canonical answer (synonyms, common names vs. scientific names, alternate casing/spelling, minor typos).
+- The user's answer contains the canonical answer plus extra but still-correct qualifying words.
+- A numeric answer matches the canonical number (allow equivalent forms like "1/2" vs "0.5", "3.5" vs "3 1/2").
+- The user's answer names the same specific entity (e.g. "parabola" and "parabolic" for "parabola (ACCEPT: parabolic)").
+
+REJECT when:
+- The user's answer refers to a different concept, organ, organism, element, mechanism, etc.
+- A key distinguishing word is missing (e.g. "microwave background" is wrong for "cosmic microwave background" because "cosmic" is the distinguishing word).
+- The user's answer contains the right general category but the wrong specific item.
+- The user's answer is too vague or generic to uniquely identify the canonical answer.
+
+Return a boolean "correct" and a ONE short sentence "reason" explaining the decision (plain language, no preamble).`;
+
+  try {
+    const { object } = await generateObject({
+      model: openai(MODEL),
+      schema: gradeSchema,
+      system,
+      prompt: `Question: ${question}
+Canonical correct answer: ${correctAnswer}${topic ? `\nTopic: ${topic}` : ""}
+User's answer: ${trimmed}
+
+Is the user's answer acceptable?`,
+    });
+    return NextResponse.json({ ...object, source: "ai" });
+  } catch (err) {
+    await logServerFailure(user.id, user.email ?? null, err, {
+      route: "POST /api/ai/velocity/grade",
+      correctAnswer,
+      userAnswer: trimmed,
+    });
+    // Fall back to strict local result (which we already know is false here)
+    return NextResponse.json({
+      correct: false,
+      reason: "Grader unavailable — accepted only exact matches.",
+      source: "fallback",
+    });
+  }
+}

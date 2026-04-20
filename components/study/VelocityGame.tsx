@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  isShortAnswerCorrect,
   matchMultipleChoice,
   MC_LETTERS,
   SPEED_MS_PER_CHAR,
@@ -46,20 +45,37 @@ interface Props {
 }
 
 const POST_READ_GRACE_MS = 4000;
+/** Pause between lines in the typewriter script (e.g. between the question and the first option). */
+const INTER_LINE_PAUSE_MS = 300;
+
+/** Build the reveal script for a question: question line first, then one line per MC option. */
+function buildScript(q: VelocityQuestion): string[] {
+  if (q.type === "mc") {
+    return [q.question, q.options[0], q.options[1], q.options[2], q.options[3]];
+  }
+  return [q.question];
+}
 
 export function VelocityGame({ questions, velocityGameId, initialResults, onReplay }: Props) {
   const [phase, setPhase] = useState<Phase>(initialResults ? "results" : "pregame");
   const [speed, setSpeed] = useState<VelocitySpeed>("medium");
   const [qIndex, setQIndex] = useState(0);
+  /** 0 = question line; 1-4 = MC option lines. */
+  const [lineIdx, setLineIdx] = useState(0);
+  /** Characters rendered in the currently-revealing line. */
   const [charsShown, setCharsShown] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [answerText, setAnswerText] = useState("");
   const [attempts, setAttempts] = useState<VelocityAttempt[]>([]);
   const [results, setResults] = useState<VelocityResultsPayload | null>(initialResults ?? null);
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{ correct: boolean; explanation?: string; correctAnswer: string } | null>(
-    null
-  );
+  const [grading, setGrading] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    correct: boolean;
+    explanation?: string;
+    correctAnswer: string;
+    reason?: string;
+  } | null>(null);
 
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,6 +83,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
 
   const current = questions[qIndex];
   const total = questions.length;
+  const script = useMemo(() => (current ? buildScript(current) : []), [current]);
 
   const clearTimers = useCallback(() => {
     if (typewriterRef.current) {
@@ -80,12 +97,13 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   }, []);
 
   const finalizeAttempt = useCallback(
-    (attempt: VelocityAttempt, extra?: { explanation?: string }) => {
+    (attempt: VelocityAttempt, extra?: { explanation?: string; reason?: string }) => {
       setAttempts((prev) => [...prev, attempt]);
       setFeedback({
         correct: attempt.correct,
         explanation: extra?.explanation,
         correctAnswer: attempt.correctAnswer,
+        reason: extra?.reason,
       });
       setPhase("feedback");
     },
@@ -117,33 +135,58 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   }, [phase, clearTimers]);
 
   useEffect(() => {
-    if (phase !== "reading" || !current) return;
+    if (phase !== "reading" || !current || script.length === 0) return;
 
+    setLineIdx(0);
     setCharsShown(0);
     setAnswerText("");
     const start = performance.now();
     setStartedAt(start);
     const msPerChar = SPEED_MS_PER_CHAR[speed];
-    const full = current.question;
+    const gapTicks = Math.max(1, Math.ceil(INTER_LINE_PAUSE_MS / msPerChar));
+
+    // Use closure-local counters to avoid stale React state inside the interval.
+    let localLine = 0;
+    let localChars = 0;
+    let waitTicks = 0;
 
     typewriterRef.current = setInterval(() => {
-      setCharsShown((n) => {
-        if (n >= full.length) {
+      if (waitTicks > 0) {
+        waitTicks--;
+        return;
+      }
+      if (localLine >= script.length) return; // safety
+
+      const line = script[localLine];
+      localChars += 1;
+      if (localChars > line.length) {
+        // Finished this line.
+        localLine += 1;
+        localChars = 0;
+        if (localLine >= script.length) {
+          // Script complete — stop the typewriter and start the grace window.
           if (typewriterRef.current) {
             clearInterval(typewriterRef.current);
             typewriterRef.current = null;
           }
+          setLineIdx(localLine);
+          setCharsShown(0);
           graceTimerRef.current = setTimeout(() => {
             handleTimeout();
           }, POST_READ_GRACE_MS);
-          return n;
+          return;
         }
-        return n + 1;
-      });
+        setLineIdx(localLine);
+        setCharsShown(0);
+        waitTicks = gapTicks;
+        return;
+      }
+      setLineIdx(localLine);
+      setCharsShown(localChars);
     }, msPerChar);
 
     return () => clearTimers();
-  }, [phase, qIndex, current, speed, handleTimeout, clearTimers]);
+  }, [phase, qIndex, current, script, speed, handleTimeout, clearTimers]);
 
   useEffect(() => {
     if (phase !== "reading") return;
@@ -157,34 +200,70 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     return () => window.removeEventListener("keydown", onKey);
   }, [phase, handleBuzz]);
 
-  const submitAnswer = useCallback(() => {
+  const submitAnswer = useCallback(async () => {
     if (phase !== "answering" || !current || startedAt == null) return;
     const reactionMs = Math.max(0, Math.round(performance.now() - startedAt));
-    let correct = false;
-    let correctAnswer = "";
+
     if (current.type === "mc") {
-      const { correct: ok } = matchMultipleChoice(
+      const { correct } = matchMultipleChoice(
         answerText,
         current.options,
         current.correctIndex
       );
-      correct = ok;
-      correctAnswer = current.options[current.correctIndex];
-    } else {
-      correct = isShortAnswerCorrect(answerText, current.answer);
-      correctAnswer = current.answer;
+      finalizeAttempt(
+        {
+          topic: current.topic,
+          question: current.question,
+          userAnswer: answerText,
+          correctAnswer: current.options[current.correctIndex],
+          correct,
+          reactionMs,
+          type: "mc",
+        },
+        { explanation: current.explanation }
+      );
+      return;
     }
+
+    // Short answer — AI grader decides whether the response is close enough.
+    setGrading(true);
+    let correct = false;
+    let reason: string | undefined;
+    try {
+      const res = await fetch("/api/ai/velocity/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: current.question,
+          correctAnswer: current.answer,
+          userAnswer: answerText,
+          topic: current.topic,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { correct: boolean; reason: string };
+        correct = !!data.correct;
+        reason = data.reason;
+      } else {
+        reason = "Grader unavailable — response treated as incorrect.";
+      }
+    } catch {
+      reason = "Could not reach the grader — response treated as incorrect.";
+    } finally {
+      setGrading(false);
+    }
+
     finalizeAttempt(
       {
         topic: current.topic,
         question: current.question,
         userAnswer: answerText,
-        correctAnswer,
+        correctAnswer: current.answer,
         correct,
         reactionMs,
-        type: current.type,
+        type: "sa",
       },
-      { explanation: current.explanation }
+      { explanation: current.explanation, reason }
     );
   }, [phase, current, startedAt, answerText, finalizeAttempt]);
 
@@ -243,16 +322,21 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   const startGame = useCallback(() => {
     setAttempts([]);
     setQIndex(0);
+    setLineIdx(0);
     setCharsShown(0);
     setFeedback(null);
     setResults(null);
     setPhase("reading");
   }, []);
 
-  const visibleQuestion = useMemo(() => {
+  /** Text shown for the question line (line 0). */
+  const questionText = useMemo(() => {
     if (!current) return "";
+    if (lineIdx > 0) return current.question;
     return current.question.slice(0, charsShown);
-  }, [current, charsShown]);
+  }, [current, lineIdx, charsShown]);
+  /** True once the question has finished (so MC options can start appearing). */
+  const questionDone = lineIdx > 0 || phase !== "reading";
 
   if (phase === "pregame") return <Pregame speed={speed} setSpeed={setSpeed} onStart={startGame} total={total} />;
 
@@ -273,26 +357,38 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
 
       <div className="rounded-2xl border border-gray-200 bg-white p-6 min-h-[180px] flex items-center dark:border-gray-800 dark:bg-gray-900">
         <p className="text-lg leading-relaxed font-medium">
-          {visibleQuestion}
-          {phase === "reading" && charsShown < current.question.length && (
+          {questionText}
+          {phase === "reading" && lineIdx === 0 && charsShown < current.question.length && (
             <span className="ml-0.5 inline-block w-[2px] h-5 bg-current align-middle animate-pulse" />
           )}
         </p>
       </div>
 
-      {current.type === "mc" && (
+      {current.type === "mc" && questionDone && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {current.options.map((opt, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
-            >
-              <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 font-bold dark:bg-gray-800">
-                {MC_LETTERS[i]}
-              </span>
-              <span className="pt-1">{opt}</span>
-            </div>
-          ))}
+          {current.options.map((opt, i) => {
+            const thisLine = i + 1;
+            // Before this line starts revealing, hide the row entirely.
+            if (phase === "reading" && lineIdx < thisLine) return null;
+            const isRevealing = phase === "reading" && lineIdx === thisLine;
+            const text = isRevealing ? opt.slice(0, charsShown) : opt;
+            return (
+              <div
+                key={i}
+                className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+              >
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 font-bold dark:bg-gray-800">
+                  {MC_LETTERS[i]}
+                </span>
+                <span className="pt-1">
+                  {text}
+                  {isRevealing && charsShown < opt.length && (
+                    <span className="ml-0.5 inline-block w-[2px] h-4 bg-current align-middle animate-pulse" />
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -322,23 +418,28 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
             value={answerText}
             onChange={(e) => setAnswerText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !grading) {
                 e.preventDefault();
-                submitAnswer();
+                void submitAnswer();
               }
             }}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base outline-none focus:border-black dark:border-gray-600 dark:bg-gray-950 dark:focus:border-white"
+            disabled={grading}
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base outline-none focus:border-black dark:border-gray-600 dark:bg-gray-950 dark:focus:border-white disabled:opacity-60"
             autoFocus
             autoComplete="off"
             spellCheck={false}
           />
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {grading ? "Checking your answer…" : current.type === "sa" ? "Graded by AI — close is close enough." : ""}
+            </p>
             <button
               type="button"
-              onClick={submitAnswer}
-              className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
+              onClick={() => void submitAnswer()}
+              disabled={grading}
+              className="btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60"
             >
-              Submit
+              {grading ? "Checking…" : "Submit"}
             </button>
           </div>
         </div>
@@ -359,6 +460,9 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
             <p className="mt-1 text-sm">
               Correct answer: <strong>{feedback.correctAnswer}</strong>
             </p>
+          )}
+          {feedback.reason && (
+            <p className="mt-2 text-xs italic text-gray-600 dark:text-gray-300">{feedback.reason}</p>
           )}
           {feedback.explanation && (
             <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{feedback.explanation}</p>

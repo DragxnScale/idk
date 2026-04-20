@@ -120,24 +120,40 @@ export async function POST(request: Request) {
     const notesContext = notes.map((n) => n.content).join("\n\n");
     const ownerExtra = await getAiOwnerStyleExtra();
 
-    const baseSystem = `You are designing a rapid-fire reaction-speed quiz for a study session.
+    const baseSystem = `You are writing exactly ${DEFAULT_Q} rapid-fire quiz-bowl style science questions on the reading, in the style of the NSB (National Science Bowl) middle/high-school competition.
 
-Generate exactly ${DEFAULT_Q} punchy questions that test the most essential concepts from the reading.
+VOICE & FORMAT
+- Questions are ONE punchy sentence a moderator could read aloud — ideally under 120 characters.
+- No meta phrasing like "Based on the reading…" or "According to the text…".
+- Prioritise the most foundational, examinable concepts. Skip trivia and anecdotes.
 
-SCHEMA (EVERY FIELD MUST BE PRESENT ON EVERY QUESTION — no exceptions):
-- type: "mc" or "sa"
-- question: one short sentence, ideally under 120 characters
-- options: ALWAYS an array of exactly 4 strings
-- correctIndex: integer 0–3
-- answer: a short canonical answer string (1–4 words)
-- topic: short topic label (2–5 words) naming the concept
-- explanation: one short sentence explaining why the answer is correct
+TYPES (output "type" as "mc" or "sa"; aim for ~60% mc / ~40% sa)
+- "mc" (multiple choice): 4 crisp answer options in "options", one is correct. "correctIndex" (0–3) points at it and "answer" MUST equal options[correctIndex] verbatim. Vary the correct position across questions.
+- "sa" (short answer): "answer" is a SHORT canonical reply — a noun, number, name, formula, or 1–4 word phrase. Because the schema still requires 4 "options", fill them with four plausible-but-incorrect distractor phrases; they are never shown to the user.
 
-Per-type rules:
-- "mc" (multiple choice, ~60% of questions): "options" holds 4 plausible options, "correctIndex" points at the correct one, and "answer" MUST equal options[correctIndex] verbatim. Vary the correct position across questions — don't always put it at index 0.
-- "sa" (short answer, ~40% of questions): "answer" is the canonical short noun phrase the student should type. Because the schema still requires 4 options, set "options" to four plausible-but-incorrect distractor phrases (used only as extra hints) and "correctIndex" to 0. The student will type free text — the distractors are not shown.
+HARD BANS for short-answer questions — do NOT write questions where any of these apply:
+- The answer is a full sentence or clause.
+- The stem starts with "Why", "Explain", "Describe", "Discuss", "How does", "What happens if", "What is the difference between".
+- The answer requires reasoning or justification ("why X causes Y", "explain how").
+- The question is multi-part, compound, or asks for more than one fact at once.
+- The answer is a list longer than 3 items.
+If the concept only yields an essay-style answer, write it as MC instead.
 
-Prioritise foundational ideas over trivia. Keep explanations short and concrete.`;
+GOOD EXAMPLES (match this tone and brevity)
+MC:
+- "A photon of what wavelength carries the most energy?" options: ["Red","Ultraviolet","Infrared","Blue"] correctIndex: 1
+- "Which of the following is NOT a nucleic acid?" options: ["DNA","RNA","ATP","DNR"] correctIndex: 3
+- "On a geology field trip, you come across a sedimentary rock containing ripple marks. These marks might contain information about which of the following?" options: ["Water depth","Seasonal climate variability","Flow direction","Local vegetation"] correctIndex: 2
+
+SA:
+- "In what organ does the female germ cell develop?" answer: "ovary"
+- "What is the structure capable of transporting dissolved organic material throughout a plant?" answer: "phloem"
+- "An atom of what isotope has a nucleus that contains eight protons and ten neutrons?" answer: "oxygen-18"
+- "How many constellations are currently officially recognized?" answer: "88"
+- "Who was the first American woman to fly in space?" answer: "Sally Ride"
+
+SCHEMA — every field is REQUIRED on EVERY question:
+- type, question, options (4 strings), correctIndex (0–3), answer, topic (2–5 words labelling the concept), explanation (one short sentence).`;
 
     const { object } = await generateObject({
       model: openai(MODEL),
