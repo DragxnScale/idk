@@ -131,10 +131,9 @@ export function SettingsUiEditorTab() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-gray-400 max-w-2xl">
-        Preview matches the live Settings layout (Daily goals, Account, Textbook display size).{" "}
-        <strong className="text-gray-200">Right-click</strong> any text to edit copy and typography.{" "}
-        Use <strong className="text-gray-200">Undo</strong> for the last change, then{" "}
-        <strong className="text-gray-200">Apply globally</strong> to save for all signed-in users (public Settings page).
+        Full-page preview of Settings: scroll for session defaults, study breaks, PDF cache, exit password, upload storage, focus music, theme, and shortcuts.{" "}
+        <strong className="text-gray-200">Right-click</strong> any text to edit.{" "}
+        <strong className="text-gray-200">Undo</strong> then <strong className="text-gray-200">Apply globally</strong> saves to the live Settings page.
       </p>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -158,7 +157,7 @@ export function SettingsUiEditorTab() {
         {applyStatus === "err" && <span className="text-sm text-red-400">Could not save.</span>}
       </div>
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-950 p-6 md:p-8 text-slate-100">
+      <div className="max-h-[min(78vh,960px)] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-6 md:p-8 text-slate-100">
         <div className="flex items-center gap-4 mb-6">
           <span className="text-sm text-slate-500 underline underline-offset-4">← Dashboard</span>
           <h2 className="text-2xl font-bold text-white">
@@ -268,6 +267,174 @@ export function SettingsUiEditorTab() {
               </div>
             </section>
           </div>
+
+          <p className="text-sm text-slate-500 px-1">
+            More sections (scroll) — same cards as{" "}
+            <code className="text-slate-400">/settings</code> below the fold.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <h3 className="text-base font-semibold mb-1">
+                <Editable suiKey="session-defaults.title" def="Session defaults" />
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                <Editable
+                  suiKey="session-defaults.desc"
+                  def="Pre-fill the goal type and target whenever you start a new session."
+                />
+              </p>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {["time", "pages", "chapter"].map((t) => (
+                  <div
+                    key={t}
+                    className={`rounded-lg border py-2 text-center text-xs font-medium capitalize ${t === "time" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-600 text-slate-300"}`}
+                  >
+                    {t}
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg bg-blue-600 py-2.5 text-center text-sm font-medium text-white">
+                <Editable suiKey="session-defaults.save" def="Save defaults" />
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-semibold">
+                  <Editable suiKey="study-breaks.title" def="Study breaks" />
+                </h3>
+                <div className="h-6 w-11 rounded-full bg-blue-600 relative">
+                  <span className="absolute right-1 top-1 h-4 w-4 rounded-full bg-white shadow" />
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mb-4">
+                <Editable
+                  suiKey="study-breaks.desc-on"
+                  def="Cycles between focus and break intervals during study sessions."
+                />
+              </p>
+              <p className="text-xs text-slate-500 mb-3">
+                <span className="text-slate-500">(When off: </span>
+                <Editable suiKey="study-breaks.desc-off" def="Off — sessions use a continuous timer." />
+                <span className="text-slate-500">)</span>
+              </p>
+              <div className="rounded-lg bg-blue-600 py-2.5 text-center text-sm font-medium text-white">
+                <Editable suiKey="study-breaks.save" def="Save break settings" />
+              </div>
+            </section>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-semibold">
+                  <Editable suiKey="pdf-cache.title" def="Offline PDF cache" />
+                </h3>
+                <div className="h-6 w-11 rounded-full bg-blue-600 relative">
+                  <span className="absolute right-1 top-1 h-4 w-4 rounded-full bg-white shadow" />
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mb-2">
+                <Editable
+                  suiKey="pdf-cache.desc-on"
+                  def="Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
+                />
+              </p>
+              <p className="text-xs text-slate-500">
+                <Editable
+                  suiKey="pdf-cache.desc-off"
+                  def="Caching is off. Textbooks will always load from the network and won't be available offline."
+                />
+              </p>
+            </section>
+
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <h3 className="text-base font-semibold mb-1">
+                <Editable suiKey="exit-password.title" def="Exit password" />
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                <Editable
+                  suiKey="exit-password.desc"
+                  def="Required to end a study session early. Defaults to your login password if not changed."
+                />
+              </p>
+              <div className="space-y-2 mb-4">
+                <div className="h-9 rounded-lg border border-slate-600 bg-slate-800" />
+                <div className="h-9 rounded-lg border border-slate-600 bg-slate-800" />
+              </div>
+              <div className="rounded-lg bg-blue-600 py-2.5 text-center text-sm font-medium text-white">
+                <Editable suiKey="exit-password.save" def="Save exit password" />
+              </div>
+            </section>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <h3 className="text-base font-semibold mb-1">
+                <Editable suiKey="upload-storage.title" def="Upload storage" />
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                <Editable suiKey="upload-storage.desc" def="Space used by your uploaded PDFs." />
+              </p>
+              <div className="h-2.5 rounded-full bg-slate-700 overflow-hidden">
+                <div className="h-full w-1/3 rounded-full bg-blue-500" />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">42% of your quota used</p>
+            </section>
+
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+              <h3 className="text-base font-semibold mb-1">
+                <Editable suiKey="focus-music.title" def="Focus music" />
+              </h3>
+              <p className="text-sm text-slate-400 mb-4">
+                <Editable
+                  suiKey="focus-music.desc"
+                  def="Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device."
+                />
+              </p>
+              <div className="flex gap-2">
+                <div className="rounded-lg border border-slate-600 bg-blue-600 px-3 py-1.5 text-xs text-white">Search songs</div>
+                <div className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-400">Paste URL</div>
+              </div>
+            </section>
+          </div>
+
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+            <h3 className="text-base font-semibold mb-1">
+              <Editable suiKey="theme.title" def="Theme" />
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              <Editable suiKey="theme.desc" def="Pick a built-in theme or create your own with a color picker." />
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {["Default", "Ocean", "Forest", "Midnight"].map((n) => (
+                <div
+                  key={n}
+                  className={`rounded-lg border px-3 py-2 text-xs ${n === "Default" ? "border-blue-600 ring-2 ring-blue-500/30" : "border-slate-600"}`}
+                >
+                  {n}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+            <h3 className="text-base font-semibold mb-1">
+              <Editable suiKey="keyboard-shortcuts.title" def="Keyboard shortcuts" />
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              <Editable suiKey="keyboard-shortcuts.desc" def="Available while reading in a study session." />
+            </p>
+            <ul className="space-y-2 text-sm text-slate-300">
+              <li>
+                <kbd className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs">← →</kbd> Previous / Next page
+              </li>
+              <li>
+                <kbd className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-xs">F</kbd> Search
+              </li>
+            </ul>
+          </section>
         </div>
       </div>
 

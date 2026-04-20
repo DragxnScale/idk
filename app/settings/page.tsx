@@ -554,9 +554,15 @@ export default function SettingsPage() {
 
             "session-defaults": (
               <section key="session-defaults" style={{ ...cardGridCol("session-defaults"), ...cardStyle("session-defaults") }} className={CS}>
-                <h2 className={titleClass("session-defaults", "mb-1")}>{ctitle("session-defaults", "Session defaults")}</h2>
+                <h2 className={titleClass("session-defaults", "mb-1")}>
+                  <SuiText k="session-defaults.title" def="Session defaults" as="span" />
+                </h2>
                 <p className={descClass("session-defaults", "mb-4")}>
-                  {cdesc("session-defaults", "Pre-fill the goal type and target whenever you start a new session.")}
+                  <SuiText
+                    k="session-defaults.desc"
+                    def="Pre-fill the goal type and target whenever you start a new session."
+                    as="span"
+                  />
                 </p>
                 <form onSubmit={handleSessionDefaultSave} className="space-y-4">
                   <div>
@@ -579,7 +585,11 @@ export default function SettingsPage() {
                     <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
                   )}
                   <button type="submit" disabled={sessionDefaultStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                    {sessionDefaultStatus === "loading" ? "Saving…" : "Save defaults"}
+                    {sessionDefaultStatus === "loading" ? (
+                      "Saving…"
+                    ) : (
+                      <SuiText k="session-defaults.save" def="Save defaults" as="span" />
+                    )}
                   </button>
                 </form>
               </section>
@@ -588,13 +598,23 @@ export default function SettingsPage() {
             "study-breaks": (
               <section key="study-breaks" style={{ ...cardGridCol("study-breaks"), ...cardStyle("study-breaks") }} className={CS}>
                 <div className="flex items-center justify-between mb-1">
-                  <h2 className={titleClass("study-breaks")}>{ctitle("study-breaks", "Study breaks")}</h2>
+                  <h2 className={titleClass("study-breaks")}>
+                    <SuiText k="study-breaks.title" def="Study breaks" as="span" />
+                  </h2>
                   <button type="button" onClick={() => { setPomodoroEnabled(!pomodoroEnabled); setPomodoroStatus("idle"); }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pomodoroEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} role="switch" aria-checked={pomodoroEnabled}>
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pomodoroEnabled ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
                 </div>
                 <p className={descClass("study-breaks", "mb-4")}>
-                  {cdesc("study-breaks", pomodoroEnabled ? "Cycles between focus and break intervals during study sessions." : "Off — sessions use a continuous timer.")}
+                  <SuiText
+                    k={pomodoroEnabled ? "study-breaks.desc-on" : "study-breaks.desc-off"}
+                    def={
+                      pomodoroEnabled
+                        ? "Cycles between focus and break intervals during study sessions."
+                        : "Off — sessions use a continuous timer."
+                    }
+                    as="span"
+                  />
                 </p>
                 {pomodoroEnabled && (
                   <form onSubmit={handlePomodoroSave} className="space-y-3">
@@ -620,7 +640,11 @@ export default function SettingsPage() {
                       <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>
                     )}
                     <button type="submit" disabled={pomodoroStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
-                      {pomodoroStatus === "loading" ? "Saving…" : "Save break settings"}
+                      {pomodoroStatus === "loading" ? (
+                        "Saving…"
+                      ) : (
+                        <SuiText k="study-breaks.save" def="Save break settings" as="span" />
+                      )}
                     </button>
                   </form>
                 )}
@@ -663,15 +687,23 @@ export default function SettingsPage() {
             "pdf-cache": (
               <section key="pdf-cache" style={{ ...cardGridCol("pdf-cache"), ...cardStyle("pdf-cache") }} className={CS}>
                 <div className="flex items-center justify-between mb-1">
-                  <h2 className={titleClass("pdf-cache")}>{ctitle("pdf-cache", "Offline PDF cache")}</h2>
+                  <h2 className={titleClass("pdf-cache")}>
+                    <SuiText k="pdf-cache.title" def="Offline PDF cache" as="span" />
+                  </h2>
                   <button type="button" onClick={() => handlePdfCacheEnabled(!pdfCacheEnabled)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${pdfCacheEnabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`} aria-checked={pdfCacheEnabled} role="switch">
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${pdfCacheEnabled ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
                 </div>
                 <p className={descClass("pdf-cache", "mb-5")}>
-                  {pdfCacheEnabled
-                    ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
-                    : "Caching is off. Textbooks will always load from the network and won't be available offline."}
+                  <SuiText
+                    k={pdfCacheEnabled ? "pdf-cache.desc-on" : "pdf-cache.desc-off"}
+                    def={
+                      pdfCacheEnabled
+                        ? "Textbooks you open are cached on this device so they load instantly and work offline. Older ones are evicted when either limit is reached."
+                        : "Caching is off. Textbooks will always load from the network and won't be available offline."
+                    }
+                    as="span"
+                  />
                 </p>
                 {pdfCacheEnabled && (
                   <>
@@ -699,9 +731,11 @@ export default function SettingsPage() {
 
             "upload-storage": (
               <section key="upload-storage" style={{ ...cardGridCol("upload-storage"), ...cardStyle("upload-storage") }} className={CS}>
-                <h2 className={titleClass("upload-storage", "mb-1")}>{ctitle("upload-storage", "Upload storage")}</h2>
+                <h2 className={titleClass("upload-storage", "mb-1")}>
+                  <SuiText k="upload-storage.title" def="Upload storage" as="span" />
+                </h2>
                 <p className={descClass("upload-storage", "mb-4")}>
-                  {cdesc("upload-storage", "Space used by your uploaded PDFs.")}
+                  <SuiText k="upload-storage.desc" def="Space used by your uploaded PDFs." as="span" />
                 </p>
                 {storage ? (
                   <div className="space-y-2">
@@ -723,9 +757,15 @@ export default function SettingsPage() {
 
             "exit-password": (
               <section key="exit-password" style={{ ...cardGridCol("exit-password"), ...cardStyle("exit-password") }} className={CS}>
-                <h2 className={titleClass("exit-password", "mb-1")}>{ctitle("exit-password", "Exit password")}</h2>
+                <h2 className={titleClass("exit-password", "mb-1")}>
+                  <SuiText k="exit-password.title" def="Exit password" as="span" />
+                </h2>
                 <p className={descClass("exit-password", "mb-5")}>
-                  {cdesc("exit-password", "Required to end a study session early. Defaults to your login password if not changed.")}
+                  <SuiText
+                    k="exit-password.desc"
+                    def="Required to end a study session early. Defaults to your login password if not changed."
+                    as="span"
+                  />
                 </p>
                 <form onSubmit={handlePasswordSubmit} className="space-y-4">
                   <div>
@@ -744,7 +784,11 @@ export default function SettingsPage() {
                     <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
                   )}
                   <button type="submit" disabled={pwStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
-                    {pwStatus === "loading" ? "Saving…" : "Save exit password"}
+                    {pwStatus === "loading" ? (
+                      "Saving…"
+                    ) : (
+                      <SuiText k="exit-password.save" def="Save exit password" as="span" />
+                    )}
                   </button>
                 </form>
               </section>
@@ -752,9 +796,15 @@ export default function SettingsPage() {
 
             "focus-music": (
               <section key="focus-music" style={{ ...cardGridCol("focus-music"), ...cardStyle("focus-music") }} className={CS}>
-                <h2 className={titleClass("focus-music", "mb-1")}>{ctitle("focus-music", "Focus music")}</h2>
+                <h2 className={titleClass("focus-music", "mb-1")}>
+                  <SuiText k="focus-music.title" def="Focus music" as="span" />
+                </h2>
                 <p className={descClass("focus-music", "mb-5")}>
-                  {cdesc("focus-music", "Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device.")}
+                  <SuiText
+                    k="focus-music.desc"
+                    def="Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device."
+                    as="span"
+                  />
                 </p>
                 <div className="flex gap-1 mb-3">
                   <button onClick={() => setUrlMode(false)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${!urlMode ? "btn-primary" : "border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"}`}>Search songs</button>
@@ -817,9 +867,11 @@ export default function SettingsPage() {
 
             "theme": (
               <section key="theme" style={{ ...cardGridCol("theme"), ...cardStyle("theme") }} className={CS}>
-                <h2 className={titleClass("theme", "mb-1")}>{ctitle("theme", "Theme")}</h2>
+                <h2 className={titleClass("theme", "mb-1")}>
+                  <SuiText k="theme.title" def="Theme" as="span" />
+                </h2>
                 <p className={descClass("theme", "mb-5")}>
-                  {cdesc("theme", "Pick a built-in theme or create your own with a color picker.")}
+                  <SuiText k="theme.desc" def="Pick a built-in theme or create your own with a color picker." as="span" />
                 </p>
                 <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-6">
                   {THEMES.map((t) => {
@@ -900,9 +952,11 @@ export default function SettingsPage() {
 
             "keyboard-shortcuts": (
               <section key="keyboard-shortcuts" style={{ ...cardGridCol("keyboard-shortcuts"), ...cardStyle("keyboard-shortcuts") }} className={CS}>
-                <h2 className={titleClass("keyboard-shortcuts", "mb-1")}>{ctitle("keyboard-shortcuts", "Keyboard shortcuts")}</h2>
+                <h2 className={titleClass("keyboard-shortcuts", "mb-1")}>
+                  <SuiText k="keyboard-shortcuts.title" def="Keyboard shortcuts" as="span" />
+                </h2>
                 <p className={descClass("keyboard-shortcuts", "mb-4")}>
-                  {cdesc("keyboard-shortcuts", "Available while reading in a study session.")}
+                  <SuiText k="keyboard-shortcuts.desc" def="Available while reading in a study session." as="span" />
                 </p>
                 <div className="space-y-2">
                   {[

@@ -447,7 +447,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 ### 7.6 PWA / Offline mode
 
-- **`components/settings/SettingsUiProvider.tsx`** — Fetches `GET /api/app/settings-ui` and applies per-key text + inline styles on the Settings page via **`SuiText`**. Admins edit the same keys in **Developer Panel → Settings UI** (right-click preview, **Apply globally** → `PUT /api/admin/settings-ui`).
+- **`components/settings/SettingsUiProvider.tsx`** — Fetches `GET /api/app/settings-ui` and applies per-key text + inline styles on the Settings page via **`SuiText`**. Admins edit the same keys in **Developer Panel → Settings UI**: a scrollable preview lists **Daily goals** through **Keyboard shortcuts** (not only the first three cards); right-click text, **Apply globally** → `PUT /api/admin/settings-ui`.
 - **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
   - **Cache-first**: `/api/proxy/pdf`, **`/api/blob/serve`** (private blob streams from `lib/client` URLs), and direct Vercel Blob PDF URLs — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the “cached PDFs” counter use **distinct URLs** (one logical book), not raw Cache API entry counts. User uploads that load via **`GET /api/documents/[id]/file`** redirect to the stored blob URL; that follow-up request is cached under the blob-host rule when the file is served from a public `*.blob.vercel-storage.com` URL.
   - Turning **off** offline PDF cache in Settings runs `setPdfCacheEnabled: false` in the SW (which **`waitUntil`** deletes the PDF bucket) **and** `clearAllPdfCachesClient()` from the page so all `bowlbeacon-pdf-*` caches are removed on that device.
