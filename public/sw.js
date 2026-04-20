@@ -52,6 +52,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Private blobs stream through the app (cookie + server-side token). Same-origin PDF
+  // bytes + Range requests — must cache here; skipping /api/* was leaving these uncached.
+  if (url.pathname === "/api/blob/serve") {
+    event.respondWith(cacheFirst(request, PDF_CACHE));
+    return;
+  }
+
   // Public Vercel Blob PDFs: cache-first
   if (url.hostname.endsWith("blob.vercel-storage.com") && url.pathname.endsWith(".pdf")) {
     event.respondWith(cacheFirst(request, PDF_CACHE));
