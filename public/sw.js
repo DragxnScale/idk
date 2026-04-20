@@ -1,10 +1,12 @@
-// Bowl Beacon Service Worker — v3 offline-capable
-const CACHE_VERSION = "v3";
+// Bowl Beacon Service Worker — v4 offline-capable
+// v4: PDF eviction groups by logical URL (range requests = one PDF), not raw cache entry count.
+const CACHE_VERSION = "v4";
 const SHELL_CACHE = `bowlbeacon-shell-${CACHE_VERSION}`;
 const API_CACHE = `bowlbeacon-api-${CACHE_VERSION}`;
 const PDF_CACHE = `bowlbeacon-pdf-${CACHE_VERSION}`;
 
 // PDF cache limits — updated at runtime via postMessage from the page.
+// pdfMaxCount = max distinct PDF URLs (proxy or blob), not raw Cache API entries.
 // Defaults: keep at most 2 PDFs, and at most 500 MB total.
 let pdfMaxCount = 2;
 let pdfMaxBytes = 500 * 1024 * 1024; // 500 MB
@@ -73,16 +75,24 @@ self.addEventListener("fetch", (event) => {
 async function cacheFirst(request, cacheName) {
   // If PDF caching is disabled by the user, just fetch directly
   if (cacheName === PDF_CACHE && !pdfCacheEnabled) {
-    try { return await fetch(request); } catch { return new Response("Offline — PDF caching is disabled in Settings", { status: 503 }); }
+    try {
+      return await fetch(request);
+    } catch {
+      return new Response("Offline — PDF caching is disabled in Settings", { status: 503 });
+    }
   }
   const cached = await caches.match(request);
   if (cached) return cached;
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    // 200 full / 206 ranges (pdf.js) — both cacheable
+    if (response.ok || response.status === 206) {
       const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-      // Enforce size / count limits after adding a new PDF
+      try {
+        await cache.put(request, response.clone());
+      } catch {
+        /* Some browsers are picky; PDF still works from network */
+      }
       if (cacheName === PDF_CACHE) {
         evictPdfCache().catch(() => {});
       }
@@ -94,37 +104,41 @@ async function cacheFirst(request, cacheName) {
 }
 
 /**
- * Evict oldest PDF cache entries until both the count and total size are
- * within the configured limits.  Entries are sorted by the Date response
- * header (falling back to insertion order) so the least-recently-cached
- * PDF is evicted first.
+ * Evict least-recently cached logical PDFs (same URL = one book, many Range requests).
  */
 async function evictPdfCache() {
   const cache = await caches.open(PDF_CACHE);
-  const keys = await cache.keys();
-  if (keys.length === 0) return;
 
-  // Build list of { request, date, size } sorted oldest-first
-  const entries = await Promise.all(
-    keys.map(async (req) => {
+  for (let safety = 0; safety < 32; safety++) {
+    const keys = await cache.keys();
+    if (keys.length === 0) return;
+
+    const groups = new Map();
+    for (const req of keys) {
+      const logical = req.url;
       const res = await cache.match(req);
       const size = Number(res?.headers?.get("content-length") ?? 0);
       const dateStr = res?.headers?.get("date");
       const date = dateStr ? new Date(dateStr).getTime() : 0;
-      return { req, date, size };
-    })
-  );
-  entries.sort((a, b) => a.date - b.date); // oldest first
+      if (!groups.has(logical)) {
+        groups.set(logical, { reqs: [], bytes: 0, date: Infinity });
+      }
+      const g = groups.get(logical);
+      g.reqs.push(req);
+      g.bytes += size;
+      g.date = Math.min(g.date, date || 0);
+    }
 
-  let totalBytes = entries.reduce((s, e) => s + e.size, 0);
-  let count = entries.length;
+    const list = [...groups.values()].sort((a, b) => a.date - b.date);
+    let totalBytes = list.reduce((s, g) => s + g.bytes, 0);
+    let logicalCount = list.length;
 
-  for (const entry of entries) {
-    // Stop once we're within both limits
-    if (count <= pdfMaxCount && totalBytes <= pdfMaxBytes) break;
-    await cache.delete(entry.req);
-    totalBytes -= entry.size;
-    count--;
+    if (logicalCount <= pdfMaxCount && totalBytes <= pdfMaxBytes) return;
+
+    const victim = list[0];
+    for (const req of victim.reqs) {
+      await cache.delete(req);
+    }
   }
 }
 
@@ -135,18 +149,18 @@ async function staleWhileRevalidate(request, cacheName) {
 
   const fetchPromise = fetch(request)
     .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
+      if (response.ok) {
+        cache.put(request, response.clone()).catch(() => {});
+      }
       return response;
     })
     .catch(() => null);
 
   if (cached) {
-    // Serve cached immediately, update in background
     fetchPromise.catch(() => {});
     return cached;
   }
 
-  // No cache yet: wait for the network
   const fresh = await fetchPromise;
   return (
     fresh ??
@@ -163,7 +177,7 @@ async function networkFirstWithFallback(request) {
     const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(SHELL_CACHE);
-      cache.put(request, response.clone());
+      cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch {
@@ -185,10 +199,15 @@ self.addEventListener("message", (event) => {
       .open(PDF_CACHE)
       .then(async (cache) => {
         const keys = await cache.keys();
-        port.postMessage({ type: "pdfCacheStats", count: keys.length });
+        const logical = new Set(keys.map((r) => r.url));
+        port.postMessage({
+          type: "pdfCacheStats",
+          count: logical.size,
+          entries: keys.length,
+        });
       })
       .catch(() => {
-        port.postMessage({ type: "pdfCacheStats", count: 0 });
+        port.postMessage({ type: "pdfCacheStats", count: 0, entries: 0 });
       });
   }
   if (event.data?.type === "setPdfCacheLimits") {
@@ -198,7 +217,6 @@ self.addEventListener("message", (event) => {
   }
   if (event.data?.type === "setPdfCacheEnabled") {
     pdfCacheEnabled = !!event.data.enabled;
-    // If disabled, clear the existing PDF cache
     if (!pdfCacheEnabled) caches.delete(PDF_CACHE).catch(() => {});
   }
 });

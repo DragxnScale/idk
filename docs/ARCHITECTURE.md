@@ -443,8 +443,8 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 ### 7.6 PWA / Offline mode
 
-- **`public/sw.js`** — Upgraded service worker with three caching strategies:
-  - **Cache-first**: `/api/proxy/pdf` and Vercel Blob PDF URLs — PDFs load instantly after first visit, and work offline.
+- **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
+  - **Cache-first**: `/api/proxy/pdf` and Vercel Blob PDF URLs — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the “cached PDFs” counter use **distinct URLs** (one logical book), not raw Cache API entry counts.
   - **Stale-while-revalidate**: `/api/auth/session`, `/api/study/stats`, `/api/textbooks`, `/api/user/drive`, `/api/user/settings`, `/api/user/textbook-progress`, `/api/study/sessions` — cached data shown immediately, updated in background.
   - **Network-first with fallback**: all app shell pages — always tries fresh, falls back to cache when offline.
 - **`lib/offline-session.ts`** — Client-side offline session queue backed by `localStorage`. When the device is offline: `enqueueOfflineSession()` stores the session locally with a `offline-*` temp ID; `updateOfflineSession()` updates the progress snapshot; `syncOfflineSessions()` replays all queued sessions to the server (honoring the original `startedAt` time) and fires `offlineSessionSynced` events for UI updates.
