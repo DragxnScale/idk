@@ -6,7 +6,32 @@ import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
-import { velocityGames } from "@/lib/db/schema";
+import { velocityGames, clientErrorLogs } from "@/lib/db/schema";
+
+async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
+  const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
+  const stack = err instanceof Error ? err.stack ?? null : null;
+  let extraJson: string | null = null;
+  try {
+    extraJson = extra != null ? JSON.stringify(extra).slice(0, 16000) : null;
+  } catch {}
+  try {
+    await db.insert(clientErrorLogs).values({
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      kind: "dev",
+      userId,
+      email,
+      message: `[velocity/complete] ${message}`.slice(0, 4000),
+      stack: stack?.slice(0, 32000) ?? null,
+      url: null,
+      userAgent: null,
+      extra: extraJson,
+    });
+  } catch {
+    /* logging must never throw */
+  }
+}
 
 const attemptSchema = z.object({
   topic: z.string(),
@@ -109,7 +134,12 @@ Keep everything short and actionable. No filler.`;
         } ms.\n\nAttempts:\n${summary}\n\nWrong answers: ${wrong.length}.`,
       });
       review = object;
-    } catch {
+    } catch (err) {
+      await logServerFailure(user.id, user.email ?? null, err, {
+        route: "POST /api/ai/velocity/complete (review step)",
+        velocityGameId,
+        accuracy,
+      });
       review = null;
     }
   }

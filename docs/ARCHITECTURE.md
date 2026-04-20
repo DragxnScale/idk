@@ -306,7 +306,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET | `/api/admin/users` | List users. |
 | PATCH | `/api/admin/users` | Bulk or field updates. |
 | GET, PATCH, DELETE | `/api/admin/users/[id]` | User detail, update, delete. |
-| GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session. |
+| GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session — session meta, document info, full `pageVisits[]`, plus **`quiz`** (score / accuracy / questions with highlighted correct option / review) and **`velocity`** (accuracy / reaction stats / per-attempt log with topic, user answer, correct answer, reaction time / growth areas). Admin UI renders dedicated **Quiz Performance** + **Velocity Performance** cards in the session detail view. |
 | GET | `/api/admin/catalog/cleanup-blobs` | Dry-run preview: reports how many rows/blobs would be deleted and estimated freed bytes. |
 | POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Recalculates `storageBytes` for affected users. |
 | GET, DELETE | `/api/admin/blobs` | List / delete blobs. |
@@ -387,6 +387,9 @@ Query: `sessionId`. Returns cached questions + any saved `results` / `review` / 
 
 **Velocity Complete (POST)**  
 Body: `velocityGameId`, `attempts[]`. Computes accuracy, avg / fastest / slowest reaction, then calls `generateObject` to produce `growthAreas[]` (topic + actionable tip) and `videoSuggestions[]` targeted at the learner's weak spots. Persists everything to `velocity_games`.
+
+**Error reporting**  
+Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` row into `client_error_logs` with `message: "[velocity] …"` / `"[velocity/complete] …"` and an `extra` payload that includes the `sessionId` / `velocityGameId` and request shape. The client mirror (`app/study/session/[id]/summary/page.tsx`) also forwards generation failures (HTTP errors + network exceptions) to `POST /api/debug/client-error` with `message: "[velocity-client] …"`, so both sides of a broken generation show up together in the admin debug log.
 
 **Matching rules** (`lib/velocity-match.ts`, client-safe):
 - **MC**: accepts a single letter (`W/X/Y/Z`, case-insensitive) *or* verbatim option text (case- and punctuation-insensitive).

@@ -41,6 +41,48 @@ interface PageVisit {
   durationSeconds: number | null;
 }
 
+interface QuizSummary {
+  id: string;
+  score: number | null;
+  totalQuestions: number | null;
+  accuracy: number | null;
+  completed: boolean;
+  createdAt: string | null;
+  questions: { question: string; options: string[]; correctIndex: number; explanation?: string }[];
+  review: unknown;
+}
+
+interface VelocityAttemptAdmin {
+  topic: string;
+  question: string;
+  userAnswer?: string;
+  correctAnswer: string;
+  correct: boolean;
+  reactionMs: number | null;
+  type: "mc" | "sa";
+}
+
+interface VelocitySummary {
+  id: string;
+  accuracy: number | null;
+  avgReactionMs: number | null;
+  fastestMs: number | null;
+  slowestMs: number | null;
+  correctCount: number;
+  total: number;
+  completed: boolean;
+  createdAt: string | null;
+  completedAt: string | null;
+  attempts: VelocityAttemptAdmin[];
+  review:
+    | {
+        growthAreas?: { topic: string; tip: string }[];
+        videoSuggestions?: { title: string; searchQuery: string; reason: string }[];
+      }
+    | null
+    | unknown;
+}
+
 interface SessionDetail {
   session: UserSession;
   document: {
@@ -49,6 +91,8 @@ interface SessionDetail {
     selectedChapters?: string[];
   };
   pageVisits: PageVisit[];
+  quiz?: QuizSummary | null;
+  velocity?: VelocitySummary | null;
 }
 
 interface CatalogEntry {
@@ -412,7 +456,7 @@ function UsersTab() {
 
   // Session detail view
   if (selectedUser && sessionDetail) {
-    const { session: sd, document: doc, pageVisits: visits } = sessionDetail;
+    const { session: sd, document: doc, pageVisits: visits, quiz, velocity } = sessionDetail;
 
     // Aggregate time per page
     const pageTimeMap = new Map<number, number>();
@@ -506,6 +550,180 @@ function UsersTab() {
             </div>
           )}
         </div>
+
+        {/* Quiz performance */}
+        {quiz && (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold">Quiz Performance</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {quiz.completed
+                    ? `Completed — ${quiz.score ?? 0} / ${quiz.totalQuestions ?? quiz.questions.length} correct`
+                    : `Generated — not yet completed (${quiz.totalQuestions ?? quiz.questions.length} questions)`}
+                </p>
+              </div>
+              {quiz.accuracy != null && (
+                <div className="flex-shrink-0 text-right">
+                  <p className="text-2xl font-bold">{quiz.accuracy}%</p>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">Accuracy</p>
+                </div>
+              )}
+            </div>
+
+            {quiz.questions.length > 0 && (
+              <div className="space-y-1 max-h-[30vh] overflow-y-auto pr-1">
+                {quiz.questions.map((q, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition"
+                  >
+                    <span className="w-6 text-xs text-gray-500 text-right font-mono flex-shrink-0">
+                      {i + 1}.
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-300 truncate" title={q.question}>
+                        {q.question}
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        Answer: {q.options[q.correctIndex] ?? "—"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Velocity performance */}
+        {velocity && (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold">Velocity Performance</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {velocity.completed
+                    ? `Completed — ${velocity.correctCount} / ${velocity.total} correct`
+                    : `Generated — not yet played (${velocity.total} questions)`}
+                </p>
+              </div>
+              {velocity.accuracy != null && (
+                <div className="flex-shrink-0 text-right">
+                  <p className="text-2xl font-bold">{velocity.accuracy}%</p>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">Accuracy</p>
+                </div>
+              )}
+            </div>
+
+            {velocity.completed && (
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-center">
+                  <p className="text-sm font-bold">
+                    {velocity.avgReactionMs != null
+                      ? `${(velocity.avgReactionMs / 1000).toFixed(2)}s`
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Avg reaction</p>
+                </div>
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-center">
+                  <p className="text-sm font-bold">
+                    {velocity.fastestMs != null
+                      ? `${(velocity.fastestMs / 1000).toFixed(2)}s`
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Fastest</p>
+                </div>
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-center">
+                  <p className="text-sm font-bold">
+                    {velocity.slowestMs != null
+                      ? `${(velocity.slowestMs / 1000).toFixed(2)}s`
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Slowest</p>
+                </div>
+              </div>
+            )}
+
+            {velocity.attempts.length > 0 && (
+              <div className="space-y-0.5 max-h-[30vh] overflow-y-auto pr-1">
+                {velocity.attempts.map((a, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition"
+                  >
+                    <span className="w-6 text-xs text-gray-500 text-right font-mono flex-shrink-0">
+                      {i + 1}.
+                    </span>
+                    <span
+                      className={`w-4 text-xs text-center flex-shrink-0 ${
+                        a.correct ? "text-green-500" : "text-red-400"
+                      }`}
+                      aria-hidden
+                    >
+                      {a.correct ? "✓" : "✗"}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wide text-gray-600 w-7 flex-shrink-0">
+                      {a.type}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-300 truncate" title={a.question}>
+                        {a.question}
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-0.5 truncate">
+                        <span className="text-gray-600">Topic:</span> {a.topic}
+                        {a.userAnswer != null && (
+                          <>
+                            {" · "}
+                            <span className="text-gray-600">User:</span>{" "}
+                            <span className={a.correct ? "text-green-500/80" : "text-red-400/80"}>
+                              &ldquo;{a.userAnswer || "(blank)"}&rdquo;
+                            </span>
+                          </>
+                        )}
+                        {!a.correct && (
+                          <>
+                            {" · "}
+                            <span className="text-gray-600">Correct:</span>{" "}
+                            <span className="text-gray-400">{a.correctAnswer}</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-mono text-gray-500 flex-shrink-0 w-12 text-right">
+                      {a.reactionMs != null ? `${(a.reactionMs / 1000).toFixed(2)}s` : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(() => {
+              const reviewObj = velocity.review as
+                | { growthAreas?: { topic: string; tip: string }[] }
+                | null
+                | undefined;
+              const growthAreas = reviewObj?.growthAreas;
+              if (!Array.isArray(growthAreas) || growthAreas.length === 0) return null;
+              return (
+                <div className="mt-4 pt-3 border-t border-gray-800">
+                  <p className="text-xs font-semibold mb-2 text-gray-400">Growth areas</p>
+                  <ul className="space-y-1.5">
+                    {growthAreas.map((g, i) => (
+                      <li key={i} className="flex gap-2 text-xs">
+                        <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-full bg-amber-500" />
+                        <div>
+                          <span className="text-gray-300 font-medium">{g.topic}</span>
+                          <span className="text-gray-500"> — {g.tip}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {/* Visit timeline */}
         {visits.length > 0 && (

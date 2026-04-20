@@ -206,12 +206,45 @@ export default function SessionSummaryPage() {
         body: JSON.stringify({ sessionId, accumulatedText: storedText }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate Velocity questions");
+      if (!res.ok) {
+        const errMsg =
+          typeof data?.error === "string"
+            ? data.error
+            : `Failed to generate Velocity questions (HTTP ${res.status})`;
+        void fetch("/api/debug/client-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: `[velocity-client] ${errMsg}`,
+            extra: {
+              scope: "velocity-generate",
+              sessionId,
+              status: res.status,
+              textLength: storedText.length,
+            },
+          }),
+          keepalive: true,
+        }).catch(() => {});
+        throw new Error(errMsg);
+      }
       setVelocityId(data.id);
       setVelocityQuestions(data.questions ?? []);
       setVelocityResults(null);
     } catch (e) {
-      setVelocityError(e instanceof Error ? e.message : "Something went wrong");
+      const msg = e instanceof Error ? e.message : "Something went wrong";
+      setVelocityError(msg);
+      if (!(e instanceof Error) || !msg.includes("HTTP")) {
+        void fetch("/api/debug/client-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: `[velocity-client] ${msg}`,
+            stack: e instanceof Error ? e.stack : undefined,
+            extra: { scope: "velocity-generate-exception", sessionId },
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
     } finally {
       setVelocityLoading(false);
     }
