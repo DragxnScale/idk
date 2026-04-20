@@ -154,8 +154,12 @@ const STATE_CACHE_ON_BREAKS_ON: CardConfig[] = withPatches({
   "credits":   { visible: true },
 });
 
+/** Current config version. Bumped to 3 to force-migrate any v2 configs that
+ *  were saved before the easter-egg visibility rules were enforced. */
+export const CURRENT_CONFIG_VERSION = 3;
+
 export const DEFAULT_CONFIG: SettingsLayoutConfig = {
-  version: 2,
+  version: CURRENT_CONFIG_VERSION,
   states: {
     cacheOff_breaksOff: STATE_CACHE_OFF_BREAKS_OFF,
     cacheOff_breaksOn:  STATE_CACHE_OFF_BREAKS_ON,
@@ -187,13 +191,32 @@ function mergeCardList(loaded: CardConfig[] | undefined, fallback: CardConfig[])
 }
 
 /**
+ * Easter-egg cards (dog + credits) have specific visibility rules per state
+ * that should always be enforced when migrating a legacy v1 config — otherwise
+ * a user's previously-saved config would leave the dog visible on states that
+ * have no gap to fill (e.g. cache-on + breaks-on → sliver rendering).
+ */
+function applyEasterEggRulesForState(cards: CardConfig[], state: LayoutStateKey): CardConfig[] {
+  const defaults = DEFAULT_CONFIG.states[state];
+  return cards.map((c) => {
+    if (c.id === "dog-photo" || c.id === "credits") {
+      const def = defaults.find((d) => d.id === c.id);
+      if (def) return { ...c, visible: def.visible };
+    }
+    return c;
+  });
+}
+
+/**
  * Merges a loaded config with DEFAULT_CONFIG so any new cards or states
  * added in a later app version are present even if the DB has an older
  * saved config.
  *
  * Handles three shapes:
  *   - Missing / null → DEFAULT_CONFIG
- *   - Legacy v1 { version, cards } → use `cards` as the starting point for every state
+ *   - Legacy v1 { version, cards } → use `cards` as the starting point for every state,
+ *     but force the easter-egg visibility to match each state's default (so the dog
+ *     doesn't render on states that have no gap to fill).
  *   - v2 { version, states } → per-state merge against BASE_CARDS
  */
 export function mergeWithDefaults(
@@ -201,29 +224,41 @@ export function mergeWithDefaults(
 ): SettingsLayoutConfig {
   if (!loaded) return DEFAULT_CONFIG;
 
-  // Legacy v1 migration: seed every state with the old single cards list
+  // Legacy v1 migration: seed every state with the old single cards list,
+  // applying per-state easter-egg visibility rules so the dog doesn't show
+  // up on states where it shouldn't fill a gap.
   if ("cards" in loaded && loaded.cards && !("states" in loaded)) {
     const legacyCards = mergeCardList(loaded.cards, BASE_CARDS);
     return {
       version: 2,
       states: {
-        cacheOff_breaksOff: cloneCards(legacyCards),
-        cacheOff_breaksOn:  cloneCards(legacyCards),
-        cacheOn_breaksOff:  cloneCards(legacyCards),
-        cacheOn_breaksOn:   cloneCards(legacyCards),
+        cacheOff_breaksOff: applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOff_breaksOff"),
+        cacheOff_breaksOn:  applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOff_breaksOn"),
+        cacheOn_breaksOff:  applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOn_breaksOff"),
+        cacheOn_breaksOn:   applyEasterEggRulesForState(cloneCards(legacyCards), "cacheOn_breaksOn"),
       },
     };
   }
 
-  // v2 per-state merge
+  // v2+ per-state merge
   const loadedV2 = loaded as SettingsLayoutConfig;
+  const loadedVersion = loadedV2.version ?? 2;
   const states = {} as Record<LayoutStateKey, CardConfig[]>;
   for (const key of LAYOUT_STATE_KEYS) {
     const src = loadedV2.states?.[key];
     const fallback = DEFAULT_CONFIG.states[key];
-    states[key] = mergeCardList(src, fallback);
+    let merged = mergeCardList(src, fallback);
+
+    // v2 → v3: force-apply easter-egg visibility rules (earlier v2 configs
+    // may have the dog + credits visible on every state, which causes a
+    // rendering sliver when there's no gap to fill).
+    if (loadedVersion < 3) {
+      merged = applyEasterEggRulesForState(merged, key);
+    }
+
+    states[key] = merged;
   }
-  return { version: 2, states };
+  return { version: CURRENT_CONFIG_VERSION, states };
 }
 
 /** Human-readable labels shown in the admin editor */
