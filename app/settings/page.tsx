@@ -425,6 +425,9 @@ export default function SettingsPage() {
             <SuiText k="settings.page-title" def="Settings" as="span" />
           </h1>
         </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">
+          Scroll down for session defaults, study breaks, PDF cache, exit password, theme, music, and more.
+        </p>
 
         {/* Hardcoded per-state layout: TOP full-width → 2-col LEFT+RIGHT → BOTTOM full-width */}
         <div className="space-y-4">
@@ -450,7 +453,7 @@ export default function SettingsPage() {
                         <SuiText k="daily-goals.label.minutes" def="Minutes per day" as="span" />
                       </label>
                       <div className="relative">
-                        <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
                       </div>
                     </div>
@@ -459,7 +462,7 @@ export default function SettingsPage() {
                         <SuiText k="daily-goals.label.sessions" def="Sessions per day" as="span" />
                       </label>
                       <div className="relative">
-                        <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">sessions</span>
                       </div>
                     </div>
@@ -476,7 +479,7 @@ export default function SettingsPage() {
                       />
                     </p>
                     <div className="relative w-40">
-                      <input type="number" min={1} max={30} value={inactivityMin} onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                      <input type="number" min={1} max={30} value={inactivityMin} onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
                     </div>
                   </div>
@@ -484,24 +487,24 @@ export default function SettingsPage() {
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                       <SuiText k="daily-goals.label.quiz" def="Quiz question count" as="span" />
                     </label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                    <div className="mb-2 flex flex-wrap items-center gap-3">
+                      <div className="relative w-28 min-w-[7rem] shrink-0">
+                        <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
+                      </div>
+                      <span className="text-xs text-gray-400 shrink-0">to</span>
+                      <div className="relative w-28 min-w-[7rem] shrink-0">
+                        <input type="number" min={1} max={25} value={quizMax} onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }} placeholder="10" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">max</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
                       <SuiText
                         k="daily-goals.hint.quiz"
                         def="After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min 3, max 10). Max allowed: 25."
                         as="span"
                       />
                     </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-3">
-                      <div className="relative w-28 min-w-[7rem] shrink-0">
-                        <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
-                      </div>
-                      <span className="text-xs text-gray-400 shrink-0">to</span>
-                      <div className="relative w-28 min-w-[7rem] shrink-0">
-                        <input type="number" min={1} max={25} value={quizMax} onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }} placeholder="10" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">max</span>
-                      </div>
-                    </div>
                   </div>
                   {goalsMessage && (
                     <p className={`text-sm ${goalsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{goalsMessage}</p>

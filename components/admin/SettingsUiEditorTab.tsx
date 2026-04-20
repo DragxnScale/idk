@@ -208,7 +208,12 @@ export function SettingsUiEditorTab() {
               <label className="block text-xs font-medium text-slate-400 mb-1">
                 <Editable suiKey="daily-goals.label.quiz" def="Quiz question count" />
               </label>
-              <p className="text-xs text-slate-500 mb-1.5">
+              <div className="mb-2 flex flex-wrap items-center gap-3 text-slate-300">
+                <div className="w-28 min-w-[7rem] rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-center">3</div>
+                <span className="text-xs text-slate-500">to</span>
+                <div className="w-28 min-w-[7rem] rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-center">10</div>
+              </div>
+              <p className="text-xs text-slate-500">
                 <Editable
                   suiKey="daily-goals.hint.quiz"
                   def="After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min 3, max 10). Max allowed: 25."

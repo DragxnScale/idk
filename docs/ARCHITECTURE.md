@@ -443,6 +443,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 ### 7.5 Client-only and dynamic imports
 
 - **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`.
+- **`app/settings/page.tsx`** — Shows a scroll hint under the title for cards below the fold; **Daily goals** renders quiz min/max number inputs **above** the hint paragraph so admin `SuiText` typography on the hint cannot hide the fields.
 
 ### 7.6 PWA / Offline mode
 
