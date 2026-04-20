@@ -166,7 +166,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Operations**
 
-- `client_error_logs` — browser-reported errors (`POST /api/debug/client-error`): message, optional stack/url/userAgent, optional `user_id`; admin reads via `GET /api/admin/debug-logs`.
+- `client_error_logs` — unified log with `kind`: **`user`** (browser errors via `POST /api/debug/client-error`) or **`dev`** (owner feature-debug via `POST /api/debug/dev-log`). Super-owner reads both via `GET /api/admin/debug-logs` (`userLogs` + `devLogs`); joins `users` for display name when `user_id` is set.
 
 **Connection** (`lib/db/index.ts`): `drizzle` with `url` from `DATABASE_URL` (default `file:./study.db`) and optional `DATABASE_AUTH_TOKEN` for remote LibSQL.
 
@@ -188,8 +188,9 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/debug/client-error` | Stores a client-side error row (optional session; anonymous allowed). |
-| GET | `/api/admin/debug-logs` | Admin: recent rows from `client_error_logs`. |
+| POST | `/api/debug/client-error` | Stores `kind: user` (optional session; anonymous allowed). |
+| POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). |
+| GET | `/api/admin/debug-logs` | **Super-owner only:** `{ userLogs, devLogs }` from `client_error_logs` (joined names). |
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
 | GET | `/api/user/session-context` | Returns JWT user vs effective user and whether impersonation is active. |
 
@@ -315,7 +316,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | POST | `/api/admin/archive-upload` | Upload to Archive. |
 | POST | `/api/admin/mute-block` | Moderation. |
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |
-| GET | `/api/admin/debug-logs` | Recent `client_error_logs` (`limit` query). |
+| GET | `/api/admin/debug-logs` | **Super-owner:** `userLogs` + `devLogs` (`limit` per list). |
 | POST | `/api/admin/impersonate` | Set/clear admin **view-as** cookie. |
 | GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set `noteStyleExtra` and active `MODEL`. |
 | POST | `/api/admin/owner-ai/chat` | Super-owner: direct chat with OpenAI for debugging. |
@@ -400,9 +401,9 @@ Query: `sessionId`. Returns existing cards sorted by page number.
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
-| `/admin` | Admin dashboard (guarded; **Debug log** tab; super-owner sees Owner AI tab). |
+| `/admin` | Admin dashboard (guarded; **Debug log** tab is super-owner only, next to Owner AI). |
 
-Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error`; **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`).
+Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error` (`kind: user`); **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`). Owner feature notes use **`reportDevDebug`** from `lib/dev-debug.ts` → `/api/debug/dev-log`.
 
 ### 7.2 Key components
 
@@ -458,6 +459,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 - **Sessions**: JWT in httpOnly cookie (`sf.session-token`). **`auth()`** decodes JWT with `NEXTAUTH_SECRET`.
 - **API routes**: user data routes use **`getAppUser()`** (JWT + optional admin view-as cookie); return **401** if missing user. **`auth()`** remains for admin authorization and impersonation endpoints.
 - **Admin view-as**: httpOnly cookie `sf.view-as-user` (set by `POST /api/admin/impersonate`). Only **`isAdmin`** accounts may receive it; app routes resolve the target user’s data while `/api/admin/**` stays on the real JWT for permission checks.
+- **Debug logs**: `GET /api/admin/debug-logs`, `POST /api/debug/dev-log` — **super-owner only** (`requireSuperOwner`). User browser errors still post anonymously or signed-in to `POST /api/debug/client-error` without admin access to read.
 - **Admin**: `requireAdmin` checks `users.isAdmin`; `requireSuperOwner` checks hardcoded super-admin email.
 - **PDF proxy**: host allowlist only — arbitrary URLs cannot be fetched.
 - **Exit flow**: stopping a locked session requires `/api/auth/verify-exit`.

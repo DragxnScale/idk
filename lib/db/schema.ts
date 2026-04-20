@@ -295,6 +295,8 @@ export const flashcards = sqliteTable("flashcards", {
 export const clientErrorLogs = sqliteTable("client_error_logs", {
   id: text("id").primaryKey(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  /** `user` = browser/user errors; `dev` = owner feature-debug entries */
+  kind: text("kind").notNull().default("user"),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   email: text("email"),
   message: text("message").notNull(),

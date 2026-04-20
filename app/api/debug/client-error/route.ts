@@ -46,6 +46,7 @@ export async function POST(request: Request) {
   await db.insert(clientErrorLogs).values({
     id: crypto.randomUUID(),
     createdAt: new Date(),
+    kind: "user",
     userId: user?.id ?? null,
     email: user?.email ?? null,
     message,

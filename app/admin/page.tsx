@@ -114,7 +114,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!ownerTabVisible && tab === "owner") setTab("users");
+    if (!ownerTabVisible && (tab === "owner" || tab === "debug")) setTab("users");
   }, [ownerTabVisible, tab]);
 
   if (loading) {
@@ -166,8 +166,7 @@ export default function AdminPage() {
                 "catalog",
                 "messages",
                 "storage",
-                "debug",
-                ...(ownerTabVisible ? (["owner"] as const) : []),
+                ...(ownerTabVisible ? (["debug", "owner"] as const) : []),
               ] as Tab[]
             ).map((t) => (
               <button
@@ -202,7 +201,7 @@ export default function AdminPage() {
         {tab === "catalog" && <CatalogTab />}
         {tab === "messages" && <MessagesTab />}
         {tab === "storage" && <StorageTab />}
-        {tab === "debug" && <DebugLogsTab />}
+        {tab === "debug" && ownerTabVisible && <DebugLogsTab />}
         {tab === "owner" && ownerTabVisible && <OwnerAiTab />}
       </div>
     </main>
@@ -1204,6 +1203,7 @@ interface DebugLogRow {
   createdAt: string | null;
   userId: string | null;
   email: string | null;
+  userName: string | null;
   message: string;
   stack: string | null;
   url: string | null;
@@ -1211,8 +1211,75 @@ interface DebugLogRow {
   extra: unknown;
 }
 
+function DebugLogEntryList({ entries, emptyLabel }: { entries: DebugLogRow[]; emptyLabel: string }) {
+  if (entries.length === 0) {
+    return <p className="text-sm text-gray-500 py-2">{emptyLabel}</p>;
+  }
+  return (
+    <div className="space-y-3 max-h-[min(50vh,28rem)] overflow-auto pr-1">
+      {entries.map((entry) => (
+        <details
+          key={entry.id}
+          className="rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3 text-sm group"
+        >
+          <summary className="cursor-pointer list-none flex flex-wrap gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden">
+            <span className="font-mono text-[11px] text-gray-500 shrink-0">
+              {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}
+            </span>
+            <span className="text-gray-300 break-words flex-1 min-w-[12rem]">{entry.message}</span>
+          </summary>
+          <div className="mt-3 space-y-2 text-xs text-gray-400 border-t border-gray-800 pt-3">
+            {(entry.userName || entry.email || entry.userId) && (
+              <p>
+                <span className="text-gray-600">User:</span>{" "}
+                <span className="text-gray-200">
+                  {entry.userName ? (
+                    <>
+                      {entry.userName}
+                      {entry.email ? (
+                        <span className="text-gray-500"> ({entry.email})</span>
+                      ) : null}
+                    </>
+                  ) : entry.email ? (
+                    entry.email
+                  ) : (
+                    <span className="text-gray-500">id {entry.userId}</span>
+                  )}
+                </span>
+              </p>
+            )}
+            {entry.url && (
+              <p className="break-all">
+                <span className="text-gray-600">URL:</span> {entry.url}
+              </p>
+            )}
+            {entry.userAgent && (
+              <p className="break-all opacity-80">
+                <span className="text-gray-600">UA:</span> {entry.userAgent}
+              </p>
+            )}
+            {entry.stack && (
+              <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-300 max-h-48 overflow-auto">
+                {entry.stack}
+              </pre>
+            )}
+            {entry.extra != null && (
+              <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-400 max-h-32 overflow-auto">
+                {typeof entry.extra === "string"
+                  ? entry.extra
+                  : JSON.stringify(entry.extra, null, 2)}
+              </pre>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function DebugLogsTab() {
-  const [logs, setLogs] = useState<DebugLogRow[] | null>(null);
+  const [userLogs, setUserLogs] = useState<DebugLogRow[] | null>(null);
+  const [devLogs, setDevLogs] = useState<DebugLogRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1224,10 +1291,12 @@ function DebugLogsTab() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setLoadError(data.error ?? "Could not load logs");
-        setLogs([]);
+        setUserLogs([]);
+        setDevLogs([]);
         return;
       }
-      setLogs(data.logs ?? []);
+      setUserLogs(data.userLogs ?? []);
+      setDevLogs(data.devLogs ?? []);
     } finally {
       setLoading(false);
     }
@@ -1238,7 +1307,7 @@ function DebugLogsTab() {
   }, [load]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -1249,7 +1318,8 @@ function DebugLogsTab() {
           {loading ? "Loading…" : "Refresh"}
         </button>
         <p className="text-xs text-gray-500">
-          Browser errors reported via <code className="text-gray-400">/api/debug/client-error</code>. Newest first.
+          Owner only. User errors from <code className="text-gray-400">/api/debug/client-error</code>; dev lines from{" "}
+          <code className="text-gray-400">reportDevDebug()</code> / <code className="text-gray-400">/api/debug/dev-log</code>.
         </p>
       </div>
 
@@ -1257,56 +1327,34 @@ function DebugLogsTab() {
         <p className="text-sm text-red-400">{loadError}</p>
       )}
 
-      {!loading && logs && logs.length === 0 && (
-        <p className="text-sm text-gray-500">No entries yet.</p>
-      )}
+      <section>
+        <h2 className="text-sm font-semibold text-white mb-2 border-b border-gray-800 pb-2">
+          User errors
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Automatic browser errors with username and email when available. Newest first.
+        </p>
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <DebugLogEntryList entries={userLogs ?? []} emptyLabel="No user errors yet." />
+        )}
+      </section>
 
-      {logs && logs.length > 0 && (
-        <div className="space-y-3 max-h-[70vh] overflow-auto pr-1">
-          {logs.map((entry) => (
-            <details
-              key={entry.id}
-              className="rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3 text-sm group"
-            >
-              <summary className="cursor-pointer list-none flex flex-wrap gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden">
-                <span className="font-mono text-[11px] text-gray-500 shrink-0">
-                  {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}
-                </span>
-                <span className="text-gray-300 break-words flex-1 min-w-[12rem]">{entry.message}</span>
-              </summary>
-              <div className="mt-3 space-y-2 text-xs text-gray-400 border-t border-gray-800 pt-3">
-                {entry.email && (
-                  <p>
-                    <span className="text-gray-600">User:</span> {entry.email}
-                  </p>
-                )}
-                {entry.url && (
-                  <p className="break-all">
-                    <span className="text-gray-600">URL:</span> {entry.url}
-                  </p>
-                )}
-                {entry.userAgent && (
-                  <p className="break-all opacity-80">
-                    <span className="text-gray-600">UA:</span> {entry.userAgent}
-                  </p>
-                )}
-                {entry.stack && (
-                  <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-300 max-h-48 overflow-auto">
-                    {entry.stack}
-                  </pre>
-                )}
-                {entry.extra != null && (
-                  <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-400 max-h-32 overflow-auto">
-                    {typeof entry.extra === "string"
-                      ? entry.extra
-                      : JSON.stringify(entry.extra, null, 2)}
-                  </pre>
-                )}
-              </div>
-            </details>
-          ))}
-        </div>
-      )}
+      <section>
+        <h2 className="text-sm font-semibold text-white mb-2 border-b border-gray-800 pb-2">
+          Developer debug
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Feature work: call <code className="text-gray-400">reportDevDebug(&quot;message&quot;, optionalData)</code> from{" "}
+          <code className="text-gray-400">lib/dev-debug.ts</code> while signed in as owner.
+        </p>
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <DebugLogEntryList entries={devLogs ?? []} emptyLabel="No developer debug entries yet." />
+        )}
+      </section>
     </div>
   );
 }
