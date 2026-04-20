@@ -34,8 +34,8 @@ async function logServerFailure(userId: string | null, email: string | null, err
   }
 }
 
-const MAX_QUESTIONS = 15;
-const DEFAULT_Q = 10;
+const MAX_QUESTIONS = 30;
+const DEFAULT_Q = 25;
 
 // OpenAI structured outputs reject `oneOf` / discriminated unions, so we use a
 // single flat schema where every field is always present and normalise

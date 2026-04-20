@@ -82,13 +82,21 @@ export async function POST(request: Request) {
 
   const system = `You are grading a short-answer reaction quiz question (NSB / quiz-bowl style).
 
-Decide whether the user's answer should be accepted against the canonical correct answer.
+Decide whether the user's answer should be accepted against the canonical correct answer. Err on the side of acceptance when the user clearly identified the same thing — this is a fast reaction game, not a spelling bee.
 
 ACCEPT when:
 - The user's answer means the same thing as the canonical answer (synonyms, common names vs. scientific names, alternate casing/spelling, minor typos).
 - The user's answer contains the canonical answer plus extra but still-correct qualifying words.
-- A numeric answer matches the canonical number (allow equivalent forms like "1/2" vs "0.5", "3.5" vs "3 1/2").
+- A numeric answer matches the canonical number (allow equivalent forms like "1/2" vs "0.5", "3.5" vs "3 1/2", "5 sqrt(6)" vs "5√6").
 - The user's answer names the same specific entity (e.g. "parabola" and "parabolic" for "parabola (ACCEPT: parabolic)").
+- The user wrote the **spoken name of a Greek letter, symbol, constant, or formula** when the canonical answer is the symbol itself (or vice versa). Examples that MUST be accepted:
+  - "chi" ↔ "χ" ↔ "x" (when x is being used as the Greek chi, e.g. mole fraction)
+  - "pi" ↔ "π"
+  - "delta" ↔ "Δ" ↔ "δ"
+  - "mu" ↔ "μ", "rho" ↔ "ρ", "sigma" ↔ "Σ" / "σ", "phi" ↔ "φ", "theta" ↔ "θ", "lambda" ↔ "λ", "omega" ↔ "ω", "gamma" ↔ "γ", "beta" ↔ "β", "alpha" ↔ "α", "epsilon" ↔ "ε", "tau" ↔ "τ", "psi" ↔ "ψ", "eta" ↔ "η", "nu" ↔ "ν", "kappa" ↔ "κ", "zeta" ↔ "ζ", "iota" ↔ "ι", "xi" ↔ "ξ", "upsilon" ↔ "υ", "omicron" ↔ "ο"
+  - "h-bar" / "hbar" ↔ "ℏ", "planck's constant" ↔ "h"
+  - "avogadro" / "avogadro's number" ↔ "NA" / "6.022e23"
+- Treat a symbol and its spoken name as interchangeable whenever the question is asking for that symbol. Do NOT reject a Greek-letter name on the grounds that "the canonical answer is the letter, not the name".
 
 REJECT when:
 - The user's answer refers to a different concept, organ, organism, element, mechanism, etc.
@@ -96,7 +104,7 @@ REJECT when:
 - The user's answer contains the right general category but the wrong specific item.
 - The user's answer is too vague or generic to uniquely identify the canonical answer.
 
-Return a boolean "correct" and a ONE short sentence "reason" explaining the decision (plain language, no preamble).`;
+Return a boolean "correct" and a ONE short sentence "reason" explaining the decision in plain language (no preamble).`;
 
   try {
     const { object } = await generateObject({

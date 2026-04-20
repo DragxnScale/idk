@@ -368,10 +368,14 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {current.options.map((opt, i) => {
             const thisLine = i + 1;
-            // Before this line starts revealing, hide the row entirely.
-            if (phase === "reading" && lineIdx < thisLine) return null;
-            const isRevealing = phase === "reading" && lineIdx === thisLine;
-            const text = isRevealing ? opt.slice(0, charsShown) : opt;
+            // Only show options the user actually heard. If they buzzed before
+            // this option started revealing, keep it hidden — quiz-bowl rules:
+            // you answer from what was read, not what would have been read.
+            if (lineIdx < thisLine) return null;
+            if (lineIdx === thisLine && charsShown === 0) return null;
+            const isPartial = lineIdx === thisLine && charsShown < opt.length;
+            const text = isPartial ? opt.slice(0, charsShown) : opt;
+            const isRevealing = phase === "reading" && isPartial;
             return (
               <div
                 key={i}
@@ -382,7 +386,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
                 </span>
                 <span className="pt-1">
                   {text}
-                  {isRevealing && charsShown < opt.length && (
+                  {isRevealing && (
                     <span className="ml-0.5 inline-block w-[2px] h-4 bg-current align-middle animate-pulse" />
                   )}
                 </span>
