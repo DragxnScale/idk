@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
@@ -55,8 +55,8 @@ function countPages(text: string): number {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -81,11 +81,11 @@ export async function POST(request: Request) {
   }
 
   // ── Load user quiz limits ────────────────────────────────────────────
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: eq(users.id, authUser.id),
   });
-  const userMin = Math.max(1, user?.quizMinQuestions ?? DEFAULT_MIN);
-  const userMax = Math.min(MAX_QUESTIONS, Math.max(userMin, user?.quizMaxQuestions ?? DEFAULT_MAX));
+  const userMin = Math.max(1, row?.quizMinQuestions ?? DEFAULT_MIN);
+  const userMax = Math.min(MAX_QUESTIONS, Math.max(userMin, row?.quizMaxQuestions ?? DEFAULT_MAX));
 
   // ── Calculate question count from pages read ─────────────────────────
   const pagesRead = countPages(accumulatedText);
@@ -136,8 +136,8 @@ Generate exactly ${targetQ} multiple-choice questions testing comprehension of t
 }
 
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

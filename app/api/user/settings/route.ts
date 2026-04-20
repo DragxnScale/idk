@@ -1,56 +1,56 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/password";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await db.query.users.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.id, authUser.id),
   });
 
-  if (!user) {
+  if (!row) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   return NextResponse.json({
-    name: user.name ?? null,
-    email: user.email ?? null,
-    dailyMinutesGoal: user.dailyMinutesGoal ?? null,
-    dailySessionsGoal: user.dailySessionsGoal ?? null,
-    inactivityTimeout: user.inactivityTimeout ?? null,
-    themeId: user.themeId ?? null,
-    quizMinQuestions: user.quizMinQuestions ?? null,
-    quizMaxQuestions: user.quizMaxQuestions ?? null,
-    defaultGoalType: user.defaultGoalType ?? null,
-    defaultTargetValue: user.defaultTargetValue ?? null,
-    pomodoroEnabled: user.pomodoroEnabled ?? false,
-    pomodoroFocusMin: user.pomodoroFocusMin ?? null,
-    pomodoroBreakMin: user.pomodoroBreakMin ?? null,
-    pomodoroLongBreakMin: user.pomodoroLongBreakMin ?? null,
-    pomodoroCycles: user.pomodoroCycles ?? null,
+    name: row.name ?? null,
+    email: row.email ?? null,
+    dailyMinutesGoal: row.dailyMinutesGoal ?? null,
+    dailySessionsGoal: row.dailySessionsGoal ?? null,
+    inactivityTimeout: row.inactivityTimeout ?? null,
+    themeId: row.themeId ?? null,
+    quizMinQuestions: row.quizMinQuestions ?? null,
+    quizMaxQuestions: row.quizMaxQuestions ?? null,
+    defaultGoalType: row.defaultGoalType ?? null,
+    defaultTargetValue: row.defaultTargetValue ?? null,
+    pomodoroEnabled: row.pomodoroEnabled ?? false,
+    pomodoroFocusMin: row.pomodoroFocusMin ?? null,
+    pomodoroBreakMin: row.pomodoroBreakMin ?? null,
+    pomodoroLongBreakMin: row.pomodoroLongBreakMin ?? null,
+    pomodoroCycles: row.pomodoroCycles ?? null,
   });
 }
 
 export async function PATCH(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await request.json();
   const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions, defaultGoalType, defaultTargetValue, name, pomodoroEnabled, pomodoroFocusMin, pomodoroBreakMin, pomodoroLongBreakMin, pomodoroCycles } = body;
 
-  const user = await db.query.users.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.id, authUser.id),
   });
-  if (!user) {
+  if (!row) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
@@ -62,21 +62,21 @@ export async function PATCH(request: Request) {
         { status: 400 }
       );
     }
-    if (!user.passwordHash) {
+    if (!row.passwordHash) {
       return NextResponse.json({ error: "No login password set" }, { status: 400 });
     }
-    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    const valid = await verifyPassword(currentPassword, row.passwordHash);
     if (!valid) {
       return NextResponse.json({ error: "Incorrect login password" }, { status: 401 });
     }
     const exitPasswordHash = await hashPassword(newExitPassword);
-    await db.update(users).set({ exitPasswordHash }).where(eq(users.id, session.user.id));
+    await db.update(users).set({ exitPasswordHash }).where(eq(users.id, authUser.id));
     return NextResponse.json({ ok: true });
   }
 
   // ── Daily goals / settings update ────────────────────────────────
   if (themeId !== undefined) {
-    await db.update(users).set({ themeId: themeId || null }).where(eq(users.id, session.user.id));
+    await db.update(users).set({ themeId: themeId || null }).where(eq(users.id, authUser.id));
     return NextResponse.json({ ok: true });
   }
 
@@ -134,7 +134,7 @@ export async function PATCH(request: Request) {
       update.pomodoroCycles = v >= 1 && v <= 10 ? v : null;
     }
 
-    await db.update(users).set(update).where(eq(users.id, session.user.id));
+    await db.update(users).set(update).where(eq(users.id, authUser.id));
     return NextResponse.json({ ok: true });
   }
 

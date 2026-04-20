@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 
 export const maxDuration = 60;
 
@@ -12,8 +12,8 @@ const ALLOWED_HOSTS = [
 ];
 
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -74,8 +74,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function HEAD(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return new NextResponse(null, { status: 401 });
   }
 

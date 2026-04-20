@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -14,16 +14,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Password required" }, { status: 400 });
   }
 
-  const user = await db.query.users.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: (u, { eq }) => eq(u.id, authUser.id),
   });
 
-  if (!user) {
+  if (!row) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   // Use exit password if set, otherwise fall back to login password
-  const hashToCheck = user.exitPasswordHash ?? user.passwordHash;
+  const hashToCheck = row.exitPasswordHash ?? row.passwordHash;
   if (!hashToCheck) {
     return NextResponse.json({ error: "No password set" }, { status: 400 });
   }

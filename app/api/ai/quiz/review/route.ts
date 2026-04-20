@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
@@ -34,8 +34,8 @@ const reviewSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

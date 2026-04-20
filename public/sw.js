@@ -179,6 +179,18 @@ async function networkFirstWithFallback(request) {
 
 self.addEventListener("message", (event) => {
   if (event.data === "skipWaiting") self.skipWaiting();
+  if (event.data?.type === "getPdfCacheStats" && event.ports?.[0]) {
+    const port = event.ports[0];
+    caches
+      .open(PDF_CACHE)
+      .then(async (cache) => {
+        const keys = await cache.keys();
+        port.postMessage({ type: "pdfCacheStats", count: keys.length });
+      })
+      .catch(() => {
+        port.postMessage({ type: "pdfCacheStats", count: 0 });
+      });
+  }
   if (event.data?.type === "setPdfCacheLimits") {
     if (typeof event.data.maxCount === "number") pdfMaxCount = event.data.maxCount;
     if (typeof event.data.maxBytes === "number") pdfMaxBytes = event.data.maxBytes;

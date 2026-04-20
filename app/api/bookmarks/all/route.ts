@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rows = await db.query.bookmarks.findMany({
-    where: (b, { eq: e }) => e(b.userId, session.user.id),
+    where: (b, { eq: e }) => e(b.userId, user.id),
     orderBy: (b, { desc: d }) => d(b.createdAt),
   });
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,14 +19,14 @@ export async function POST(request: Request) {
   }
 
   const id = crypto.randomUUID();
-  const filename = `${session.user.id}/${id}.pdf`;
+  const filename = `${user.id}/${id}.pdf`;
 
   const blob = await put(filename, file, { access: "public", contentType: "application/pdf" });
 
   const now = new Date();
   await db.insert(documents).values({
     id,
-    userId: session.user.id,
+    userId: user.id,
     title,
     sourceType: "upload",
     fileUrl: blob.url,

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { textbookCatalog } from "@/lib/db/schema";
 import { seedTextbooks, ensureSeeded } from "@/lib/db/seed-textbooks";
 
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const q = searchParams.get("q")?.toLowerCase() ?? "";
 
   const all = await db.query.textbookCatalog.findMany();
-  const userId = session.user.id;
+  const userId = user.id;
 
   // Hide from public: exclude hidden items unless current user is in visibleToUserIds
   const visible = all.filter((b) => {
@@ -59,8 +59,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

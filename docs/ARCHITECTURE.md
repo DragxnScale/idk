@@ -164,13 +164,17 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 - `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra).
 
+**Operations**
+
+- `client_error_logs` — browser-reported errors (`POST /api/debug/client-error`): message, optional stack/url/userAgent, optional `user_id`; admin reads via `GET /api/admin/debug-logs`.
+
 **Connection** (`lib/db/index.ts`): `drizzle` with `url` from `DATABASE_URL` (default `file:./study.db`) and optional `DATABASE_AUTH_TOKEN` for remote LibSQL.
 
 ---
 
 ## 5. HTTP APIs (`app/api/**/route.ts`)
 
-All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `lib/auth.ts` (JWT from cookie `sf.session-token`). Admin routes use **`requireAdmin()`** or **`requireAdminEdge()`**.
+All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** from `lib/app-user.ts` (JWT from `sf.session-token`, plus optional admin **view-as** cookie `sf.view-as-user`). **`auth()`** is kept where the real JWT identity must be used (`/api/admin/**` except data routes that intentionally act as another user, `/api/user/session-context`, `/api/admin/impersonate`). Admin routes use **`requireAdmin()`** or **`requireAdminEdge()`**.
 
 ### 5.1 Authentication
 
@@ -179,6 +183,15 @@ All paths are relative to `/api`. Unless noted, handlers use **`auth()`** from `
 | * | `/api/auth/[...nextauth]` | NextAuth catch-all (sign in/out, JWT). |
 | POST | `/api/auth/signup` | Register user (validates banned list, hashes password). |
 | POST | `/api/auth/verify-exit` | Verifies **exit password** against `users.exit_password_hash`. |
+
+### 5.1b Debugging and impersonation
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/debug/client-error` | Stores a client-side error row (optional session; anonymous allowed). |
+| GET | `/api/admin/debug-logs` | Admin: recent rows from `client_error_logs`. |
+| POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
+| GET | `/api/user/session-context` | Returns JWT user vs effective user and whether impersonation is active. |
 
 ### 5.2 Study sessions and progress
 
@@ -302,6 +315,8 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | POST | `/api/admin/archive-upload` | Upload to Archive. |
 | POST | `/api/admin/mute-block` | Moderation. |
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |
+| GET | `/api/admin/debug-logs` | Recent `client_error_logs` (`limit` query). |
+| POST | `/api/admin/impersonate` | Set/clear admin **view-as** cookie. |
 | GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set `noteStyleExtra` and active `MODEL`. |
 | POST | `/api/admin/owner-ai/chat` | Super-owner: direct chat with OpenAI for debugging. |
 
@@ -385,7 +400,9 @@ Query: `sessionId`. Returns existing cards sorted by page number.
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
-| `/admin` | Admin dashboard (guarded; super-owner sees Owner AI tab). |
+| `/admin` | Admin dashboard (guarded; **Debug log** tab; super-owner sees Owner AI tab). |
+
+Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error`; **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`).
 
 ### 7.2 Key components
 
@@ -439,7 +456,8 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 ## 8. Security and auth notes
 
 - **Sessions**: JWT in httpOnly cookie (`sf.session-token`). **`auth()`** decodes JWT with `NEXTAUTH_SECRET`.
-- **API routes**: `auth()` first; return **401** if missing user.
+- **API routes**: user data routes use **`getAppUser()`** (JWT + optional admin view-as cookie); return **401** if missing user. **`auth()`** remains for admin authorization and impersonation endpoints.
+- **Admin view-as**: httpOnly cookie `sf.view-as-user` (set by `POST /api/admin/impersonate`). Only **`isAdmin`** accounts may receive it; app routes resolve the target user’s data while `/api/admin/**` stays on the real JWT for permission checks.
 - **Admin**: `requireAdmin` checks `users.isAdmin`; `requireSuperOwner` checks hardcoded super-admin email.
 - **PDF proxy**: host allowlist only — arbitrary URLs cannot be fetched.
 - **Exit flow**: stopping a locked session requires `/api/auth/verify-exit`.

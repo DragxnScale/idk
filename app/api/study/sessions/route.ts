@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
 
 // ── GET: list the current user's study sessions ──────────────────────
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rows = await db.query.studySessions.findMany({
-    where: (s, { eq: e }) => e(s.userId, session.user.id),
+    where: (s, { eq: e }) => e(s.userId, user.id),
   });
 
   rows.sort(
@@ -26,8 +26,8 @@ export async function GET() {
 // ── POST: start a new study session ──────────────────────────────────
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
   // Auto-close any stale active sessions for this user
   const allSessions = await db.query.studySessions.findMany({
-    where: (s, { eq: e }) => e(s.userId, session.user.id),
+    where: (s, { eq: e }) => e(s.userId, user.id),
   });
   const activeSessions = allSessions.filter((s) => !s.endedAt);
   for (const active of activeSessions) {
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
   await db.insert(studySessions).values({
     id,
-    userId: session.user.id,
+    userId: user.id,
     goalType,
     targetValue,
     documentJson: documentJson ? JSON.stringify(documentJson) : null,
@@ -79,8 +79,8 @@ export async function POST(request: Request) {
 // ── PATCH: update a study session (progress or end) ──────────────────
 
 export async function PATCH(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -92,7 +92,7 @@ export async function PATCH(request: Request) {
 
   const existing = await db.query.studySessions.findFirst({
     where: (s, { eq: e, and }) =>
-      and(e(s.id, sessionId), e(s.userId, session.user.id)),
+      and(e(s.id, sessionId), e(s.userId, user.id)),
   });
 
   if (!existing) {

@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { studyPlans } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rows = await db.query.studyPlans.findMany({
-    where: (p, { eq: e }) => e(p.userId, session.user.id),
+    where: (p, { eq: e }) => e(p.userId, user.id),
     orderBy: (p, { asc }) => [asc(p.dayOfWeek), asc(p.startTime)],
   });
 
@@ -20,8 +20,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const row = {
     id,
-    userId: session.user.id,
+    userId: user.id,
     dayOfWeek: Number(dayOfWeek),
     startTime,
     endTime,
@@ -49,8 +49,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -61,7 +61,7 @@ export async function DELETE(req: NextRequest) {
 
   await db
     .delete(studyPlans)
-    .where(and(eq(studyPlans.id, id), eq(studyPlans.userId, session.user.id)));
+    .where(and(eq(studyPlans.id, id), eq(studyPlans.userId, user.id)));
 
   return NextResponse.json({ ok: true });
 }

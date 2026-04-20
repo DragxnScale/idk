@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { unzipSync } from "fflate";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 
@@ -45,8 +45,8 @@ function titleFromUrl(url: string, filename?: string): string {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
   if (looksLikePdf && !looksLikeZip) {
     const id = crypto.randomUUID();
     const title = titleFromUrl(url);
-    const filename = `${session.user.id}/${id}.pdf`;
+    const filename = `${user.id}/${id}.pdf`;
 
     const blob = await put(filename, fetchRes.body!, {
       access: "public",
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     const now = new Date();
     await db.insert(documents).values({
       id,
-      userId: session.user.id,
+      userId: user.id,
       title,
       sourceType: "upload",
       fileUrl: blob.url,
@@ -132,13 +132,13 @@ export async function POST(request: Request) {
       // Server said zip but it's actually a PDF — stream to blob
       const id = crypto.randomUUID();
       const title = titleFromUrl(url);
-      const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(rawBytes), {
+      const blob = await put(`${user.id}/${id}.pdf`, Buffer.from(rawBytes), {
         access: "public",
         contentType: "application/pdf",
       });
       const now = new Date();
       await db.insert(documents).values({
-        id, userId: session.user.id, title, sourceType: "upload",
+        id, userId: user.id, title, sourceType: "upload",
         fileUrl: blob.url, createdAt: now, updatedAt: now,
       });
       return NextResponse.json({ imported: [{ id, title, fileUrl: blob.url }] });
@@ -168,12 +168,12 @@ export async function POST(request: Request) {
     for (const [name, bytes] of pdfEntries) {
       const id = crypto.randomUUID();
       const title = titleFromUrl(url, name.split("/").pop());
-      const blob = await put(`${session.user.id}/${id}.pdf`, Buffer.from(bytes), {
+      const blob = await put(`${user.id}/${id}.pdf`, Buffer.from(bytes), {
         access: "public",
         contentType: "application/pdf",
       });
       await db.insert(documents).values({
-        id, userId: session.user.id, title, sourceType: "upload",
+        id, userId: user.id, title, sourceType: "upload",
         fileUrl: blob.url, createdAt: now, updatedAt: now,
       });
       imported.push({ id, title, fileUrl: blob.url });

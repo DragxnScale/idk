@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { examCountdowns } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rows = await db.query.examCountdowns.findMany({
-    where: (c, { eq: e }) => e(c.userId, session.user.id),
+    where: (c, { eq: e }) => e(c.userId, user.id),
     orderBy: (c, { asc }) => asc(c.examDate),
   });
 
@@ -26,8 +26,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const row = {
     id,
-    userId: session.user.id,
+    userId: user.id,
     title,
     examDate: new Date(examDate),
     textbookCatalogId: textbookCatalogId ?? null,
@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -76,14 +76,14 @@ export async function PATCH(req: NextRequest) {
   await db
     .update(examCountdowns)
     .set(updates)
-    .where(and(eq(examCountdowns.id, id), eq(examCountdowns.userId, session.user.id)));
+    .where(and(eq(examCountdowns.id, id), eq(examCountdowns.userId, user.id)));
 
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -94,7 +94,7 @@ export async function DELETE(req: NextRequest) {
 
   await db
     .delete(examCountdowns)
-    .where(and(eq(examCountdowns.id, id), eq(examCountdowns.userId, session.user.id)));
+    .where(and(eq(examCountdowns.id, id), eq(examCountdowns.userId, user.id)));
 
   return NextResponse.json({ ok: true });
 }

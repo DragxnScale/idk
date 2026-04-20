@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { isAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
@@ -9,8 +9,8 @@ type Params = { params: Promise<{ id: string }> };
 
 /** GET — return document metadata (owner or admin only) */
 export async function GET(_req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getAppUser();
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const doc = await db.query.documents.findFirst({
@@ -18,8 +18,8 @@ export async function GET(_req: Request, { params }: Params) {
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const admin = await isAdmin(session.user.id);
-  if (doc.userId !== session.user.id && !admin) {
+  const admin = await isAdmin(user.id);
+  if (doc.userId !== user.id && !admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -39,8 +39,8 @@ export async function GET(_req: Request, { params }: Params) {
  * Only the document owner or an admin may update.
  */
 export async function PATCH(request: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getAppUser();
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const doc = await db.query.documents.findFirst({
@@ -48,8 +48,8 @@ export async function PATCH(request: Request, { params }: Params) {
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const admin = await isAdmin(session.user.id);
-  if (doc.userId !== session.user.id && !admin) {
+  const admin = await isAdmin(user.id);
+  if (doc.userId !== user.id && !admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

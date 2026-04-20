@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { bookmarks } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   const conditions = [
-    eq(bookmarks.userId, session.user.id),
+    eq(bookmarks.userId, user.id),
     eq(bookmarks.documentId, documentId),
   ];
 
@@ -37,8 +37,8 @@ export async function GET(req: NextRequest) {
 
 // GET all bookmarks for a user (for dashboard)
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     const existing = await db.query.bookmarks.findFirst({
       where: (b, { and: a, eq: e }) =>
         a(
-          e(b.userId, session.user.id),
+          e(b.userId, user.id),
           e(b.documentId, documentId),
           e(b.pageNumber, pageNumber),
           e(b.type, "bookmark"),
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const row = {
     id,
-    userId: session.user.id,
+    userId: user.id,
     sessionId: sessionId ?? null,
     documentId,
     pageNumber,
@@ -85,8 +85,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -99,14 +99,14 @@ export async function PATCH(req: NextRequest) {
   await db
     .update(bookmarks)
     .set({ tag: tag ?? null })
-    .where(and(eq(bookmarks.id, id), eq(bookmarks.userId, session.user.id)));
+    .where(and(eq(bookmarks.id, id), eq(bookmarks.userId, user.id)));
 
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -117,7 +117,7 @@ export async function DELETE(req: NextRequest) {
 
   await db
     .delete(bookmarks)
-    .where(and(eq(bookmarks.id, id), eq(bookmarks.userId, session.user.id)));
+    .where(and(eq(bookmarks.id, id), eq(bookmarks.userId, user.id)));
 
   return NextResponse.json({ ok: true });
 }

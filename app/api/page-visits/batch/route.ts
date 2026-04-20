@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { pageVisits, studySessions } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const owned = await db
     .select({ id: studySessions.id })
     .from(studySessions)
-    .where(and(inArray(studySessions.id, sessionIds), eq(studySessions.userId, session.user.id)));
+    .where(and(inArray(studySessions.id, sessionIds), eq(studySessions.userId, user.id)));
   const ownedIds = new Set(owned.map((r) => r.id));
 
   const rows = visits

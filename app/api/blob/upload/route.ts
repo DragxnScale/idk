@@ -1,12 +1,12 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 
 export async function POST(request: Request): Promise<Response> {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<Response> {
           maximumSizeInBytes: 500 * 1024 * 1024,
           // Embed userId in the token so the completion handler knows who owns it
           tokenPayload: JSON.stringify({
-            userId: session.user.id,
+            userId: user.id,
             title: decodeURIComponent(
               pathname.split("/").pop()?.replace(/\.pdf$/i, "").replace(/[-_]/g, " ") ?? "Untitled"
             ),

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { users, documents } from "@/lib/db/schema";
 import { effectiveQuota, formatBytes, DEFAULT_QUOTA_BYTES } from "@/lib/storage";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +18,7 @@ export async function GET() {
     .from(documents)
     .where(
       and(
-        eq(documents.userId, session.user.id),
+        eq(documents.userId, authUser.id),
         eq(documents.sourceType, "upload")
       )
     );
@@ -29,14 +29,14 @@ export async function GET() {
   await db
     .update(users)
     .set({ storageBytes: usedBytes })
-    .where(eq(users.id, session.user.id));
+    .where(eq(users.id, authUser.id));
 
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: eq(users.id, authUser.id),
     columns: { storageQuotaBytes: true },
   });
 
-  const quotaBytes = effectiveQuota(user?.storageQuotaBytes);
+  const quotaBytes = effectiveQuota(row?.storageQuotaBytes);
   const pct = usedBytes === 0 ? 0 : Math.min(100, Math.round((usedBytes / quotaBytes) * 100));
 
   return NextResponse.json({

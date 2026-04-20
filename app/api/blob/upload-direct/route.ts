@@ -1,21 +1,21 @@
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  let session;
+  let user;
   try {
-    session = await auth();
+    user = await getAppUser();
   } catch (e) {
     console.error("[blob-upload-direct] auth() threw:", e);
     return NextResponse.json({ error: "Auth failed" }, { status: 500 });
   }
 
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
   try {
     const id = crypto.randomUUID();
-    const pathname = `${session.user.id}/${id}/${filename}`;
+    const pathname = `${user.id}/${id}/${filename}`;
     console.log("[blob-upload-direct] uploading", pathname);
 
     const blob = await put(pathname, request.body, {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     const now = new Date();
     await db.insert(documents).values({
       id,
-      userId: session.user.id,
+      userId: user.id,
       title,
       sourceType: "upload",
       fileUrl: blob.url,

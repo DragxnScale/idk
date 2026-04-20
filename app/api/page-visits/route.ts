@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { pageVisits, studySessions } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const studySession = await db.query.studySessions.findFirst({
-    where: (s, { eq: e, and: a }) => a(e(s.id, sessionId), e(s.userId, session.user.id)),
+    where: (s, { eq: e, and: a }) => a(e(s.id, sessionId), e(s.userId, user.id)),
   });
   if (!studySession) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

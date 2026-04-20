@@ -12,6 +12,7 @@ import { AiNotesPanel } from "@/components/study/AiNotesPanel";
 import { loadPlaylist, savePlaylist, parseYouTubeId, isYouTubeUrl, resolveYouTubeTitle, isTitlePlaceholder, type MusicTrack } from "@/lib/music";
 import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOfflineId } from "@/lib/offline-session";
 import { PomodoroTimer } from "@/components/study/PomodoroTimer";
+import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -90,6 +91,24 @@ function StudySessionInner() {
   const sessionEndingRef = useRef(false);
   const resumeHandled = useRef(false);
   const lastActivityRef = useRef(Date.now());
+  const [pdfCacheEntryCount, setPdfCacheEntryCount] = useState<number | null>(null);
+
+  // Offline PDF cache: entry count from service worker (shown on setup screen only)
+  useEffect(() => {
+    let cancelled = false;
+    fetchPdfCacheEntryCount().then((n) => {
+      if (!cancelled) setPdfCacheEntryCount(n);
+    });
+    const id = window.setInterval(() => {
+      fetchPdfCacheEntryCount().then((n) => {
+        if (!cancelled) setPdfCacheEntryCount(n);
+      });
+    }, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   // Online / offline awareness
   const [isOnline, setIsOnline] = useState(true);
@@ -811,10 +830,30 @@ function StudySessionInner() {
   if (!sessionId) {
     return (
       <main className="min-h-screen px-6 py-10 md:px-10 max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">Start a study session</h1>
-        <p className="text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
-          Pick your reading material, set a goal, and start studying.
-        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-8">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold mb-2">Start a study session</h1>
+            <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+              Pick your reading material, set a goal, and start studying.
+            </p>
+          </div>
+          <div
+            className="shrink-0 text-sm text-gray-500 dark:text-gray-400 sm:text-right tabular-nums"
+            title="PDFs stored in your browser offline cache (service worker)"
+          >
+            {pdfCacheEntryCount !== null ? (
+              <>
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  {pdfCacheEntryCount}
+                </span>
+                {" "}
+                cached PDF{pdfCacheEntryCount === 1 ? "" : "s"}
+              </>
+            ) : (
+              <span className="opacity-70">Cached PDFs: …</span>
+            )}
+          </div>
+        </div>
 
         {/* Step 1: Document */}
         <section className="mb-8">

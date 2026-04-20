@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { and, eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
@@ -21,8 +21,8 @@ const BASE_SYSTEM = `You are a study assistant. Given text from a textbook page,
 Never use LaTeX or math typesetting: no \\( \\), \\[ \\], $ delimiters, \\text{}, \\frac, or similar. Write units and equations in plain text (e.g. "1 in = 2.54 cm", "F = ma").`;
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -124,8 +124,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

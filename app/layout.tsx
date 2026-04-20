@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AppChrome } from "@/components/AppChrome";
 
 export const metadata: Metadata = {
   title: "Bowl Beacon",
@@ -45,7 +46,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="antialiased min-h-screen">{children}</body>
+      <body className="antialiased min-h-screen">
+        <AppChrome />
+        {children}
+      </body>
     </html>
   );
 }

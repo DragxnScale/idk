@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { db } from "@/lib/db";
@@ -19,8 +19,8 @@ const videoSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
   const row = await db.query.studySessions.findFirst({
     where: (s, { and, eq }) =>
-      and(eq(s.id, sessionId), eq(s.userId, session.user.id)),
+      and(eq(s.id, sessionId), eq(s.userId, user.id)),
   });
 
   if (!row) {
@@ -47,8 +47,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
   const row = await db.query.studySessions.findFirst({
     where: (s, { and, eq }) =>
-      and(eq(s.id, sessionId), eq(s.userId, session.user.id)),
+      and(eq(s.id, sessionId), eq(s.userId, user.id)),
   });
   if (!row) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });

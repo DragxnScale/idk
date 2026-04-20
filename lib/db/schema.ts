@@ -289,3 +289,17 @@ export const flashcards = sqliteTable("flashcards", {
   pageNumber: integer("page_number"),
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
+
+// ── Client debug errors (posted from browser; admin reads) ───────────────
+
+export const clientErrorLogs = sqliteTable("client_error_logs", {
+  id: text("id").primaryKey(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  email: text("email"),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  url: text("url"),
+  userAgent: text("user_agent"),
+  extra: text("extra"), // JSON string
+});

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents, users } from "@/lib/db/schema";
 import { effectiveQuota } from "@/lib/storage";
@@ -8,8 +8,8 @@ import { effectiveQuota } from "@/lib/storage";
 // Called after a client-side Vercel Blob upload completes.
 // Registers the document in the DB so it shows up in My Drive.
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -26,18 +26,18 @@ export async function POST(request: Request) {
   const fileSizeBytes = typeof fileSize === "number" && fileSize > 0 ? fileSize : 0;
 
   // ── Quota check (compute live from DB, not stale counter) ────────────
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
+  const row = await db.query.users.findFirst({
+    where: eq(users.id, authUser.id),
     columns: { storageQuotaBytes: true },
   });
 
   const [usageRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(file_size_bytes), 0)` })
     .from(documents)
-    .where(and(eq(documents.userId, session.user.id), eq(documents.sourceType, "upload")));
+    .where(and(eq(documents.userId, authUser.id), eq(documents.sourceType, "upload")));
 
   const usedBytes = Number(usageRow?.total ?? 0);
-  const quota = effectiveQuota(user?.storageQuotaBytes);
+  const quota = effectiveQuota(row?.storageQuotaBytes);
 
   if (fileSizeBytes > 0 && usedBytes + fileSizeBytes > quota) {
     return NextResponse.json(
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
   await db.insert(documents).values({
     id,
-    userId: session.user.id,
+    userId: authUser.id,
     title: title || "Untitled",
     sourceType: "upload",
     fileUrl,
@@ -68,11 +68,11 @@ export async function POST(request: Request) {
     const [newUsage] = await db
       .select({ total: sql<number>`COALESCE(SUM(file_size_bytes), 0)` })
       .from(documents)
-      .where(and(eq(documents.userId, session.user.id), eq(documents.sourceType, "upload")));
+      .where(and(eq(documents.userId, authUser.id), eq(documents.sourceType, "upload")));
     await db
       .update(users)
       .set({ storageBytes: Number(newUsage?.total ?? 0) })
-      .where(eq(users.id, session.user.id));
+      .where(eq(users.id, authUser.id));
   }
 
   return NextResponse.json({ id, title: title || "Untitled", fileUrl });

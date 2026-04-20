@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 
 interface ProgressEntry {
@@ -29,15 +29,15 @@ function totalPagesFromRanges(rangesJson: string | null): number | null {
 }
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // ── Load all completed sessions ──────────────────────────────────────
   const rows = await db.query.studySessions.findMany({
     where: (s, { and, eq, isNotNull }) =>
-      and(eq(s.userId, session.user.id), isNotNull(s.endedAt)),
+      and(eq(s.userId, user.id), isNotNull(s.endedAt)),
   });
 
   // ── Group by textbookCatalogId ───────────────────────────────────────

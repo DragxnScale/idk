@@ -1,31 +1,31 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { isAdmin } from "@/lib/admin";
 
 export async function GET() {
-  let session;
+  let appUser;
   try {
-    session = await auth();
+    appUser = await getAppUser();
   } catch (e) {
     console.error("[study/stats] auth error:", e);
     return NextResponse.json({ error: "Auth error" }, { status: 500 });
   }
 
-  if (!session?.user?.id) {
+  if (!appUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
 
-  let rows, user;
+  let rows, dbUser;
   try {
-    [rows, user] = await Promise.all([
+    [rows, dbUser] = await Promise.all([
       db.query.studySessions.findMany({
-        where: (s, { eq }) => eq(s.userId, session.user.id),
+        where: (s, { eq }) => eq(s.userId, appUser.id),
       }),
       db.query.users.findFirst({
-        where: (u, { eq }) => eq(u.id, session.user.id),
+        where: (u, { eq }) => eq(u.id, appUser.id),
       }),
     ]);
   } catch (dbErr) {
@@ -99,7 +99,7 @@ export async function GET() {
   const todayPages = todaySessions.reduce((s, r) => s + (r.pagesVisited ?? 0), 0);
 
   return NextResponse.json({
-    isAdmin: await isAdmin(session.user.email ?? ""),
+    isAdmin: await isAdmin(appUser.email ?? ""),
     totalSessions: completed.length,
     totalMinutes,
     totalPages,
@@ -110,9 +110,9 @@ export async function GET() {
     weekDays,
     todayMinutes,
     todaySessions: todaySessions.length,
-    dailyMinutesGoal: user?.dailyMinutesGoal ?? null,
-    dailySessionsGoal: user?.dailySessionsGoal ?? null,
-    inactivityTimeout: user?.inactivityTimeout ?? null,
+    dailyMinutesGoal: dbUser?.dailyMinutesGoal ?? null,
+    dailySessionsGoal: dbUser?.dailySessionsGoal ?? null,
+    inactivityTimeout: dbUser?.inactivityTimeout ?? null,
     activeSession: activeSession
       ? {
           id: activeSession.id,

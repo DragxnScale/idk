@@ -1,6 +1,6 @@
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 
 export async function POST(request: Request): Promise<Response> {
   console.log("[blob/token] POST received");
@@ -19,16 +19,16 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ type: "blob.upload-completed" });
   }
 
-  let session;
+  let user;
   try {
-    session = await auth();
-    console.log("[blob/token] auth result:", !!session?.user?.id);
+    user = await getAppUser();
+    console.log("[blob/token] auth result:", !!user?.id);
   } catch (e) {
     console.error("[blob/token] auth error:", e);
     return NextResponse.json({ error: "Auth failed" }, { status: 500 });
   }
 
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

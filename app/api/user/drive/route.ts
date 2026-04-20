@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
 import { del } from "@vercel/blob";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents, users } from "@/lib/db/schema";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const docs = await db.query.documents.findMany({
     where: (d, { eq, and, isNotNull }) =>
-      and(eq(d.userId, session.user.id), isNotNull(d.fileUrl)),
+      and(eq(d.userId, user.id), isNotNull(d.fileUrl)),
     orderBy: (d, { desc }) => [desc(d.createdAt)],
   });
 
@@ -31,8 +31,8 @@ export async function GET() {
 }
 
 export async function DELETE(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -41,7 +41,7 @@ export async function DELETE(request: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const doc = await db.query.documents.findFirst({
-    where: (d, { eq, and }) => and(eq(d.id, id), eq(d.userId, session.user.id)),
+    where: (d, { eq, and }) => and(eq(d.id, id), eq(d.userId, user.id)),
   });
 
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -51,14 +51,14 @@ export async function DELETE(request: Request) {
     await del(doc.fileUrl).catch(() => {});
   }
 
-  await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, session.user.id)));
+  await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, user.id)));
 
   // ── Subtract from running storage total ──────────────────────────────
   if (doc.fileSizeBytes && doc.fileSizeBytes > 0) {
     await db
       .update(users)
       .set({ storageBytes: sql`MAX(0, COALESCE(storage_bytes, 0) - ${doc.fileSizeBytes})` })
-      .where(eq(users.id, session.user.id));
+      .where(eq(users.id, user.id));
   }
 
   return NextResponse.json({ ok: true });

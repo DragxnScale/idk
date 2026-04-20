@@ -70,7 +70,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "owner";
+type Tab = "users" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -166,6 +166,7 @@ export default function AdminPage() {
                 "catalog",
                 "messages",
                 "storage",
+                "debug",
                 ...(ownerTabVisible ? (["owner"] as const) : []),
               ] as Tab[]
             ).map((t) => (
@@ -186,9 +187,11 @@ export default function AdminPage() {
                       ? "Messages"
                       : t === "storage"
                         ? "Blob Storage"
-                        : t === "owner"
-                          ? "Owner AI"
-                          : "Users"}
+                        : t === "debug"
+                          ? "Debug log"
+                          : t === "owner"
+                            ? "Owner AI"
+                            : "Users"}
               </button>
             ))}
           </div>
@@ -199,6 +202,7 @@ export default function AdminPage() {
         {tab === "catalog" && <CatalogTab />}
         {tab === "messages" && <MessagesTab />}
         {tab === "storage" && <StorageTab />}
+        {tab === "debug" && <DebugLogsTab />}
         {tab === "owner" && ownerTabVisible && <OwnerAiTab />}
       </div>
     </main>
@@ -223,6 +227,26 @@ function UsersTab() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
+  const [viewAsLoading, setViewAsLoading] = useState<string | null>(null);
+
+  async function viewAsUser(user: UserRow) {
+    setViewAsLoading(user.id);
+    try {
+      const res = await fetch("/api/admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Could not switch view");
+        return;
+      }
+      window.location.href = "/dashboard";
+    } finally {
+      setViewAsLoading(null);
+    }
+  }
 
   async function toggleAdmin(user: UserRow) {
     setTogglingAdmin(user.id);
@@ -817,7 +841,16 @@ function UsersTab() {
                   {user.lastActiveAt ? new Date(user.lastActiveAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Never"}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void viewAsUser(user)}
+                      disabled={viewAsLoading === user.id}
+                      className="rounded-md border border-cyan-800 px-3 py-1 text-xs text-cyan-400 hover:bg-cyan-900/30 transition disabled:opacity-40"
+                      title="Open the app as this user (dashboard, study, settings)"
+                    >
+                      {viewAsLoading === user.id ? "…" : "View as"}
+                    </button>
                     <button
                       onClick={() => openUserDetail(user)}
                       className="rounded-md border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-800 transition"
@@ -1159,6 +1192,120 @@ function TocEditor({
             </p>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Debug logs (client errors) ──────────────────────────────────────────────
+
+interface DebugLogRow {
+  id: string;
+  createdAt: string | null;
+  userId: string | null;
+  email: string | null;
+  message: string;
+  stack: string | null;
+  url: string | null;
+  userAgent: string | null;
+  extra: unknown;
+}
+
+function DebugLogsTab() {
+  const [logs, setLogs] = useState<DebugLogRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/admin/debug-logs?limit=100");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoadError(data.error ?? "Could not load logs");
+        setLogs([]);
+        return;
+      }
+      setLogs(data.logs ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-2 text-sm hover:bg-gray-800 transition disabled:opacity-50"
+        >
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+        <p className="text-xs text-gray-500">
+          Browser errors reported via <code className="text-gray-400">/api/debug/client-error</code>. Newest first.
+        </p>
+      </div>
+
+      {loadError && (
+        <p className="text-sm text-red-400">{loadError}</p>
+      )}
+
+      {!loading && logs && logs.length === 0 && (
+        <p className="text-sm text-gray-500">No entries yet.</p>
+      )}
+
+      {logs && logs.length > 0 && (
+        <div className="space-y-3 max-h-[70vh] overflow-auto pr-1">
+          {logs.map((entry) => (
+            <details
+              key={entry.id}
+              className="rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3 text-sm group"
+            >
+              <summary className="cursor-pointer list-none flex flex-wrap gap-x-3 gap-y-1 [&::-webkit-details-marker]:hidden">
+                <span className="font-mono text-[11px] text-gray-500 shrink-0">
+                  {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}
+                </span>
+                <span className="text-gray-300 break-words flex-1 min-w-[12rem]">{entry.message}</span>
+              </summary>
+              <div className="mt-3 space-y-2 text-xs text-gray-400 border-t border-gray-800 pt-3">
+                {entry.email && (
+                  <p>
+                    <span className="text-gray-600">User:</span> {entry.email}
+                  </p>
+                )}
+                {entry.url && (
+                  <p className="break-all">
+                    <span className="text-gray-600">URL:</span> {entry.url}
+                  </p>
+                )}
+                {entry.userAgent && (
+                  <p className="break-all opacity-80">
+                    <span className="text-gray-600">UA:</span> {entry.userAgent}
+                  </p>
+                )}
+                {entry.stack && (
+                  <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-300 max-h-48 overflow-auto">
+                    {entry.stack}
+                  </pre>
+                )}
+                {entry.extra != null && (
+                  <pre className="whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-[11px] text-gray-400 max-h-32 overflow-auto">
+                    {typeof entry.extra === "string"
+                      ? entry.extra
+                      : JSON.stringify(entry.extra, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </details>
+          ))}
+        </div>
       )}
     </div>
   );

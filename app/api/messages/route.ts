@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { requireAdmin, isAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { messages, users } from "@/lib/db/schema";
@@ -16,12 +16,12 @@ async function getAdminUserId(): Promise<string | null> {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const admin = await isAdmin(session.user.email ?? "");
+  const admin = await isAdmin(user.email ?? "");
 
   if (admin) {
     const userId = req.nextUrl.searchParams.get("userId");
@@ -29,8 +29,8 @@ export async function GET(req: NextRequest) {
       const rows = await db.query.messages.findMany({
         where: (m, { or: o, and: a, eq: e }) =>
           o(
-            a(e(m.fromUserId, userId), e(m.toUserId, session.user.id)),
-            a(e(m.fromUserId, session.user.id), e(m.toUserId, userId))
+            a(e(m.fromUserId, userId), e(m.toUserId, user.id)),
+            a(e(m.fromUserId, user.id), e(m.toUserId, userId))
           ),
         orderBy: (m, { asc }) => asc(m.createdAt),
       });
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         .update(messages)
         .set({ read: true })
         .where(
-          and(eq(messages.toUserId, session.user.id), eq(messages.fromUserId, userId))
+          and(eq(messages.toUserId, user.id), eq(messages.fromUserId, userId))
         );
 
       return NextResponse.json(rows);
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 
     const allMessages = await db.query.messages.findMany({
       where: (m, { or: o, eq: e }) =>
-        o(e(m.fromUserId, session.user.id), e(m.toUserId, session.user.id)),
+        o(e(m.fromUserId, user.id), e(m.toUserId, user.id)),
       orderBy: (m, { desc: d }) => d(m.createdAt),
     });
 
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     for (const msg of allMessages) {
       const otherId =
-        msg.fromUserId === session.user.id ? msg.toUserId : msg.fromUserId;
+        msg.fromUserId === user.id ? msg.toUserId : msg.fromUserId;
       if (!conversationMap.has(otherId)) {
         conversationMap.set(otherId, {
           userId: otherId,
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
           unread: 0,
         });
       }
-      if (msg.toUserId === session.user.id && !msg.read) {
+      if (msg.toUserId === user.id && !msg.read) {
         const conv = conversationMap.get(otherId)!;
         conv.unread++;
       }
@@ -120,8 +120,8 @@ export async function GET(req: NextRequest) {
   const rows = await db.query.messages.findMany({
     where: (m, { or: o, and: a, eq: e }) =>
       o(
-        a(e(m.fromUserId, session.user.id), e(m.toUserId, adminId)),
-        a(e(m.fromUserId, adminId), e(m.toUserId, session.user.id))
+        a(e(m.fromUserId, user.id), e(m.toUserId, adminId)),
+        a(e(m.fromUserId, adminId), e(m.toUserId, user.id))
       ),
     orderBy: (m, { asc }) => asc(m.createdAt),
   });
@@ -130,15 +130,15 @@ export async function GET(req: NextRequest) {
     .update(messages)
     .set({ read: true })
     .where(
-      and(eq(messages.toUserId, session.user.id), eq(messages.fromUserId, adminId))
+      and(eq(messages.toUserId, user.id), eq(messages.fromUserId, adminId))
     );
 
-  return NextResponse.json({ messages: rows, currentUserId: session.user.id });
+  return NextResponse.json({ messages: rows, currentUserId: user.id });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const authUser = await getAppUser();
+  if (!authUser?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await db.query.users.findFirst({
-    where: (u, { eq: e }) => e(u.id, session.user.id),
+    where: (u, { eq: e }) => e(u.id, authUser.id),
   });
 
   if (user?.blocked) {
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const admin = await isAdmin(session.user.email ?? "");
+  const admin = await isAdmin(authUser.email ?? "");
   let targetUserId: string;
 
   if (admin && toUserId) {
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const row = {
     id,
-    fromUserId: session.user.id,
+    fromUserId: authUser.id,
     toUserId: targetUserId,
     content: content.trim().slice(0, 2000),
     read: false,

@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 
 export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAppUser();
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const doc = await db.query.documents.findFirst({
     where: (d, { eq, and }) =>
-      and(eq(d.id, params.id), eq(d.userId, session.user.id)),
+      and(eq(d.id, params.id), eq(d.userId, user.id)),
   });
 
   if (!doc) {
