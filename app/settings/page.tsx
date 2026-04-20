@@ -869,7 +869,7 @@ export default function SettingsPage() {
                 <img
                   src="/logo-gap-fill.png"
                   alt="Bowl Beacon"
-                  className="w-full h-40 object-cover rounded-2xl block"
+                  className="w-full h-auto object-contain rounded-2xl block"
                 />
               </section>
             ),
