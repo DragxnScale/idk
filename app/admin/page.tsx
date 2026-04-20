@@ -70,6 +70,9 @@ interface VelocitySummary {
   slowestMs: number | null;
   correctCount: number;
   total: number;
+  score?: number;
+  negCount?: number;
+  streakBest?: number;
   completed: boolean;
   createdAt: string | null;
   completedAt: string | null;
@@ -610,8 +613,25 @@ function UsersTab() {
               </div>
               {velocity.accuracy != null && (
                 <div className="flex-shrink-0 text-right">
-                  <p className="text-2xl font-bold">{velocity.accuracy}%</p>
-                  <p className="text-[10px] uppercase tracking-wide text-gray-500">Accuracy</p>
+                  {typeof velocity.score === "number" && (
+                    <p className="text-2xl font-bold">
+                      {velocity.score >= 0 ? `+${velocity.score}` : velocity.score}
+                    </p>
+                  )}
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">
+                    {typeof velocity.score === "number"
+                      ? `${velocity.accuracy}% accuracy`
+                      : "Accuracy"}
+                    {typeof velocity.score !== "number" && (
+                      <span className="block text-lg font-bold text-white">{velocity.accuracy}%</span>
+                    )}
+                  </p>
+                  {(velocity.negCount != null && velocity.negCount > 0) && (
+                    <p className="text-[10px] text-red-400 mt-0.5">{velocity.negCount} neg</p>
+                  )}
+                  {(velocity.streakBest != null && velocity.streakBest >= 2) && (
+                    <p className="text-[10px] text-amber-400 mt-0.5">🔥 best {velocity.streakBest}</p>
+                  )}
                 </div>
               )}
             </div>

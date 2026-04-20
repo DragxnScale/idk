@@ -41,12 +41,35 @@ const attemptSchema = z.object({
   correct: z.boolean(),
   reactionMs: z.number().int().min(0).nullable(),
   type: z.enum(["mc", "sa"]),
+  /** True if the user buzzed before the stem finished typing. */
+  interrupt: z.boolean().optional(),
+  /** Grader explanation (SA) surfaced on the results review. */
+  graderReason: z.string().optional(),
+  /** One-sentence concept explanation from the generator. */
+  explanation: z.string().optional(),
+  /** Optional. If omitted the server recomputes using the scoring rules below. */
+  points: z.number().int().optional(),
+  /** Whether the user buzzed at all (distinguishes timeout vs wrong). */
+  buzzed: z.boolean().optional(),
 });
 
 const bodySchema = z.object({
   velocityGameId: z.string(),
   attempts: z.array(attemptSchema).min(1),
 });
+
+/**
+ * NSB-inspired scoring:
+ *  - Correct answer: +10 points
+ *  - Wrong answer after buzzing IN the stem (interrupt / neg): -4
+ *  - Wrong answer after hearing the full stem (and options, if MC): 0
+ *  - Never buzzed (timeout): 0
+ */
+function scoreAttempt(a: z.infer<typeof attemptSchema>): number {
+  if (a.correct) return 10;
+  if (a.interrupt && a.buzzed !== false) return -4;
+  return 0;
+}
 
 const reviewSchema = z.object({
   growthAreas: z
@@ -95,14 +118,33 @@ export async function POST(request: Request) {
   const fastestMs = reactions.length ? Math.min(...reactions) : null;
   const slowestMs = reactions.length ? Math.max(...reactions) : null;
 
+  // Server-side scoring: recompute points for every attempt so the client can't
+  // forge them, and track the longest streak + number of negs.
+  const scored = attempts.map((a) => ({ ...a, points: scoreAttempt(a) }));
+  const score = scored.reduce((s, a) => s + a.points, 0);
+  const negCount = scored.filter((a) => a.points < 0).length;
+  let streakBest = 0;
+  let streakCur = 0;
+  for (const a of scored) {
+    if (a.correct) {
+      streakCur += 1;
+      if (streakCur > streakBest) streakBest = streakCur;
+    } else {
+      streakCur = 0;
+    }
+  }
+
   const resultsPayload = {
-    attempts,
+    attempts: scored,
     accuracy,
     correctCount,
     total,
     avgReactionMs,
     fastestMs,
     slowestMs,
+    score,
+    negCount,
+    streakBest,
   };
 
   let review: z.infer<typeof reviewSchema> | null = null;
@@ -162,6 +204,10 @@ Keep everything short and actionable. No filler.`;
     slowestMs,
     correctCount,
     total,
+    score,
+    negCount,
+    streakBest,
+    attempts: scored,
     review,
   });
 }

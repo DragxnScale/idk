@@ -183,6 +183,10 @@ export default function SessionSummaryPage() {
             avgReactionMs: data.avgReactionMs ?? data.results.avgReactionMs ?? null,
             fastestMs: data.results.fastestMs ?? null,
             slowestMs: data.results.slowestMs ?? null,
+            score: data.results.score ?? 0,
+            negCount: data.results.negCount ?? 0,
+            streakBest: data.results.streakBest ?? 0,
+            attempts: data.results.attempts ?? [],
             review: data.review ?? null,
           });
         }

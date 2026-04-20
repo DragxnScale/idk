@@ -114,6 +114,9 @@ export async function GET(
     slowestMs: number | null;
     correctCount: number;
     total: number;
+    score: number;
+    negCount: number;
+    streakBest: number;
     completed: boolean;
     createdAt: string | null;
     completedAt: string | null;
@@ -126,6 +129,9 @@ export async function GET(
     let slowestMs: number | null = null;
     let correctCount = 0;
     let total = 0;
+    let score = 0;
+    let negCount = 0;
+    let streakBest = 0;
     if (velocityRow.resultsJson) {
       try {
         const parsed = JSON.parse(velocityRow.resultsJson) as {
@@ -134,12 +140,18 @@ export async function GET(
           slowestMs?: number | null;
           correctCount?: number;
           total?: number;
+          score?: number;
+          negCount?: number;
+          streakBest?: number;
         };
         attempts = parsed.attempts ?? [];
         fastestMs = parsed.fastestMs ?? null;
         slowestMs = parsed.slowestMs ?? null;
         correctCount = parsed.correctCount ?? attempts.filter((a) => a.correct).length;
         total = parsed.total ?? attempts.length;
+        score = parsed.score ?? 0;
+        negCount = parsed.negCount ?? 0;
+        streakBest = parsed.streakBest ?? 0;
       } catch {}
     }
     if (!total) {
@@ -162,6 +174,9 @@ export async function GET(
       slowestMs,
       correctCount,
       total,
+      score,
+      negCount,
+      streakBest,
       completed: velocityRow.completedAt != null,
       createdAt: velocityRow.createdAt?.toISOString() ?? null,
       completedAt: velocityRow.completedAt?.toISOString() ?? null,
