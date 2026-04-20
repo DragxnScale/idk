@@ -48,19 +48,20 @@ export const LAYOUTS: Record<LayoutStateKey, LayoutSpec> = {
     bottom: COMMON_BOTTOM,
   },
 
-  // Cache ON + Breaks OFF — no gap, dog + credits hidden.
+  // Cache ON + Breaks OFF — session-defaults + textbook-size moved to right,
+  // exit-password moved to left.
   cacheOn_breaksOff: {
     top: COMMON_TOP,
-    left:  ["account", "session-defaults", "textbook-size", "upload-storage"],
-    right: ["study-breaks", "pdf-cache", "exit-password"],
+    left:  ["account", "exit-password", "upload-storage"],
+    right: ["study-breaks", "session-defaults", "textbook-size", "pdf-cache"],
     bottom: COMMON_BOTTOM,
   },
 
-  // Cache ON + Breaks ON — small gap, show credits only.
+  // Cache ON + Breaks ON — small gap, fill with the logo above the credits text.
   cacheOn_breaksOn: {
     top: COMMON_TOP,
     left:  ["account", "session-defaults", "pdf-cache", "exit-password"],
-    right: ["study-breaks", "textbook-size", "upload-storage", "credits"],
+    right: ["study-breaks", "textbook-size", "upload-storage", "logo", "credits"],
     bottom: COMMON_BOTTOM,
   },
 };

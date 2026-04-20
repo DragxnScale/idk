@@ -863,6 +863,17 @@ export default function SettingsPage() {
               </section>
             ),
 
+            "logo": (
+              <section key="logo" className="rounded-2xl overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo-gap-fill.png"
+                  alt="Bowl Beacon"
+                  className="w-full h-40 object-cover rounded-2xl block"
+                />
+              </section>
+            ),
+
             "credits": (
               <section key="credits" className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 p-5">
                 <p className={descClass("credits")}>
