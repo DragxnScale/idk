@@ -191,19 +191,35 @@ function mergeCardList(loaded: CardConfig[] | undefined, fallback: CardConfig[])
 }
 
 /**
- * Easter-egg cards (dog + credits) have specific visibility rules per state
- * that should always be enforced when migrating a legacy v1 config — otherwise
- * a user's previously-saved config would leave the dog visible on states that
- * have no gap to fill (e.g. cache-on + breaks-on → sliver rendering).
+ * v2 → v3 hard-reset for a single state.
+ *
+ * Earlier v2 configs had two bugs that can't be fixed by partial merging:
+ *   1. dog-photo and credits were seeded with visible=true in every state
+ *      (incl. states with no gap), causing a rendering sliver.
+ *   2. dog/credits `order` values placed them *after* the full-width cards
+ *      (focus-music / theme / keyboard-shortcuts), so they rendered at the
+ *      very bottom of the page instead of in the right-column gap.
+ *
+ * This function therefore rebuilds the card list entirely from
+ * DEFAULT_CONFIG for the state, preserving only the user-facing text and
+ * style customizations (title text, title size, desc text, desc size, font
+ * family) from the loaded config. Structural properties (order, span,
+ * visibility) are reset to the v3 defaults.
  */
 function applyEasterEggRulesForState(cards: CardConfig[], state: LayoutStateKey): CardConfig[] {
   const defaults = DEFAULT_CONFIG.states[state];
-  return cards.map((c) => {
-    if (c.id === "dog-photo" || c.id === "credits") {
-      const def = defaults.find((d) => d.id === c.id);
-      if (def) return { ...c, visible: def.visible };
-    }
-    return c;
+  const loadedById = new Map(cards.map((c) => [c.id, c]));
+  return defaults.map((def) => {
+    const user = loadedById.get(def.id);
+    if (!user) return { ...def };
+    return {
+      ...def,
+      titleText:  user.titleText,
+      titleSize:  user.titleSize,
+      descText:   user.descText,
+      descSize:   user.descSize,
+      fontFamily: user.fontFamily,
+    };
   });
 }
 

@@ -426,9 +426,15 @@ export default function SettingsPage() {
     return {};
   }
   function cardGridCol(id: string): React.CSSProperties {
-    // In CSS columns layout, full-width = span across all columns; half-width = default (flows in one column)
+    // In CSS columns layout, full-width = span across all columns; half-width = default (flows in one column).
+    // column-span: all cards also get extra top margin so they don't butt up against the preceding
+    // column content (which can otherwise extend below the top of the span-all card on the tall side).
     if (cc(id).span === 2) {
-      return { columnSpan: "all", breakInside: "avoid" } as React.CSSProperties;
+      return {
+        columnSpan: "all",
+        breakInside: "avoid",
+        marginTop: "1rem",
+      } as React.CSSProperties;
     }
     return { breakInside: "avoid" } as React.CSSProperties;
   }
