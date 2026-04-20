@@ -6,6 +6,7 @@ import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 import { LAYOUTS, resolveLayoutStateKey } from "@/lib/types/settings-layout";
+import { reportPdfCacheTelemetry } from "@/lib/client/pdf-cache-diagnostics";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -154,6 +155,7 @@ export default function SettingsPage() {
   function handlePdfCacheEnabled(enabled: boolean) {
     setPdfCacheEnabledState(enabled);
     localStorage.setItem("bowlbeacon-pdf-cache-enabled", String(enabled));
+    reportPdfCacheTelemetry({ step: "settings-pdf-cache-toggle", enabled });
     void navigator.serviceWorker?.ready.then(async (reg) => {
       reg.active?.postMessage({ type: "setPdfCacheEnabled", enabled });
       if (!enabled) {

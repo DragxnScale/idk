@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { isAdmin } from "@/lib/admin";
+import { isAdmin, isSuperAdmin } from "@/lib/admin";
 import { getAppUser } from "@/lib/app-user";
 
 /** Who the app treats as signed-in (includes admin view-as). */
@@ -25,5 +25,7 @@ export async function GET() {
     impersonating,
     /** Real admin identity when impersonating */
     adminEmail: impersonating ? session.user.email : null,
+    /** JWT identity — used for owner-only diagnostics (not affected by view-as). */
+    isSuperOwner: isSuperAdmin(session.user.email),
   });
 }

@@ -189,10 +189,10 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/api/debug/client-error` | Stores `kind: user` (optional session; anonymous allowed). |
-| POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). |
+| POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). The study app also batches PDF-cache telemetry here via `lib/client/pdf-cache-diagnostics.ts` (`[pdf-cache] batch (N events)`). |
 | GET | `/api/admin/debug-logs` | **Super-owner only:** `{ userLogs, devLogs }` from `client_error_logs` (joined names). |
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
-| GET | `/api/user/session-context` | Returns JWT user vs effective user and whether impersonation is active. |
+| GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, and **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as. |
 
 ### 5.2 Study sessions and progress
 
@@ -443,6 +443,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 
 ### 7.6 PWA / Offline mode
 
+- **`lib/client/pdf-cache-diagnostics.ts`** — For the super-owner only, batches events (e.g. from `fetchPdfCacheEntryCount`, study session setup mount, Settings PDF-cache toggle) and POSTs once to `/api/debug/dev-log` with SW registration snapshot and `bowlbeacon*` cache names.
 - **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
   - **Cache-first**: `/api/proxy/pdf` and Vercel Blob PDF URLs — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the “cached PDFs” counter use **distinct URLs** (one logical book), not raw Cache API entry counts.
   - Turning **off** offline PDF cache in Settings runs `setPdfCacheEnabled: false` in the SW (which **`waitUntil`** deletes the PDF bucket) **and** `clearAllPdfCachesClient()` from the page so all `bowlbeacon-pdf-*` caches are removed on that device.
