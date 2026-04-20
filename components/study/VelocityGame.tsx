@@ -52,6 +52,10 @@ export interface VelocityResultsPayload {
   streakBest: number;
   /** Per-question record, with server-computed points. */
   attempts: VelocityAttempt[];
+  /** Bonuses answered correctly / bonuses seen (0-100). */
+  bonusConversionRate?: number;
+  bonusCorrect?: number;
+  bonusSeen?: number;
   review: VelocityReview | null;
 }
 
@@ -483,6 +487,9 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         negCount: attempts.filter((a) => (a.points ?? 0) < 0).length,
         streakBest: best,
         attempts,
+        bonusConversionRate: 0,
+        bonusCorrect: 0,
+        bonusSeen: 0,
         review: null,
       };
     };
@@ -711,16 +718,16 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
               {feedback.points > 0 ? `+${feedback.points}` : feedback.points} pts
             </span>
           </div>
-          {!feedback.correct && (
-            <p className="mt-1 text-sm">
-              Correct answer: <strong>{feedback.correctAnswer}</strong>
-            </p>
-          )}
+          <p className="mt-1 text-sm">
+            Answer reveal: <strong>{feedback.correctAnswer}</strong>
+          </p>
           {feedback.reason && (
             <p className="mt-2 text-xs italic text-gray-600 dark:text-gray-300">{feedback.reason}</p>
           )}
           {feedback.explanation && (
-            <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{feedback.explanation}</p>
+            <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+              Explanation: {feedback.explanation}
+            </p>
           )}
           <div className="mt-4 flex justify-end">
             <button
@@ -853,6 +860,15 @@ function Results({
 }) {
   const [showAll, setShowAll] = useState(false);
   const attempts = results.attempts ?? [];
+  const bonusSeen =
+    results.bonusSeen ??
+    attempts.filter((a) => (a.roundType ?? "tossup") === "bonus").length;
+  const bonusCorrect =
+    results.bonusCorrect ??
+    attempts.filter((a) => (a.roundType ?? "tossup") === "bonus" && a.correct).length;
+  const bonusConversionRate =
+    results.bonusConversionRate ??
+    (bonusSeen > 0 ? Math.round((bonusCorrect / bonusSeen) * 100) : 0);
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center dark:border-gray-800 dark:bg-gray-900">
@@ -879,6 +895,10 @@ function Results({
             value={results.slowestMs != null ? `${(results.slowestMs / 1000).toFixed(2)}s` : "—"}
           />
         </div>
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Bonus conversion: <strong>{bonusCorrect}</strong> / <strong>{bonusSeen}</strong> (
+          {bonusConversionRate}%)
+        </p>
       </div>
 
       {attempts.length > 0 && (

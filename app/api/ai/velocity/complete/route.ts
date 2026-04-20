@@ -130,6 +130,9 @@ export async function POST(request: Request) {
   }));
   const score = scored.reduce((s, a) => s + a.points, 0);
   const negCount = scored.filter((a) => a.points < 0).length;
+  const bonusSeen = scored.filter((a) => a.roundType === "bonus").length;
+  const bonusCorrect = scored.filter((a) => a.roundType === "bonus" && a.correct).length;
+  const bonusConversionRate = bonusSeen > 0 ? Math.round((bonusCorrect / bonusSeen) * 100) : 0;
   let streakBest = 0;
   let streakCur = 0;
   for (const a of scored) {
@@ -152,6 +155,9 @@ export async function POST(request: Request) {
     score,
     negCount,
     streakBest,
+    bonusSeen,
+    bonusCorrect,
+    bonusConversionRate,
   };
 
   let review: z.infer<typeof reviewSchema> | null = null;
@@ -214,6 +220,9 @@ Keep everything short and actionable. No filler.`;
     score,
     negCount,
     streakBest,
+    bonusSeen,
+    bonusCorrect,
+    bonusConversionRate,
     attempts: scored,
     review,
   });

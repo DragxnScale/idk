@@ -186,6 +186,9 @@ export default function SessionSummaryPage() {
             score: data.results.score ?? 0,
             negCount: data.results.negCount ?? 0,
             streakBest: data.results.streakBest ?? 0,
+            bonusSeen: data.results.bonusSeen ?? 0,
+            bonusCorrect: data.results.bonusCorrect ?? 0,
+            bonusConversionRate: data.results.bonusConversionRate ?? 0,
             attempts: data.results.attempts ?? [],
             review: data.review ?? null,
           });
