@@ -294,6 +294,36 @@ export const CARD_LABELS: Record<string, string> = {
   "keyboard-shortcuts": "Keyboard shortcuts",
 };
 
+/** Default descriptions — mirrors the text on the real settings page, used by the admin editor preview */
+export const CARD_DEFAULT_DESCRIPTIONS: Record<string, string> = {
+  "daily-goals":
+    "Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal.",
+  "account":
+    "Signed in as your display name.",
+  "session-defaults":
+    "Pre-fill the goal type and target whenever you start a new session.",
+  "study-breaks":
+    "Cycles between focus and break intervals during study sessions.",
+  "textbook-size":
+    "Controls how large the PDF pages appear while reading. Saved on this device.",
+  "pdf-cache":
+    "Caches recently-opened PDFs so you can keep studying without internet.",
+  "upload-storage":
+    "Space used by your uploaded PDFs.",
+  "exit-password":
+    "Required to end a study session early. Defaults to your login password if not changed.",
+  "dog-photo":
+    "",
+  "credits":
+    "Bowl Beacon was a passion project designed by Jayden Wong as an introductory lesson in learning to code. He attributes his knowledge to his Mom and her friend for guiding him through this project, helping him develop key features, and helping him understand how this app—and coding/app development in general—works. If any issues or bugs are found, please report them through the message developer button found at the bottom of the dashboard. Happy studying and good luck at your next competition!",
+  "focus-music":
+    "Build a study playlist. Search for songs or paste a URL. Music loops automatically during sessions. Saved on this device.",
+  "theme":
+    "Pick a built-in theme or create your own with a color picker.",
+  "keyboard-shortcuts":
+    "Available while reading in a study session.",
+};
+
 /** Resolve the runtime LayoutStateKey from the two user toggles */
 export function resolveLayoutStateKey(
   pdfCacheEnabled: boolean,

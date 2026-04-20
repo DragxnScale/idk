@@ -9,9 +9,15 @@ import {
   useSensor,
   useSensors,
   DragOverlay,
-  useDraggable,
-  useDroppable,
+  closestCenter,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import {
   type CardConfig,
@@ -23,14 +29,78 @@ import {
   type LayoutStateKey,
   DEFAULT_CONFIG,
   CARD_LABELS,
+  CARD_DEFAULT_DESCRIPTIONS,
   LAYOUT_STATE_KEYS,
   LAYOUT_STATE_LABELS,
   mergeWithDefaults,
 } from "@/lib/types/settings-layout";
 
-// ── Individual draggable + droppable card tile ────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function CardTile({
+function cardFontStyle(f: FontFamily): React.CSSProperties {
+  if (f === "mono") return { fontFamily: "monospace" };
+  if (f === "serif") return { fontFamily: "serif" };
+  return {};
+}
+
+function titleSizeClass(s: TitleSize) { return `text-${s} font-semibold`; }
+function descSizeClass(s: TextSize)   { return `text-${s} text-gray-400 leading-relaxed`; }
+
+/** Mini preview of a settings card — mirrors the real settings page styling */
+function CardPreview({ card, selected, isOver }: { card: CardConfig; selected: boolean; isOver: boolean }) {
+  const title = card.titleText ?? CARD_LABELS[card.id] ?? card.id;
+  const desc  = card.descText ?? CARD_DEFAULT_DESCRIPTIONS[card.id] ?? "";
+  const isDog = card.id === "dog-photo";
+
+  return (
+    <div
+      style={cardFontStyle(card.fontFamily)}
+      className={`relative rounded-2xl border p-5 bg-gray-900
+        ${selected ? "border-blue-500 shadow-lg shadow-blue-900/30 ring-1 ring-blue-400/40" : "border-gray-700"}
+        ${isOver ? "ring-2 ring-blue-500/60" : ""}
+        ${!card.visible ? "opacity-40" : ""}
+      `}
+    >
+      {/* corner badges */}
+      <div className="absolute top-2 left-2 flex items-center gap-1">
+        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded
+          ${card.span === 2 ? "bg-indigo-600/60 text-indigo-200" : "bg-gray-800 text-gray-400"}`}>
+          {card.span === 2 ? "Full" : "Half"}
+        </span>
+        {!card.visible && (
+          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-900/50 text-red-400">
+            Hidden
+          </span>
+        )}
+      </div>
+
+      {/* mini preview content */}
+      <div className="mt-3">
+        {isDog ? (
+          <div className="flex items-center justify-center py-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/easter-egg-dog.png" alt="Dog preview" className="h-24 w-24 object-cover rounded-xl" />
+          </div>
+        ) : (
+          <>
+            <h2 className={`${titleSizeClass(card.titleSize)} text-gray-100 mb-1`}>{title}</h2>
+            {desc && (
+              <p className={`${descSizeClass(card.descSize)} line-clamp-3`}>{desc}</p>
+            )}
+          </>
+        )}
+      </div>
+
+      <p className="mt-3 text-[10px] text-gray-600">
+        font: {card.fontFamily} · title: {card.titleSize} · body: {card.descSize}
+      </p>
+    </div>
+  );
+}
+
+// ── Sortable wrapper ─────────────────────────────────────────────────────────
+
+function SortableCard({
   card,
   selected,
   onClick,
@@ -39,37 +109,38 @@ function CardTile({
   selected: boolean;
   onClick: () => void;
 }) {
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
-    useDraggable({ id: card.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id: card.id });
 
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `drop-${card.id}` });
-
-  const setRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      setDragRef(node);
-      setDropRef(node);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    gridColumn: card.span === 2 ? "1 / -1" : undefined,
+    opacity: isDragging ? 0.3 : 1,
+  };
 
   return (
     <div
-      ref={setRef}
+      ref={setNodeRef}
+      style={style}
       onClick={onClick}
-      style={{ gridColumn: card.span === 2 ? "1 / -1" : undefined }}
-      className={`group relative rounded-xl border-2 cursor-pointer transition-colors select-none
-        ${selected ? "border-blue-500 bg-blue-950/40 shadow-lg shadow-blue-900/30" : "border-gray-700 bg-gray-800/60"}
-        ${isOver && !isDragging ? "border-blue-400 bg-blue-900/30 ring-2 ring-blue-500/40" : ""}
-        ${isDragging ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900" : "hover:border-gray-500"}
-        ${!card.visible ? "opacity-40" : ""}
-      `}
+      className="relative cursor-pointer select-none"
     >
+      {/* Drag handle — top-right grip */}
       <button
+        ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
         onClick={(e) => e.stopPropagation()}
-        className="absolute top-2 right-2 p-1 rounded text-gray-500 hover:text-gray-300 cursor-grab active:cursor-grabbing touch-none"
+        className="absolute top-2 right-2 z-10 p-1.5 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800 cursor-grab active:cursor-grabbing touch-none"
         title="Drag to reorder"
         tabIndex={-1}
       >
@@ -80,35 +151,16 @@ function CardTile({
         </svg>
       </button>
 
-      <div className="p-3 pr-8">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded
-            ${card.span === 2 ? "bg-indigo-600/60 text-indigo-300" : "bg-gray-700 text-gray-400"}`}>
-            {card.span === 2 ? "Full" : "Half"}
-          </span>
-          {!card.visible && (
-            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-900/50 text-red-400">
-              Hidden
-            </span>
-          )}
-        </div>
-        <p className="text-sm font-semibold text-gray-100 leading-tight">
-          {card.titleText ?? CARD_LABELS[card.id] ?? card.id}
-        </p>
-        <p className="text-xs text-gray-500 mt-0.5">
-          font: {card.fontFamily} · title: {card.titleSize} · body: {card.descSize}
-        </p>
-      </div>
+      <CardPreview card={card} selected={selected} isOver={isOver} />
     </div>
   );
 }
 
+/** Lightweight floating ghost while dragging */
 function CardGhost({ card }: { card: CardConfig }) {
   return (
-    <div className="rounded-xl border-2 border-blue-400 bg-blue-900/70 p-3 shadow-2xl w-48 rotate-2 pointer-events-none">
-      <p className="text-sm font-semibold text-blue-200">
-        {card.titleText ?? CARD_LABELS[card.id] ?? card.id}
-      </p>
+    <div className="w-full opacity-80" style={{ transform: "scale(1.02)" }}>
+      <CardPreview card={card} selected={false} isOver={false} />
     </div>
   );
 }
@@ -209,7 +261,7 @@ function PropertiesPanel({
   );
 }
 
-// ── State selector strip ─────────────────────────────────────────────────────
+// ── State selector ───────────────────────────────────────────────────────────
 
 function StateSelector({
   activeState,
@@ -226,7 +278,7 @@ function StateSelector({
         <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
           Editing layout for state
         </p>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] text-gray-600">Copy from:</span>
           {LAYOUT_STATE_KEYS.filter((k) => k !== activeState).map((k) => (
             <button
@@ -234,7 +286,6 @@ function StateSelector({
               type="button"
               onClick={() => onCopyFrom(k)}
               className="text-[10px] rounded border border-gray-700 px-2 py-0.5 text-gray-400 hover:border-gray-500 hover:text-gray-200 transition"
-              title={`Copy cards from ${LAYOUT_STATE_LABELS[k]}`}
             >
               {LAYOUT_STATE_LABELS[k]}
             </button>
@@ -254,12 +305,6 @@ function StateSelector({
             `}
           >
             <div className="font-semibold text-[11px]">{LAYOUT_STATE_LABELS[k]}</div>
-            <div className="mt-0.5 text-[9px] uppercase tracking-wider opacity-70">
-              {k === "cacheOff_breaksOff" && "No cache · No breaks"}
-              {k === "cacheOff_breaksOn"  && "No cache · Breaks"}
-              {k === "cacheOn_breaksOff"  && "Cache · No breaks"}
-              {k === "cacheOn_breaksOn"   && "Cache · Breaks"}
-            </div>
           </button>
         ))}
       </div>
@@ -285,15 +330,14 @@ export function SettingsLayoutTab() {
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  // Active state's card list (never null thanks to mergeWithDefaults)
   const stateCards = config.states[activeState] ?? DEFAULT_CONFIG.states[activeState];
   const sortedCards = [...stateCards].sort((a, b) => a.order - b.order);
+  const sortedIds = sortedCards.map((c) => c.id);
   const selectedCard = stateCards.find((c) => c.id === selectedId) ?? null;
 
-  /** Mutate one card within the currently active state only */
   const updateCard = useCallback(
     (id: string, patch: Partial<CardConfig>) => {
       setConfig((prev) => ({
@@ -315,29 +359,24 @@ export function SettingsLayoutTab() {
   const handleDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = e;
-    if (!over) return;
+    if (!over || active.id === over.id) return;
 
-    const overId = (over.id as string).replace(/^drop-/, "");
-    if (active.id === overId) return;
+    const oldIndex = sortedIds.indexOf(active.id as string);
+    const newIndex = sortedIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
 
-    // Pure swap within the active state only
-    const cards = config.states[activeState];
-    const a = cards.find((c) => c.id === active.id);
-    const b = cards.find((c) => c.id === overId);
-    if (!a || !b) return;
-
-    const aOrder = a.order;
-    const bOrder = b.order;
+    // Proper sortable insertion — all cards flow to fill the gap
+    const newSorted = arrayMove(sortedCards, oldIndex, newIndex);
+    const orderById = new Map(newSorted.map((c, i) => [c.id, i]));
 
     setConfig((prev) => ({
       ...prev,
       states: {
         ...prev.states,
-        [activeState]: prev.states[activeState].map((c) => {
-          if (c.id === active.id) return { ...c, order: bOrder };
-          if (c.id === overId)    return { ...c, order: aOrder };
-          return c;
-        }),
+        [activeState]: prev.states[activeState].map((c) => ({
+          ...c,
+          order: orderById.get(c.id) ?? c.order,
+        })),
       },
     }));
     setStatus("idle");
@@ -403,7 +442,7 @@ export function SettingsLayoutTab() {
           <div>
             <h3 className="text-base font-semibold text-gray-100">Settings page layout</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Each of the 4 states (cache × breaks) has its own independent layout. Drag cards to reorder. Click to edit properties.
+              Live preview — tiles match the real card appearance. Drag the handle to reorder. Click a card to edit its properties.
             </p>
           </div>
           <div className="flex gap-2">
@@ -431,26 +470,29 @@ export function SettingsLayoutTab() {
         <div className="mb-3 flex items-center gap-2">
           <div className="h-px flex-1 bg-gray-800" />
           <span className="text-[10px] text-gray-600 uppercase tracking-widest">
-            {LAYOUT_STATE_LABELS[activeState]} · drag handle to move
+            {LAYOUT_STATE_LABELS[activeState]} · drag to reorder · cards flow to fill gaps
           </span>
           <div className="h-px flex-1 bg-gray-800" />
         </div>
 
         <DndContext
           sensors={sensors}
+          collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl border border-gray-800 bg-gray-900/50 min-h-[400px] items-start">
-            {sortedCards.map((card) => (
-              <CardTile
-                key={card.id}
-                card={card}
-                selected={selectedId === card.id}
-                onClick={() => setSelectedId(card.id === selectedId ? null : card.id)}
-              />
-            ))}
-          </div>
+          <SortableContext items={sortedIds} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-2 gap-4 p-5 rounded-2xl border border-gray-800 bg-gray-950/60 min-h-[400px] items-start">
+              {sortedCards.map((card) => (
+                <SortableCard
+                  key={card.id}
+                  card={card}
+                  selected={selectedId === card.id}
+                  onClick={() => setSelectedId(card.id === selectedId ? null : card.id)}
+                />
+              ))}
+            </div>
+          </SortableContext>
 
           <DragOverlay dropAnimation={null}>
             {draggedCard ? <CardGhost card={draggedCard} /> : null}
@@ -458,7 +500,7 @@ export function SettingsLayoutTab() {
         </DndContext>
 
         <p className="mt-3 text-xs text-gray-600">
-          Drag handle (⋮⋮) to reorder · Click card to open properties panel → · Edits apply to the selected state only
+          Drag handle (⋮⋮) to reorder · click a card to open properties · other cards flow to fill the vacated spot
         </p>
       </div>
 
