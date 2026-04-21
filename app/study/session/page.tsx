@@ -82,7 +82,6 @@ function StudySessionInner() {
     sessionState?: string;
     studyGoal?: { id: string; targetValue: number; completedMinutes: number } | null;
   } | null>(null);
-  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [checkingActive, setCheckingActive] = useState(true);
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
   const [inactivityTimeout, setInactivityTimeout] = useState(3); // default 3 min
@@ -262,6 +261,11 @@ function StudySessionInner() {
   useEffect(() => {
     if (!sessionId) setSessionLaunchPage(null);
   }, [sessionId]);
+
+  // Re-run stats when ?resume= appears so resume path is not skipped (resumeHandled was one-shot).
+  useEffect(() => {
+    resumeHandled.current = false;
+  }, [resumeId]);
 
   // Check for active session / handle resume
   useEffect(() => {
@@ -938,17 +942,6 @@ function StudySessionInner() {
 
   const hasChapterData = selectedDoc?.availableChapters && selectedDoc.availableChapters.length > 0;
 
-  async function abandonActive() {
-    if (!activeSession) return;
-    await fetch("/api/study/sessions", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: activeSession.id, endedAt: new Date().toISOString(), totalFocusedMinutes: activeSession.totalFocusedMinutes ?? 0 }),
-    });
-    setActiveSession(null);
-    setShowAbandonConfirm(false);
-  }
-
   const pauseAndLeave = useCallback(async () => {
     if (!sessionId || isOfflineId(sessionId)) {
       router.push("/dashboard");
@@ -995,8 +988,8 @@ function StudySessionInner() {
   /* ── Active session gate ─────────────────────────────────────── */
   if (activeSession && !sessionId) {
     return (
-      <main className="min-h-screen px-6 py-10 md:px-10 max-w-lg mx-auto flex flex-col items-center justify-center">
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-6 w-full dark:border-amber-700 dark:bg-amber-900/20">
+      <main className="relative z-10 min-h-screen px-6 py-10 md:px-10 max-w-lg mx-auto flex flex-col items-center justify-center">
+        <div className="relative z-10 rounded-xl border border-amber-300 bg-amber-50 p-6 w-full dark:border-amber-700 dark:bg-amber-900/20 shadow-lg">
           <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
             You have an unfinished session
           </h2>
@@ -1024,40 +1017,20 @@ function StudySessionInner() {
             )}
           </p>
           <p className="text-sm text-amber-600 dark:text-amber-500 mb-5">
-            Resume to continue, or end this session before starting a new one.
+            Resume opens your session. To end it, open the session and finish with End session (exit password).
           </p>
-          <div className="flex gap-3">
-            <Link
-              href={`/study/session?resume=${activeSession.id}`}
-              className="flex-1 text-center rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 transition"
-            >
-              Resume session
-            </Link>
-            <button
-              onClick={() => setShowAbandonConfirm(true)}
-              className="flex-1 rounded-lg border border-amber-400 px-4 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30 transition"
-            >
-              End & start new
-            </button>
-          </div>
+          <button
+            type="button"
+            className="w-full cursor-pointer touch-manipulation rounded-lg bg-amber-600 px-4 py-3 text-sm font-medium text-white hover:bg-amber-700 transition"
+            onClick={() =>
+              router.push(`/study/session?resume=${encodeURIComponent(activeSession.id)}`)
+            }
+          >
+            Resume session
+          </button>
         </div>
 
-        {showAbandonConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-sm rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl dark:bg-gray-900 dark:border-gray-700">
-              <h3 className="text-base font-semibold mb-2">End unfinished session?</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-                This will save {activeSession.totalFocusedMinutes}m of progress and end the session. You can then start a new one.
-              </p>
-              <div className="flex gap-2">
-                <button onClick={() => setShowAbandonConfirm(false)} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition">Cancel</button>
-                <button onClick={abandonActive} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition">Yes, end it</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <Link href="/dashboard" className="mt-6 text-sm underline underline-offset-4 text-gray-500">
+        <Link href="/dashboard" className="relative z-10 mt-6 text-sm underline underline-offset-4 text-gray-500">
           Back to dashboard
         </Link>
       </main>

@@ -431,7 +431,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | `/` | Landing, install prompts, nav to auth. |
 | `/auth/signin`, `/auth/signup` | Credentials auth. |
 | `/dashboard` | Stats, **streak card**, **textbook progress**, bookmarks, planner, countdowns. |
-| `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX; **Pause & leave** (`sessionState` paused); resume with **`?resume=`** opens the PDF on **`lastPageIndex`** automatically (no modal); **start screen** can offer “resume on page N” vs usual start by reading the latest **ended** session for the same `documentId` via `GET /api/study/sessions`; optional **multi-session cumulative time goal** (`GET /api/study/goals` or new total). |
+| `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX; **Pause & leave** (`sessionState` paused); if an open session exists, a **gate** offers only **Resume** (no “end from here” — users must re-enter the session and use **End session** with the exit password). Navigating to **`?resume=`** triggers a fresh stats fetch so resume runs; **`?resume=`** opens the PDF on **`lastPageIndex`** automatically; **start screen** can offer “resume on page N” vs usual start from **`GET /api/study/sessions`**; optional **multi-session cumulative time goal** (`GET /api/study/goals` or new total). |
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
