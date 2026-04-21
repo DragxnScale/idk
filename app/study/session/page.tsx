@@ -111,8 +111,14 @@ function StudySessionInner() {
   const visitedPagesRef = useRef<Set<number>>(new Set());
   const sessionEndingRef = useRef(false);
   const resumeHandled = useRef(false);
-  const [resumeLastPageIndex, setResumeLastPageIndex] = useState<number | null>(null);
-  const [showResumePagePrompt, setShowResumePagePrompt] = useState(false);
+  /** Paused / ?resume= session: open PDF at last saved page (no modal). */
+  const [pausedResumePage, setPausedResumePage] = useState<number | null>(null);
+  /** New session: PDF page chosen on setup ("last session ended on page N"). */
+  const [sessionLaunchPage, setSessionLaunchPage] = useState<number | null>(null);
+  /** Last ended session page for selected material (setup prompt). */
+  const [setupSuggestedPage, setSetupSuggestedPage] = useState<number | null>(null);
+  /** User choice on setup: open at suggested page vs natural start (null = natural). */
+  const [setupEntryPageChoice, setSetupEntryPageChoice] = useState<number | null>(null);
   const [elapsedBootstrapSeconds, setElapsedBootstrapSeconds] = useState(0);
   const [timerNonce, setTimerNonce] = useState(0);
   const [linkedStudyGoalId, setLinkedStudyGoalId] = useState<string | null>(null);
@@ -200,6 +206,63 @@ function StudySessionInner() {
       .catch(() => {});
   }, []);
 
+  // Last ended session page for this document (setup: resume on page N?)
+  useEffect(() => {
+    const docId = selectedDoc?.documentId;
+    if (!docId) {
+      setSetupSuggestedPage(null);
+      setSetupEntryPageChoice(null);
+      return;
+    }
+    let cancelled = false;
+    setSetupEntryPageChoice(null);
+
+    fetch("/api/study/sessions")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(
+        (
+          rows: Array<{
+            endedAt?: string | null;
+            documentJson?: string | null;
+            lastPageIndex?: number | null;
+          }>
+        ) => {
+          if (cancelled || !Array.isArray(rows)) return;
+          let best: { t: number; page: number } | null = null;
+          for (const s of rows) {
+            if (
+              !s.endedAt ||
+              !s.documentJson ||
+              s.lastPageIndex == null ||
+              s.lastPageIndex < 1
+            ) {
+              continue;
+            }
+            try {
+              const j = JSON.parse(s.documentJson) as { documentId?: string };
+              if (j.documentId !== docId) continue;
+            } catch {
+              continue;
+            }
+            const t = new Date(s.endedAt).getTime();
+            if (!best || t > best.t) best = { t, page: s.lastPageIndex };
+          }
+          if (!cancelled) setSetupSuggestedPage(best?.page ?? null);
+        }
+      )
+      .catch(() => {
+        if (!cancelled) setSetupSuggestedPage(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDoc?.documentId]);
+
+  useEffect(() => {
+    if (!sessionId) setSessionLaunchPage(null);
+  }, [sessionId]);
+
   // Check for active session / handle resume
   useEffect(() => {
     if (resumeHandled.current) return;
@@ -228,10 +291,9 @@ function StudySessionInner() {
           }
           const lp = active.lastPageIndex;
           if (typeof lp === "number" && lp >= 1) {
-            setResumeLastPageIndex(lp);
+            setPausedResumePage(lp);
             currentPageRef.current = lp;
             setCurrentPage(lp);
-            setShowResumePagePrompt(lp > 1);
           }
           if (active.studyGoal) {
             setLinkedStudyGoalId(active.studyGoal.id);
@@ -594,6 +656,9 @@ function StudySessionInner() {
         setElapsedBootstrapSeconds(0);
         setTimerNonce((n) => n + 1);
         setLiveFocusedMinutes(0);
+        setPausedResumePage(null);
+        setSessionLaunchPage(setupEntryPageChoice ?? null);
+        setSetupEntryPageChoice(null);
         setLinkedStudyGoalId(null);
         setStarting(false);
         return;
@@ -645,7 +710,9 @@ function StudySessionInner() {
       setElapsedBootstrapSeconds(0);
       setTimerNonce((n) => n + 1);
       setLiveFocusedMinutes(0);
-      setResumeLastPageIndex(null);
+      setPausedResumePage(null);
+      setSessionLaunchPage(setupEntryPageChoice ?? null);
+      setSetupEntryPageChoice(null);
       if (typeof data.studyGoalId === "string") {
         setLinkedStudyGoalId(data.studyGoalId);
       } else {
@@ -670,6 +737,13 @@ function StudySessionInner() {
           completed: false,
         });
         setSessionId(tempId);
+        setElapsedBootstrapSeconds(0);
+        setTimerNonce((n) => n + 1);
+        setLiveFocusedMinutes(0);
+        setPausedResumePage(null);
+        setSessionLaunchPage(setupEntryPageChoice ?? null);
+        setSetupEntryPageChoice(null);
+        setLinkedStudyGoalId(null);
         setStarting(false);
         return;
       }
@@ -685,6 +759,7 @@ function StudySessionInner() {
     multiSessionTotalTarget,
     continueStudyGoalId,
     studyGoalsList,
+    setupEntryPageChoice,
   ]);
 
   const saveProgress = useCallback(
@@ -901,7 +976,7 @@ function StudySessionInner() {
   const pdfUrl = getPdfUrl();
   const startPage = getStartPage();
   const pdfInitialPage =
-    resumeLastPageIndex != null ? resumeLastPageIndex : startPage;
+    pausedResumePage ?? sessionLaunchPage ?? startPage;
 
   // If there's no PDF to load, the timer can start immediately
   useEffect(() => {
@@ -1067,6 +1142,46 @@ function StudySessionInner() {
               {importError && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 pl-1">{importError}</p>
               )}
+
+              {setupSuggestedPage != null &&
+                setupSuggestedPage >= 1 &&
+                setupSuggestedPage !== getStartPage() && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/90 p-4 dark:border-blue-800 dark:bg-blue-950/40">
+                    <p className="text-sm font-medium text-blue-950 dark:text-blue-100 mb-1">
+                      Last session ended on page {setupSuggestedPage}
+                    </p>
+                    <p className="text-xs text-blue-800/90 dark:text-blue-300/90 mb-3">
+                      Choose where the PDF opens when you tap Start session (usual start is
+                      page {getStartPage()}).
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSetupEntryPageChoice(setupSuggestedPage)
+                        }
+                        className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                          setupEntryPageChoice === setupSuggestedPage
+                            ? "bg-blue-700 text-white dark:bg-blue-500"
+                            : "border border-blue-300 bg-white text-blue-900 hover:bg-blue-100 dark:border-blue-600 dark:bg-blue-900/50 dark:text-blue-100 dark:hover:bg-blue-900"
+                        }`}
+                      >
+                        Resume on page {setupSuggestedPage}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSetupEntryPageChoice(null)}
+                        className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                          setupEntryPageChoice === null
+                            ? "bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900"
+                            : "border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        }`}
+                      >
+                        Start from page {getStartPage()}
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
           ) : (
             <DocumentPicker onSelect={setSelectedDoc} />
@@ -1510,6 +1625,7 @@ function StudySessionInner() {
           <section className="flex-1 min-h-0 overflow-auto p-3 lg:p-4 flex justify-center">
             {pdfUrl ? (
               <PdfViewer
+                key={`${sessionId}-${pdfInitialPage}`}
                 url={pdfUrl}
                 initialPage={pdfInitialPage}
                 jumpToPage={jumpTarget}
@@ -1543,46 +1659,6 @@ function StudySessionInner() {
             />
           </aside>
         </div>
-
-        {/* Resume: continue from saved page */}
-        {showResumePagePrompt && resumeLastPageIndex != null && (
-          <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="mx-4 max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900 dark:border dark:border-gray-700">
-              <p className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                Continue where you left off?
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                Last page tracked:{" "}
-                <span className="font-medium text-gray-900 dark:text-gray-100">
-                  page {resumeLastPageIndex}
-                </span>
-                . The reader is already open there — continue reading, or jump back to the start.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  className="flex-1 rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition"
-                  onClick={() => setShowResumePagePrompt(false)}
-                >
-                  Continue on page {resumeLastPageIndex}
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                  onClick={() => {
-                    setResumeLastPageIndex(null);
-                    setJumpTarget(1);
-                    currentPageRef.current = 1;
-                    setCurrentPage(1);
-                    setShowResumePagePrompt(false);
-                  }}
-                >
-                  Start from page 1
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Inactivity prompt overlay */}
         {inactivityPrompt && (
