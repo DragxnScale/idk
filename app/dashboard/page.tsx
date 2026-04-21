@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { HeatmapCalendar } from "@/components/dashboard/HeatmapCalendar";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
@@ -86,9 +87,9 @@ interface StatsData {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [abandoning, setAbandoning] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<BookmarkItem[]>([]);
   const [viewingItem, setViewingItem] = useState<BookmarkItem | null>(null);
@@ -187,17 +188,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function abandonSession(sessionId: string) {
-    setAbandoning(true);
-    await fetch("/api/study/sessions", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, endedAt: new Date().toISOString(), totalFocusedMinutes: stats?.activeSession?.totalFocusedMinutes ?? 0 }),
-    });
-    setStats((prev) => prev ? { ...prev, activeSession: null } : prev);
-    setAbandoning(false);
-  }
-
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
@@ -290,8 +280,8 @@ export default function DashboardPage() {
 
         {/* Active session banner */}
         {stats.activeSession && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 mb-8 dark:border-amber-700 dark:bg-amber-900/20">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="relative z-10 rounded-xl border border-amber-300 bg-amber-50 p-5 mb-8 dark:border-amber-700 dark:bg-amber-900/20 shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
                   <SuiText page="dashboard" k="banner.unfinished" def="You have an unfinished session" as="span" />
@@ -306,22 +296,21 @@ export default function DashboardPage() {
                     <> · Started {new Date(stats.activeSession.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</>
                   )}
                 </p>
+                <p className="text-xs text-amber-600/90 dark:text-amber-500/90 mt-1 max-w-md">
+                  Ending a session requires opening it and using End session (exit password).
+                </p>
               </div>
-              <div className="flex gap-2">
-                <Link
-                  href={`/study/session?resume=${stats.activeSession.id}`}
-                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 transition"
-                >
-                  <SuiText page="dashboard" k="banner.resume" def="Resume" as="span" />
-                </Link>
-                <button
-                  onClick={() => abandonSession(stats.activeSession!.id)}
-                  disabled={abandoning}
-                  className="rounded-lg border border-amber-400 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30 transition disabled:opacity-50"
-                >
-                  {abandoning ? "Ending…" : "End it"}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="shrink-0 cursor-pointer touch-manipulation rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-700 transition"
+                onClick={() =>
+                  router.push(
+                    `/study/session?resume=${encodeURIComponent(stats.activeSession!.id)}`
+                  )
+                }
+              >
+                <SuiText page="dashboard" k="banner.resume" def="Resume" as="span" />
+              </button>
             </div>
           </div>
         )}

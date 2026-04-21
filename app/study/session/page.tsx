@@ -106,6 +106,8 @@ function StudySessionInner() {
   const currentPageRef = useRef(1);
   const [liveFocusedMinutes, setLiveFocusedMinutes] = useState(0);
   const lastSavedRef = useRef(0);
+  /** Last page index flushed to the server (saveProgress skips if page + minutes unchanged). */
+  const lastFlushedPageRef = useRef(1);
   const accumulatedTextRef = useRef("");
   const visitedPagesRef = useRef<Set<number>>(new Set());
   const sessionEndingRef = useRef(false);
@@ -298,6 +300,7 @@ function StudySessionInner() {
             setPausedResumePage(lp);
             currentPageRef.current = lp;
             setCurrentPage(lp);
+            lastFlushedPageRef.current = lp;
           }
           if (active.studyGoal) {
             setLinkedStudyGoalId(active.studyGoal.id);
@@ -645,13 +648,27 @@ function StudySessionInner() {
 
       // Offline path: skip the server entirely
       if (!navigator.onLine) {
+        const chosen = setupEntryPageChoice;
+        const initialPdfPage =
+          chosen ??
+          (goalType === "chapter" &&
+          selectedChapters.length > 0 &&
+          selectedDoc?.chapterPageRanges
+            ? (() => {
+                const first = selectedChapters[0];
+                const range = selectedDoc.chapterPageRanges[first];
+                return range ? range[0] : 1;
+              })()
+            : selectedDoc?.pageOffset
+              ? 1 + selectedDoc.pageOffset
+              : selectedDoc?.startPage ?? 1);
         const tempId = enqueueOfflineSession({
           goalType,
           targetValue,
           documentJson: docPayload,
           startedAt: new Date().toISOString(),
           totalFocusedMinutes: 0,
-          lastPageIndex: 1,
+          lastPageIndex: initialPdfPage,
           pagesVisited: 0,
           visitedPagesList: [],
           completed: false,
@@ -661,8 +678,11 @@ function StudySessionInner() {
         setTimerNonce((n) => n + 1);
         setLiveFocusedMinutes(0);
         setPausedResumePage(null);
-        setSessionLaunchPage(setupEntryPageChoice ?? null);
+        setSessionLaunchPage(chosen ?? null);
         setSetupEntryPageChoice(null);
+        lastFlushedPageRef.current = initialPdfPage;
+        currentPageRef.current = initialPdfPage;
+        lastSavedRef.current = 0;
         setLinkedStudyGoalId(null);
         setStarting(false);
         return;
@@ -710,13 +730,30 @@ function StudySessionInner() {
         throw new Error(data.error ?? `Server error (${res.status})`);
       }
       const data = await res.json();
+      const chosenSetup = setupEntryPageChoice;
       setSessionId(data.id);
       setElapsedBootstrapSeconds(0);
       setTimerNonce((n) => n + 1);
       setLiveFocusedMinutes(0);
       setPausedResumePage(null);
-      setSessionLaunchPage(setupEntryPageChoice ?? null);
+      setSessionLaunchPage(chosenSetup ?? null);
       setSetupEntryPageChoice(null);
+      const initialPdfPage =
+        chosenSetup ??
+        (goalType === "chapter" &&
+        selectedChapters.length > 0 &&
+        selectedDoc?.chapterPageRanges
+          ? (() => {
+              const first = selectedChapters[0];
+              const range = selectedDoc.chapterPageRanges[first];
+              return range ? range[0] : 1;
+            })()
+          : selectedDoc?.pageOffset
+            ? 1 + selectedDoc.pageOffset
+            : selectedDoc?.startPage ?? 1);
+      lastFlushedPageRef.current = initialPdfPage;
+      currentPageRef.current = initialPdfPage;
+      lastSavedRef.current = 0;
       if (typeof data.studyGoalId === "string") {
         setLinkedStudyGoalId(data.studyGoalId);
       } else {
@@ -729,13 +766,27 @@ function StudySessionInner() {
         (e instanceof DOMException && e.name === "AbortError")
       ) {
         const docPayload = selectedDoc ? { ...selectedDoc, selectedChapters } : null;
+        const chosen = setupEntryPageChoice;
+        const initialPdfPage =
+          chosen ??
+          (goalType === "chapter" &&
+          selectedChapters.length > 0 &&
+          selectedDoc?.chapterPageRanges
+            ? (() => {
+                const first = selectedChapters[0];
+                const range = selectedDoc.chapterPageRanges[first];
+                return range ? range[0] : 1;
+              })()
+            : selectedDoc?.pageOffset
+              ? 1 + selectedDoc.pageOffset
+              : selectedDoc?.startPage ?? 1);
         const tempId = enqueueOfflineSession({
           goalType,
           targetValue,
           documentJson: docPayload,
           startedAt: new Date().toISOString(),
           totalFocusedMinutes: 0,
-          lastPageIndex: 1,
+          lastPageIndex: initialPdfPage,
           pagesVisited: 0,
           visitedPagesList: [],
           completed: false,
@@ -745,8 +796,11 @@ function StudySessionInner() {
         setTimerNonce((n) => n + 1);
         setLiveFocusedMinutes(0);
         setPausedResumePage(null);
-        setSessionLaunchPage(setupEntryPageChoice ?? null);
+        setSessionLaunchPage(chosen ?? null);
         setSetupEntryPageChoice(null);
+        lastFlushedPageRef.current = initialPdfPage;
+        currentPageRef.current = initialPdfPage;
+        lastSavedRef.current = 0;
         setLinkedStudyGoalId(null);
         setStarting(false);
         return;
@@ -768,12 +822,17 @@ function StudySessionInner() {
 
   const saveProgress = useCallback(
     async (minutes: number) => {
-      if (!sessionId || minutes <= lastSavedRef.current) return;
-      lastSavedRef.current = minutes;
+      if (!sessionId) return;
+      const page = currentPageRef.current;
+      const minuteAdvance = minutes > lastSavedRef.current;
+      const pageAdvance = page !== lastFlushedPageRef.current;
+      if (!minuteAdvance && !pageAdvance) return;
+      if (minuteAdvance) lastSavedRef.current = minutes;
+      if (pageAdvance) lastFlushedPageRef.current = page;
 
       const progressPayload = {
         totalFocusedMinutes: minutes,
-        lastPageIndex: currentPageRef.current,
+        lastPageIndex: page,
         pagesVisited: visitedPagesRef.current.size,
         visitedPagesList: Array.from(visitedPagesRef.current),
       };
@@ -818,6 +877,7 @@ function StudySessionInner() {
         completed: true,
         endedAt: new Date().toISOString(),
         totalFocusedMinutes: focusedMinutesRef.current,
+        lastPageIndex: currentPageRef.current,
         pagesVisited: visitedPagesRef.current.size,
         visitedPagesList: Array.from(visitedPagesRef.current),
       });
@@ -842,6 +902,7 @@ function StudySessionInner() {
           sessionId,
           endedAt: new Date().toISOString(),
           totalFocusedMinutes: focusedMinutesRef.current,
+          lastPageIndex: currentPageRef.current,
           pagesVisited: visitedPagesRef.current.size,
           visitedPagesList: Array.from(visitedPagesRef.current),
         }),
@@ -861,6 +922,8 @@ function StudySessionInner() {
       visitedPagesRef.current.add(page);
       setVisitedPageCount(visitedPagesRef.current.size);
     }
+
+    void saveProgress(focusedMinutesRef.current);
 
     if (goalType !== "chapter" || selectedChapters.length === 0 || goalTriggeredRef.current) return;
 
@@ -890,7 +953,7 @@ function StudySessionInner() {
         handleEnd();
       }
     }
-  }, [goalType, selectedChapters, selectedDoc?.chapterPageRanges, handleEnd]);
+  }, [goalType, selectedChapters, selectedDoc?.chapterPageRanges, handleEnd, saveProgress]);
 
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;

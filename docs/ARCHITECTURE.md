@@ -469,7 +469,7 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 ### 7.4 Page tracking (unique pages)
 
-When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates each unique page index. On every progress save and on session end the client sends both `pagesVisited` (count) and `visitedPagesList` (JSON array) to `PATCH /api/study/sessions`. The progress route unions these arrays across all sessions per textbook to compute the true unique page count.
+When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates each unique page index. Progress `PATCH` sends `totalFocusedMinutes`, `lastPageIndex`, `visitedPagesList`, etc. **`lastPageIndex` updates on every page turn** (not only when the focused-minute counter advances) and on session end, so resume can reopen the correct page even if the user moved pages before accumulating a full timer minute. The dashboard unfinished-session banner offers **Resume** only (no server-side “end” bypass); ending requires the in-session flow with exit password.
 
 ### 7.5 Client-only and dynamic imports
 
