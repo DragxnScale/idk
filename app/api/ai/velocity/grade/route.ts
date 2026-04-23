@@ -97,6 +97,8 @@ ACCEPT when:
   - "h-bar" / "hbar" ↔ "ℏ", "planck's constant" ↔ "h"
   - "avogadro" / "avogadro's number" ↔ "NA" / "6.022e23"
 - Treat a symbol and its spoken name as interchangeable whenever the question is asking for that symbol. Do NOT reject a Greek-letter name on the grounds that "the canonical answer is the letter, not the name".
+- The user gave a MORE specific, textbook-accurate name for the same phenomenon the canonical answer describes in general terms, and that specific name is the one most experts / textbooks would actually use for the scenario in the question. Example: question asks what process in a lead-acid battery produces H₂ and O₂, canonical answer "decomposition", user answered "electrolysis" — ACCEPT: electrolysis IS the specific process and is a strictly better answer.
+- The user gave a widely-accepted alternate name (e.g. "Krebs cycle" ↔ "citric acid cycle" ↔ "TCA cycle", "mitosis" ↔ "karyokinesis", "sodium chloride" ↔ "table salt").
 
 REJECT when:
 - The user's answer refers to a different concept, organ, organism, element, mechanism, etc.

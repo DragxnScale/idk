@@ -68,7 +68,13 @@ interface Props {
 }
 
 const POST_READ_GRACE_MS = 4000;
-const ANSWER_TIME_MS = 5000;
+/** Base answer window for a toss-up. Bonuses get this base replaced with
+ *  approximately the question's reading time plus a generous think buffer
+ *  (see BONUS_ANSWER_BUFFER_MS below). */
+const TOSSUP_ANSWER_TIME_MS = 5000;
+/** Extra thinking time granted on bonus questions, added on top of the
+ *  stem's reading duration so the learner always has time to work it out. */
+const BONUS_ANSWER_BUFFER_MS = 20000;
 /** Pause between lines in the typewriter script (e.g. between the question and the first option). */
 const INTER_LINE_PAUSE_MS = 300;
 const SOUND_PREF_KEY = "velocity-sound-on";
@@ -169,6 +175,8 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   const revealDoneRef = useRef(false);
   /** Captured at buzz time so we can classify the attempt as an interrupt. */
   const interruptRef = useRef(false);
+  /** Total answer window granted for the current question — depends on round type. */
+  const answerWindowMsRef = useRef<number>(TOSSUP_ANSWER_TIME_MS);
 
   const current = questions[qIndex];
   const total = questions.length;
@@ -263,7 +271,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       userAnswer: answerText.trim() || undefined,
       correctAnswer,
       correct: false,
-      reactionMs: ANSWER_TIME_MS,
+      reactionMs: answerWindowMsRef.current,
       type: current.type,
       roundType: current.roundType ?? getRoundType(qIndex),
       interrupt: interruptRef.current,
@@ -274,16 +282,30 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   }, [current, answerText, finalizeAttempt, qIndex]);
 
   const handleBuzz = useCallback(() => {
-    if (phase !== "reading") return;
+    if (phase !== "reading" || !current) return;
     clearTimers();
     interruptRef.current = !revealDoneRef.current;
     playSound("buzz");
     setPhase("answering");
-    setAnswerMsLeft(ANSWER_TIME_MS);
+
+    // Toss-ups use a tight 5s window; bonuses get "reading time + 20s" so
+    // the learner has a fair chance to think through the harder half of a pair.
+    const roundType = current.roundType ?? getRoundType(qIndex);
+    let windowMs = TOSSUP_ANSWER_TIME_MS;
+    if (roundType === "bonus") {
+      const msPerChar = SPEED_MS_PER_CHAR[speed];
+      const readingMs =
+        script.reduce((acc, line) => acc + line.length * msPerChar, 0) +
+        Math.max(0, script.length - 1) * INTER_LINE_PAUSE_MS;
+      windowMs = Math.round(readingMs) + BONUS_ANSWER_BUFFER_MS;
+    }
+    answerWindowMsRef.current = windowMs;
+    setAnswerMsLeft(windowMs);
+
     const buzzTime = performance.now();
     answerTimerRef.current = setInterval(() => {
       const elapsed = performance.now() - buzzTime;
-      const left = Math.max(0, ANSWER_TIME_MS - elapsed);
+      const left = Math.max(0, windowMs - elapsed);
       setAnswerMsLeft(left);
       if (left <= 0) {
         if (answerTimerRef.current) {
@@ -294,7 +316,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       }
     }, 50);
     setTimeout(() => inputRef.current?.focus(), 10);
-  }, [phase, clearTimers, handleAnswerTimeout, playSound]);
+  }, [phase, current, clearTimers, handleAnswerTimeout, playSound, qIndex, script, speed]);
 
   useEffect(() => {
     if (phase !== "reading" || !current || script.length === 0) return;
@@ -362,6 +384,7 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [phase, handleBuzz]);
+
 
   const submitAnswer = useCallback(async () => {
     if (phase !== "answering" || !current || startedAt == null) return;
@@ -526,12 +549,28 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     setPhase("reading");
   }, []);
 
+  // Press Enter (or Space) on the feedback card to advance to the next question.
+  useEffect(() => {
+    if (phase !== "feedback") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        if (!submitting) void nextQuestion();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, submitting, nextQuestion]);
+
   /** Text shown for the question line (line 0). */
   const questionText = useMemo(() => {
     if (!current) return "";
+    // Once the user has locked in a guess or the question is complete, always
+    // show the full stem — reviewing requires seeing what was actually asked.
+    if (phase === "answering" || phase === "feedback") return current.question;
     if (lineIdx > 0) return current.question;
     return current.question.slice(0, charsShown);
-  }, [current, lineIdx, charsShown]);
+  }, [current, lineIdx, charsShown, phase]);
   /** True once the question has finished (so MC options can start appearing). */
   const questionDone = lineIdx > 0 || phase !== "reading";
 
@@ -554,7 +593,9 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   if (!current) return null;
 
   const answerPct =
-    answerMsLeft != null ? Math.max(0, Math.min(100, (answerMsLeft / ANSWER_TIME_MS) * 100)) : 0;
+    answerMsLeft != null && answerWindowMsRef.current > 0
+      ? Math.max(0, Math.min(100, (answerMsLeft / answerWindowMsRef.current) * 100))
+      : 0;
 
   return (
     <div className="space-y-4">
@@ -591,18 +632,28 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {current.options.map((opt, i) => {
             const thisLine = i + 1;
-            // Only show options the user actually heard. If they buzzed before
-            // this option started revealing, keep it hidden — quiz-bowl rules:
-            // you answer from what was read, not what would have been read.
-            if (lineIdx < thisLine) return null;
-            if (lineIdx === thisLine && charsShown === 0) return null;
-            const isPartial = lineIdx === thisLine && charsShown < opt.length;
+            const fullReveal = phase === "feedback";
+            // During feedback we always show the full set of options so the
+            // learner can see the right answer in context. Mid-game we stick
+            // to quiz-bowl rules: hide anything that had not begun revealing
+            // before the buzz.
+            if (!fullReveal) {
+              if (lineIdx < thisLine) return null;
+              if (lineIdx === thisLine && charsShown === 0) return null;
+            }
+            const isPartial =
+              !fullReveal && lineIdx === thisLine && charsShown < opt.length;
             const text = isPartial ? opt.slice(0, charsShown) : opt;
             const isRevealing = phase === "reading" && isPartial;
+            const isCorrectChoice = i === current.correctIndex;
+            const highlight =
+              fullReveal && isCorrectChoice
+                ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20"
+                : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900";
             return (
               <div
                 key={i}
-                className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+                className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${highlight}`}
               >
                 <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 font-bold dark:bg-gray-800">
                   {MC_LETTERS[i]}
@@ -851,6 +902,8 @@ function Pregame({
   );
 }
 
+const REVIEW_PAGE_SIZE = 10;
+
 function Results({
   results,
   onReplay,
@@ -859,6 +912,7 @@ function Results({
   onReplay: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [reviewPage, setReviewPage] = useState(0);
   const attempts = results.attempts ?? [];
   const bonusSeen =
     results.bonusSeen ??
@@ -901,23 +955,40 @@ function Results({
         </p>
       </div>
 
-      {attempts.length > 0 && (
+      {attempts.length > 0 && (() => {
+        const filtered = attempts
+          .map((a, i) => ({ a, i }))
+          .filter(({ a }) => showAll || !a.correct);
+        const pageCount = Math.max(1, Math.ceil(filtered.length / REVIEW_PAGE_SIZE));
+        const safePage = Math.min(reviewPage, pageCount - 1);
+        const pageItems = filtered.slice(
+          safePage * REVIEW_PAGE_SIZE,
+          safePage * REVIEW_PAGE_SIZE + REVIEW_PAGE_SIZE
+        );
+        return (
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <h4 className="text-sm font-semibold">Question review</h4>
             <button
               type="button"
-              onClick={() => setShowAll((v) => !v)}
+              onClick={() => {
+                setShowAll((v) => !v);
+                setReviewPage(0);
+              }}
               className="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             >
               {showAll ? "Show only misses" : "Show all"}
             </button>
           </div>
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {showAll
+                ? "No attempts recorded."
+                : "No misses — perfect run!"}
+            </p>
+          ) : (
           <ul className="space-y-3">
-            {attempts
-              .map((a, i) => ({ a, i }))
-              .filter(({ a }) => showAll || !a.correct)
-              .map(({ a, i }) => {
+            {pageItems.map(({ a, i }) => {
                 const pts = a.points ?? 0;
                 const status = a.correct
                   ? "correct"
@@ -991,8 +1062,50 @@ function Results({
                 );
               })}
           </ul>
+          )}
+          {pageCount > 1 && (
+            <div className="mt-4 flex items-center justify-between gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setReviewPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+                className="rounded-md border border-gray-300 px-3 py-1.5 font-medium transition disabled:opacity-40 dark:border-gray-600"
+              >
+                ← Prev
+              </button>
+              <div className="flex flex-wrap items-center gap-1">
+                {Array.from({ length: pageCount }, (_, p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setReviewPage(p)}
+                    className={`min-w-[1.75rem] rounded-md px-2 py-1 font-medium transition ${
+                      p === safePage
+                        ? "bg-black text-white dark:bg-white dark:text-gray-900"
+                        : "border border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    {p + 1}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={safePage >= pageCount - 1}
+                className="rounded-md border border-gray-300 px-3 py-1.5 font-medium transition disabled:opacity-40 dark:border-gray-600"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+          <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+            Showing {filtered.length === 0 ? 0 : safePage * REVIEW_PAGE_SIZE + 1}–
+            {Math.min(filtered.length, safePage * REVIEW_PAGE_SIZE + pageItems.length)} of {filtered.length}
+          </p>
         </div>
-      )}
+        );
+      })()}
 
       {results.review?.growthAreas && results.review.growthAreas.length > 0 && (
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">

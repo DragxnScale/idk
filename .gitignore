@@ -2,12 +2,20 @@ node_modules
 .next
 out
 .DS_Store
-*.pem
+
+# Secrets & environment — never commit real credentials (Turso, OpenAI, Blob, NextAuth, Archive, etc.)
 .env
-.env*.local
-.env.production
-.env.development
+.env.*
+!.env.example
+
+# Keys & certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
 *credentials*.json
+
 npm-debug.log*
 *.db
 *.db-journal

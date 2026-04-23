@@ -6,7 +6,7 @@ import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
-import { velocityGames, clientErrorLogs } from "@/lib/db/schema";
+import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
 
 async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
   const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
@@ -108,6 +108,15 @@ export async function POST(request: Request) {
     where: (g, { eq }) => eq(g.id, velocityGameId),
   });
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
+
+  const sessionOk = await db.query.studySessions.findFirst({
+    where: (s, { and: a, eq: e }) =>
+      a(e(s.id, game.sessionId), e(s.userId, user.id)),
+    columns: { id: true },
+  });
+  if (!sessionOk) {
+    return NextResponse.json({ error: "Game not found" }, { status: 404 });
+  }
 
   const total = attempts.length;
   const correctCount = attempts.filter((a) => a.correct).length;

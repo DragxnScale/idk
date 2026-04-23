@@ -5,7 +5,7 @@ import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
-import { velocityGames, clientErrorLogs } from "@/lib/db/schema";
+import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
 import type { VelocityQuestion } from "@/lib/velocity-match";
 
 /** Record AI / runtime failures so admins can inspect them in the debug log. */
@@ -69,6 +69,67 @@ function shuffleMc(q: VelocityQuestion): VelocityQuestion {
   return { ...q, options: shuffled, correctIndex: newCorrect };
 }
 
+/**
+ * Drop the most unmistakable front/back-matter pages from accumulated text
+ * so the model never has to see them. Conservative on purpose: only strips a
+ * page if it has a strong non-content signal AND is short / lightly worded.
+ * If ALL pages look like non-content we return the original text so the route
+ * can still attempt generation rather than silently failing.
+ */
+function stripNonContentPages(accumulated: string): string {
+  if (!accumulated || !accumulated.includes("[Page ")) return accumulated;
+
+  const copyrightMarkers = [
+    /\bisbn[\s:-]*[\d\-x]/i,
+    /library of congress/i,
+    /all rights reserved/i,
+    /copyright\s*©|\(c\)\s*\d{4}|©\s*\d{4}/i,
+    /printed in (the )?united states|printed in canada|printed in the uk/i,
+    /cataloging-in-publication/i,
+    /first (edition|printing)|second (edition|printing)/i,
+  ];
+  const listish = /(table of contents|contents at a glance|list of (figures|tables)|index|glossary|references|bibliography|works cited|acknowledg)/i;
+
+  const blocks = accumulated.split(/(?=\n\n\[Page \d+\]\n)/g);
+  const kept: string[] = [];
+  for (const block of blocks) {
+    const body = block.replace(/^\s*\[Page \d+\]\s*/m, "").trim();
+    if (!body) continue;
+
+    const words = body.split(/\s+/).filter(Boolean);
+    const copyrightHits = copyrightMarkers.reduce(
+      (n, re) => (re.test(body) ? n + 1 : n),
+      0
+    );
+
+    const isShortPage = words.length < 120;
+    // Heuristic: a line that ends with trailing dot-leaders + page number, e.g. "Chapter 2 ............. 45"
+    const tocLineCount = (body.match(/\.{3,}\s*\d{1,4}\s*$/gm) ?? []).length;
+    const tocish = listish.test(body) && (tocLineCount >= 3 || isShortPage);
+
+    // Clear non-content signals: multiple copyright markers OR a short page with one marker OR a TOC-like page.
+    if (copyrightHits >= 2 || (copyrightHits >= 1 && isShortPage) || tocish) {
+      continue;
+    }
+    kept.push(block);
+  }
+
+  const stripped = kept.join("").trim();
+  // Never return less than ~200 words total — if the filter was too aggressive,
+  // fall back to the original so the model still has something real to work with.
+  const keptWords = stripped.split(/\s+/).filter(Boolean).length;
+  if (keptWords < 200) return accumulated;
+  return stripped;
+}
+
+async function sessionOwnedByUser(sessionId: string, userId: string) {
+  const row = await db.query.studySessions.findFirst({
+    where: (s, { and: a, eq: e }) => a(e(s.id, sessionId), e(s.userId, userId)),
+    columns: { id: true },
+  });
+  return !!row;
+}
+
 export async function GET(request: Request) {
   const user = await getAppUser();
   if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -76,6 +137,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("sessionId");
   if (!sessionId) return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+
+  if (!(await sessionOwnedByUser(sessionId, user.id))) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
 
   const row = await db.query.velocityGames.findFirst({
     where: (g, { eq }) => eq(g.sessionId, sessionId),
@@ -116,6 +181,10 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!(await sessionOwnedByUser(sessionId, user.id))) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
   try {
     const notes = await db.query.aiNotes.findMany({
       where: (n, { eq }) => eq(n.sessionId, sessionId),
@@ -125,11 +194,43 @@ export async function POST(request: Request) {
 
     const baseSystem = `You are writing exactly ${DEFAULT_Q} quiz-bowl style science questions from the reading, formatted as ${PAIR_COUNT} toss-up/bonus pairs for NSB-style play.
 
+SOURCE FILTERING (critical — read before anything else):
+- The reading may contain non-content "front matter" or "back matter" pages from a textbook. You MUST NOT write questions from any of these:
+  - Title page, half-title, copyright/credits page, ISBN page, publisher info, edition/printing info.
+  - Dedication, epigraph, "About the author", preface, foreword, acknowledgements.
+  - Table of contents, list of figures, list of tables, chapter outlines, learning objectives lists.
+  - Index, glossary-as-list, bibliography, references, works-cited, appendix indexes.
+  - Review-question lists, end-of-chapter exercise stems, problem-set numbers, answer keys.
+  - Page headers/footers, running titles, chapter numbers, blank pages, errata.
+- Treat a page as non-content if it is mostly: names of people/publishers with no concepts, lists of section titles with page numbers, copyright/trademark text, or isbn/doi strings.
+- If most of the reading is non-content, still produce ${DEFAULT_Q} questions but source them ONLY from the minority of real content pages. Never invent concepts that are not present in the content pages.
+- Do NOT ask about the book's title, author, publisher, chapter name, page number, or which chapter a topic appears in.
+
 VOICE & FORMAT
 - Questions are ONE punchy sentence a moderator could read aloud — ideally under 120 characters.
 - No meta phrasing like "Based on the reading…" or "According to the text…".
 - Prioritise the most foundational, examinable concepts. Skip trivia and anecdotes.
 - Output order MUST alternate strictly: tossup, bonus, tossup, bonus, ... until ${DEFAULT_Q} total.
+
+SELF-CONTAINED QUESTIONS (critical — do NOT violate)
+Each question must be answerable by someone who has NEVER seen the source text. That means:
+- NEVER use unbound demonstrative references that require the reader to remember what was just read:
+  - BAD: "About how many million years ago did this extinction occur?" (which extinction?)
+  - BAD: "What process in the battery forms hydrogen and oxygen?" (which battery?)
+  - BAD: "What force causes the motion described?" (what motion?)
+  - BAD: "Which step comes next?"  "How much of it was produced?"  "What did he discover?"
+  Fix by naming the concept: "About how many million years ago did the Cretaceous–Paleogene extinction occur?" / "What process in a lead-acid car battery produces hydrogen and oxygen gas during overcharge?"
+- Resolve every pronoun and "this/that/these/those/it/he/she/they" to a concrete noun the reader can identify without the passage.
+- Never reference "the passage", "the figure", "the table", "the diagram", "the author", "the example", "the experiment", "the book", "the chapter", "the section", "the reading", "the text", or a numbered equation/table from the book.
+- If a concept only makes sense with surrounding context the question cannot supply, pick a different, self-contained fact to ask about instead.
+
+CANONICAL ANSWER QUALITY (short-answer only)
+- The "answer" field must be the MOST SPECIFIC correct term the reading uses — not a generic category.
+  - If the reading describes water being split in a lead-acid battery, the answer is "electrolysis", not "decomposition".
+  - If the reading says a species is a keystone predator, the answer is "keystone species", not "predator".
+- Prefer the textbook's exact term where one exists.
+- Keep the answer to 1–4 words, a single number (with unit if the stem does not already supply it), a name, or a formula.
+- The stem must be phrased so that the canonical answer is the single obviously best response — avoid stems where multiple equally specific answers are correct.
 
 TYPES (output "type" as "mc" or "sa"; aim for ~60% mc / ~40% sa)
 - "mc" (multiple choice): 4 crisp answer options in "options", one is correct. "correctIndex" (0–3) points at it and "answer" MUST equal options[correctIndex] verbatim. Vary the correct position across questions.
@@ -170,7 +271,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
       model: openai(MODEL),
       schema: payloadSchema,
       system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
-      prompt: `Reading material:\n${accumulatedText.slice(0, 10000)}\n\n${
+      prompt: `Reading material (non-content / front-matter pages have already been removed where possible):\n${stripNonContentPages(accumulatedText).slice(0, 10000)}\n\n${
         notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
       }`,
     });
