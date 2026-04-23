@@ -257,6 +257,41 @@ export default function SessionSummaryPage() {
     }
   }, [sessionId]);
 
+  /** Fetch a second batch of Velocity questions for the current game, append
+   *  them to local state, and return ONLY the newly-added ones so the game
+   *  component can resume at the seam. Throws on failure so the component
+   *  can surface the error inline. */
+  const continueVelocityBatch = useCallback(async (): Promise<VelocityQuestion[]> => {
+    if (!velocityId) throw new Error("No Velocity game is active.");
+    const storedText = sessionStorage.getItem(`session-text-${sessionId}`);
+    if (!storedText || storedText.length < 50) {
+      throw new Error("Reading text is unavailable — can't generate more questions.");
+    }
+    const res = await fetch("/api/ai/velocity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        accumulatedText: storedText,
+        continueFromGameId: velocityId,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        typeof data?.error === "string"
+          ? data.error
+          : `Failed to load more Velocity questions (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+    const allQuestions = (data.questions ?? []) as VelocityQuestion[];
+    const added = allQuestions.slice(-(data.addedCount ?? 0));
+    // Mirror the freshly-appended list back into local state so any future
+    // re-mount sees the combined question pool.
+    setVelocityQuestions(allQuestions);
+    return added;
+  }, [sessionId, velocityId]);
+
   const generateVideos = useCallback(async (text?: string) => {
     const storedText = text ?? sessionStorage.getItem(`session-text-${sessionId}`);
     if (!storedText || storedText.length < 50) {
@@ -741,6 +776,7 @@ export default function SessionSummaryPage() {
                 onReplay={() => {
                   setVelocityResults(null);
                 }}
+                onContinueBatch={continueVelocityBatch}
               />
             ) : (
               <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">

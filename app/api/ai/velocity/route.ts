@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
@@ -38,9 +39,17 @@ async function logServerFailure(userId: string | null, email: string | null, err
   }
 }
 
-const PAIR_COUNT = 25;
+/** One batch = 12 toss-up/bonus pairs = 24 questions. The client plays this
+ *  batch, then prompts the user to continue for one more batch (48 total).
+ *  We deliberately use even-count pairs so the toss-up/bonus gating stays
+ *  aligned — an odd batch would leave an orphan toss-up at the seam. */
+const PAIR_COUNT = 12;
 const MAX_QUESTIONS = PAIR_COUNT * 2;
+/** Questions per batch (generated per /api/ai/velocity call). */
 const DEFAULT_Q = PAIR_COUNT * 2;
+/** Absolute cap on total questions in a single velocity_games row
+ *  (initial batch + one continuation). */
+const MAX_TOTAL_Q = DEFAULT_Q * 2;
 
 // OpenAI structured outputs reject `oneOf` / discriminated unions, so we use a
 // single flat schema where every field is always present and normalise
@@ -184,6 +193,35 @@ function parseBankQuestion(questionJson: string): VelocityQuestion | null {
   }
 }
 
+/**
+ * Server-side guardrail: drop any question that references the source text
+ * meta-contextually ("the example", "the passage", "as mentioned above", etc.)
+ * or uses an unbound demonstrative/pronoun that only resolves with the reading
+ * in front of you. Matches are case-insensitive and word-boundary aware.
+ *
+ * This is a hard filter because the prompt rules can still slip through — we
+ * want to guarantee the user never sees a context-dependent question.
+ */
+const BANNED_STEM_PATTERNS: RegExp[] = [
+  // Meta references to the source text
+  /\b(?:the|this|that)\s+(?:example|passage|text|reading|book|chapter|section|article|paper|author|figure|diagram|table|graph|image|illustration|photograph|experiment|scenario|problem|case)\b/i,
+  // "as mentioned / as described / as discussed / as shown / as noted / as stated / as explained / as given / as seen / as above / as below"
+  /\bas\s+(?:mentioned|described|discussed|shown|noted|stated|explained|given|seen)\b/i,
+  /\b(?:mentioned|described|discussed|shown|noted|stated|explained)\s+(?:above|below|in\s+the\s+text|in\s+the\s+reading|previously)\b/i,
+  // "the two X named" / "the three Y listed" — textbook-listy phrasing
+  /\bthe\s+\w+\s+(?:ideas|points|reasons|factors|steps|stages|types|kinds|categories|examples|principles|laws|properties|features|characteristics)\s+(?:named|listed|mentioned|given|described|discussed|shown)\b/i,
+  // "X example" used as an unqualified reference (e.g. "the battery example")
+  /\bthe\s+\w+\s+example\b/i,
+  // Bare "above" / "below" as text locators
+  /\b(?:above|below)\b.*\b(?:mentioned|listed|described|discussed|shown|given|stated|defined)\b/i,
+];
+
+function stemIsContextDependent(stem: string): boolean {
+  const s = stem.trim();
+  if (!s) return true;
+  return BANNED_STEM_PATTERNS.some((re) => re.test(s));
+}
+
 export async function GET(request: Request) {
   const user = await getAppUser();
   if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -226,8 +264,12 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     sessionId?: string;
     accumulatedText?: string;
+    /** When set, append a second batch to the existing game row instead of
+     *  starting a new one. The caller must still be the owner of the
+     *  underlying study session. */
+    continueFromGameId?: string;
   };
-  const { sessionId, accumulatedText } = body;
+  const { sessionId, accumulatedText, continueFromGameId } = body;
   if (!sessionId || !accumulatedText) {
     return NextResponse.json(
       { error: "sessionId and accumulatedText are required" },
@@ -244,6 +286,49 @@ export async function POST(request: Request) {
   }
 
   try {
+    // --- Continuation setup --------------------------------------------------
+    // When continuing, load the existing game, verify it belongs to this
+    // session, and exclude its question stems from both bank and AI output
+    // so batch 2 never duplicates batch 1. We also compute how many more
+    // questions we can add without blowing past MAX_TOTAL_Q.
+    let existingQuestions: VelocityQuestion[] = [];
+    const existingKeys = new Set<string>();
+    let batchTargetCount = DEFAULT_Q;
+    if (continueFromGameId) {
+      const existing = await db.query.velocityGames.findFirst({
+        where: (g, { and: a, eq: e }) =>
+          a(e(g.id, continueFromGameId), e(g.sessionId, session.id)),
+        columns: { id: true, questionsJson: true },
+      });
+      if (!existing) {
+        return NextResponse.json(
+          { error: "Velocity game not found for this session" },
+          { status: 404 }
+        );
+      }
+      try {
+        const parsed = JSON.parse(existing.questionsJson) as VelocityQuestion[];
+        if (Array.isArray(parsed)) existingQuestions = parsed;
+      } catch {
+        existingQuestions = [];
+      }
+      for (const q of existingQuestions) {
+        existingKeys.add(q.question.trim().toLowerCase());
+      }
+      batchTargetCount = Math.max(
+        0,
+        Math.min(DEFAULT_Q, MAX_TOTAL_Q - existingQuestions.length)
+      );
+      if (batchTargetCount === 0) {
+        return NextResponse.json(
+          {
+            error: `Velocity is capped at ${MAX_TOTAL_Q} questions per game.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Resolve the reading's stable identity (for the shared question bank) and
     // the set of pages actually covered in this session's accumulated text.
     const sourceKey = sourceKeyFromDocJson(session.documentJson);
@@ -252,7 +337,8 @@ export async function POST(request: Request) {
     // --- Bank lookup ---------------------------------------------------------
     // Pull every question we've previously generated for this document that
     // touches a page the user just read. Dedupe by question text (AI
-    // occasionally produces near-duplicates across runs).
+    // occasionally produces near-duplicates across runs). On a continuation
+    // we also skip anything already played in batch 1.
     let bankPool: VelocityQuestion[] = [];
     if (sourceKey && readingPages.length > 0) {
       const rows = await db.query.velocityQuestionBank.findMany({
@@ -260,10 +346,13 @@ export async function POST(request: Request) {
           a(e(b.sourceKey, sourceKey), inA(b.pageIndex, readingPages)),
         limit: 400,
       });
-      const seen = new Set<string>();
+      const seen = new Set<string>(existingKeys);
       for (const r of rows) {
         const q = parseBankQuestion(r.questionJson);
         if (!q) continue;
+        // Hard filter: older bank rows may contain context-dependent stems
+        // from before the stricter prompt rules landed. Skip those.
+        if (stemIsContextDependent(q.question)) continue;
         const key = q.question.trim().toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -272,8 +361,8 @@ export async function POST(request: Request) {
       shuffleInPlace(bankPool);
     }
 
-    const bankPicked = bankPool.slice(0, DEFAULT_Q);
-    const shortfall = Math.max(0, DEFAULT_Q - bankPicked.length);
+    const bankPicked = bankPool.slice(0, batchTargetCount);
+    const shortfall = Math.max(0, batchTargetCount - bankPicked.length);
 
     const notes = await db.query.aiNotes.findMany({
       where: (n, { eq }) => eq(n.sessionId, sessionId),
@@ -307,17 +396,28 @@ VOICE & FORMAT
 - Prioritise the most foundational, examinable concepts. Skip trivia and anecdotes.
 - Output order MUST alternate strictly: tossup, bonus, tossup, bonus, ... until ${targetCount} total.
 
-SELF-CONTAINED QUESTIONS (critical — do NOT violate)
-Each question must be answerable by someone who has NEVER seen the source text. That means:
-- NEVER use unbound demonstrative references that require the reader to remember what was just read:
+SELF-CONTAINED QUESTIONS (critical — do NOT violate — this is a HARD REJECT filter)
+Each question must be answerable by someone who has NEVER seen the source text. If the question references "the reading", "the example", "the battery", "this extinction", etc., it will be deleted server-side before the user ever sees it. That means YOU just wasted a slot. Treat this section as law.
+
+Banned phrases anywhere in the stem (automatic reject):
+- "the example", "this example", "the given example", "in the example", "as the example shows"
+- "the passage", "this passage", "the text", "the reading", "the book", "the chapter", "the section", "the article", "the paper", "the author"
+- "the figure", "this figure", "the diagram", "the table", "the graph", "the image", "the illustration", "the photograph"
+- "as mentioned", "as described", "as discussed", "as shown", "as noted", "as stated", "as explained", "as given", "as seen above", "as seen below", "above", "below" (when referring to the text)
+- "the experiment", "this experiment", "the scenario", "this scenario", "the problem", "this problem", "the case", "this case" (unless the case/scenario is fully named, like "the Miller–Urey experiment")
+- "the two core ideas named" / "the three key points made" / any phrasing that treats the text as an enumerated list the reader can see
+
+Banned reference patterns (automatic reject):
+- Unbound demonstratives: "this/that/these/those/it/he/she/they" that don't refer to a concrete noun stated earlier IN THE SAME STEM.
+- "the <common noun>" where the noun is only uniquely identifiable from the surrounding reading. Examples that get rejected:
   - BAD: "About how many million years ago did this extinction occur?" (which extinction?)
-  - BAD: "What process in the battery forms hydrogen and oxygen?" (which battery?)
+  - BAD: "What process in the battery forms hydrogen and oxygen?" (which battery? name it: "a lead-acid battery")
+  - BAD: "What are the two core ideas named in the battery example?" (DOUBLE-BANNED: "the battery" AND "example")
   - BAD: "What force causes the motion described?" (what motion?)
-  - BAD: "Which step comes next?"  "How much of it was produced?"  "What did he discover?"
-  Fix by naming the concept: "About how many million years ago did the Cretaceous–Paleogene extinction occur?" / "What process in a lead-acid car battery produces hydrogen and oxygen gas during overcharge?"
-- Resolve every pronoun and "this/that/these/those/it/he/she/they" to a concrete noun the reader can identify without the passage.
-- Never reference "the passage", "the figure", "the table", "the diagram", "the author", "the example", "the experiment", "the book", "the chapter", "the section", "the reading", "the text", or a numbered equation/table from the book.
-- If a concept only makes sense with surrounding context the question cannot supply, pick a different, self-contained fact to ask about instead.
+  - BAD: "Which step comes next?" / "How much of it was produced?" / "What did he discover?"
+  Fix by naming the concept in the stem itself: "About how many million years ago did the Cretaceous–Paleogene extinction occur?" / "What process splits water into H₂ and O₂ in a lead-acid battery during overcharge?"
+
+RULE OF THUMB: before you write a stem, ask yourself "could someone who has never opened this book answer this?" If no — rewrite or pick a different concept.
 
 CANONICAL ANSWER QUALITY (short-answer only — read carefully, this is the #1 source of grading complaints)
 - The "answer" field must be the MOST SPECIFIC named process / entity / term that describes the phenomenon in the stem. Never use a generic parent category ("decomposition", "reaction", "predator", "gas") when a specific textbook term exists.
@@ -388,7 +488,17 @@ SCHEMA — every field is REQUIRED on EVERY question:
       });
 
       const readingPagesSet = new Set(readingPages);
-      aiQuestions = object.questions.map((q, i) => {
+      // Final server-side safety net: drop any stem that still references
+      // "the example", "the passage", "this battery", etc. before we even
+      // look at it further. Prompt-level rules occasionally leak, and we
+      // never want the user to see a context-dependent question.
+      // Also drop stems the user already saw in a previous batch.
+      const rawQuestions = object.questions.filter(
+        (q) =>
+          !stemIsContextDependent(q.question) &&
+          !existingKeys.has(q.question.trim().toLowerCase())
+      );
+      aiQuestions = rawQuestions.map((q, i) => {
         const roundType = q.roundType ?? (i % 2 === 0 ? "tossup" : "bonus");
         const pairId = (q.pairId && q.pairId.trim()) || String(Math.floor(i / 2) + 1);
         // Only accept page indexes the model could actually have seen in the
@@ -456,49 +566,69 @@ SCHEMA — every field is REQUIRED on EVERY question:
     }
 
     // --- Combine + normalise -------------------------------------------------
-    // Interleave bank picks and fresh AI picks, then force strict
-    // tossup/bonus alternation and renumber pair IDs based on final position.
-    const combinedSeen = new Set<string>();
-    const combined: VelocityQuestion[] = [];
+    // Interleave bank picks and fresh AI picks for THIS batch only, dedupe
+    // against existing questions from batch 1 (when continuing), and cap at
+    // the per-batch target.
+    const combinedSeen = new Set<string>(existingKeys);
+    const batchQuestions: VelocityQuestion[] = [];
     for (const q of [...bankPicked, ...aiQuestions]) {
       const key = q.question.trim().toLowerCase();
       if (combinedSeen.has(key)) continue;
       combinedSeen.add(key);
-      combined.push(q);
-      if (combined.length >= DEFAULT_Q) break;
+      batchQuestions.push(q);
+      if (batchQuestions.length >= batchTargetCount) break;
     }
 
-    if (combined.length === 0) {
+    if (batchQuestions.length === 0) {
       return NextResponse.json(
         { error: "Could not find or generate any Velocity questions for this reading." },
         { status: 500 }
       );
     }
 
-    const normalisedQuestions = combined.map((q, i) => ({
+    // Re-normalise the FULL question list (existing + new) so tossup/bonus
+    // alternation and pairIds stay correct across the seam.
+    const fullList = [...existingQuestions, ...batchQuestions];
+    const normalisedQuestions = fullList.map((q, i) => ({
       ...q,
       roundType: (i % 2 === 0 ? "tossup" : "bonus") as "tossup" | "bonus",
       pairId: String(Math.floor(i / 2) + 1),
     })) as VelocityQuestion[];
 
-    const id = crypto.randomUUID();
-    await db.insert(velocityGames).values({
-      id,
-      sessionId,
-      questionsJson: JSON.stringify(normalisedQuestions),
-      resultsJson: null,
-      reviewJson: null,
-      accuracy: null,
-      avgReactionMs: null,
-      createdAt: new Date(),
-      completedAt: null,
-    });
+    let gameId: string;
+    if (continueFromGameId) {
+      gameId = continueFromGameId;
+      await db
+        .update(velocityGames)
+        .set({ questionsJson: JSON.stringify(normalisedQuestions) })
+        .where(eq(velocityGames.id, continueFromGameId));
+    } else {
+      gameId = crypto.randomUUID();
+      await db.insert(velocityGames).values({
+        id: gameId,
+        sessionId,
+        questionsJson: JSON.stringify(normalisedQuestions),
+        resultsJson: null,
+        reviewJson: null,
+        accuracy: null,
+        avgReactionMs: null,
+        createdAt: new Date(),
+        completedAt: null,
+      });
+    }
 
     return NextResponse.json({
-      id,
+      id: gameId,
       questions: normalisedQuestions,
       bankCount: bankPicked.length,
       generatedCount: aiQuestions.length,
+      /** Number of questions added in THIS request (batch size). Useful for
+       *  the client when appending to an in-memory list. */
+      addedCount: batchQuestions.length,
+      /** How many questions the game has total after this request. */
+      totalCount: normalisedQuestions.length,
+      /** True when the game has hit MAX_TOTAL_Q and cannot be continued. */
+      capped: normalisedQuestions.length >= MAX_TOTAL_Q,
     });
   } catch (err) {
     await logServerFailure(user.id, user.email ?? null, err, {

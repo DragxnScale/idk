@@ -9,7 +9,21 @@ import {
   type VelocitySpeed,
 } from "@/lib/velocity-match";
 
-type Phase = "pregame" | "reading" | "answering" | "feedback" | "results";
+type Phase =
+  | "pregame"
+  | "reading"
+  | "answering"
+  | "feedback"
+  | "between-batches"
+  | "results";
+
+/** Questions played before we pause and ask the user if they want a second
+ *  batch. Must match the server's per-batch target (see `DEFAULT_Q` in
+ *  `app/api/ai/velocity/route.ts`). */
+const BATCH_SIZE = 24;
+/** Hard ceiling on total questions in a single game. After two full batches
+ *  we jump straight to results instead of offering another continuation. */
+const MAX_BATCHES = 2;
 
 export interface VelocityAttempt {
   topic: string;
@@ -65,6 +79,10 @@ interface Props {
   /** Existing completed results, when the game has already been played. */
   initialResults?: VelocityResultsPayload | null;
   onReplay: () => void;
+  /** Fetch another batch of ~`BATCH_SIZE` questions for this game. Returns
+   *  ONLY the newly-added questions (to append to the local list), or throws
+   *  on failure. When omitted, the between-batches prompt is never shown. */
+  onContinueBatch?: () => Promise<VelocityQuestion[]>;
 }
 
 const POST_READ_GRACE_MS = 4000;
@@ -135,7 +153,22 @@ function useSoundPlayer(enabled: boolean) {
   );
 }
 
-export function VelocityGame({ questions, velocityGameId, initialResults, onReplay }: Props) {
+export function VelocityGame({
+  questions: initialQuestions,
+  velocityGameId,
+  initialResults,
+  onReplay,
+  onContinueBatch,
+}: Props) {
+  // Questions grow as the user opts into additional batches. We keep a local
+  // copy instead of mutating the prop so the parent's `velocityQuestions`
+  // stays in sync with whatever came back from the API last.
+  const [questions, setQuestions] = useState<VelocityQuestion[]>(initialQuestions);
+  useEffect(() => {
+    setQuestions(initialQuestions);
+  }, [initialQuestions]);
+  const [continueLoading, setContinueLoading] = useState(false);
+  const [continueError, setContinueError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>(initialResults ? "results" : "pregame");
   const [speed, setSpeed] = useState<VelocitySpeed>("medium");
   const [soundOn, setSoundOn] = useState(true);
@@ -464,25 +497,10 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     });
   }, [phase, current, startedAt, answerText, finalizeAttempt, qIndex]);
 
-  const nextQuestion = useCallback(async () => {
-    setFeedback(null);
-    let nextIdx = qIndex + 1;
-    // Gate bonus visibility: if toss-up is missed, skip its paired bonus.
-    if (
-      current?.roundType === "tossup" &&
-      feedback &&
-      !feedback.correct &&
-      questions[nextIdx]?.roundType === "bonus" &&
-      questions[nextIdx]?.pairId === current.pairId
-    ) {
-      nextIdx += 1;
-    }
-    if (nextIdx < total) {
-      setQIndex(nextIdx);
-      setPhase("reading");
-      return;
-    }
-
+  /** Push through the per-question scoring + AI review endpoint and show
+   *  the Results screen. Shared between "user ran out of questions" and
+   *  "user chose Stop at the between-batches prompt". */
+  const finishGame = useCallback(async () => {
     setSubmitting(true);
     // Local fallback computation so we can always show *something* on the results screen.
     const localFallback = (): VelocityResultsPayload => {
@@ -536,7 +554,75 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
       setSubmitting(false);
       setPhase("results");
     }
-  }, [attempts, qIndex, total, velocityGameId, current, feedback, questions]);
+  }, [attempts, velocityGameId]);
+
+  const nextQuestion = useCallback(async () => {
+    setFeedback(null);
+    let nextIdx = qIndex + 1;
+    // Gate bonus visibility: if toss-up is missed, skip its paired bonus.
+    if (
+      current?.roundType === "tossup" &&
+      feedback &&
+      !feedback.correct &&
+      questions[nextIdx]?.roundType === "bonus" &&
+      questions[nextIdx]?.pairId === current.pairId
+    ) {
+      nextIdx += 1;
+    }
+    if (nextIdx < total) {
+      setQIndex(nextIdx);
+      setPhase("reading");
+      return;
+    }
+
+    // End of the loaded question list. Decide whether to offer another batch
+    // or finalize. We offer a continuation iff:
+    //   - the parent gave us an `onContinueBatch` handler,
+    //   - we haven't already loaded the max number of batches, and
+    //   - the current total is still a clean multiple of BATCH_SIZE (i.e.
+    //     the user just finished a full batch rather than stopping early
+    //     because the server returned fewer questions than asked).
+    const batchesLoaded = Math.max(1, Math.ceil(total / BATCH_SIZE));
+    const canContinue =
+      !!onContinueBatch &&
+      batchesLoaded < MAX_BATCHES &&
+      total % BATCH_SIZE === 0;
+    if (canContinue) {
+      setContinueError(null);
+      setPhase("between-batches");
+      return;
+    }
+
+    await finishGame();
+  }, [qIndex, current, feedback, questions, total, onContinueBatch, finishGame]);
+
+  /** "Continue" on the between-batches card — fetch another ~BATCH_SIZE
+   *  questions, append them, and resume play at the seam. */
+  const continueNextBatch = useCallback(async () => {
+    if (!onContinueBatch || continueLoading) return;
+    setContinueLoading(true);
+    setContinueError(null);
+    try {
+      const more = await onContinueBatch();
+      if (!more || more.length === 0) {
+        throw new Error("No additional questions were returned.");
+      }
+      const resumeIdx = questions.length;
+      setQuestions((prev) => [...prev, ...more]);
+      setQIndex(resumeIdx);
+      setLineIdx(0);
+      setCharsShown(0);
+      setFeedback(null);
+      setAnswerText("");
+      setAnswerMsLeft(null);
+      setPhase("reading");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not load more questions.";
+      setContinueError(msg);
+    } finally {
+      setContinueLoading(false);
+    }
+  }, [onContinueBatch, continueLoading, questions.length]);
 
   const startGame = useCallback(() => {
     setAttempts([]);
@@ -552,26 +638,35 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   }, []);
 
   // Press Enter (or Space) on the feedback card to advance to the next question.
-  // Guard against the same Enter keypress that just submitted the answer: the
-  // grader call is async, so the submit Enter often stays held (or auto-repeats)
-  // right as phase flips to "feedback" — without this guard it would skip past
-  // the feedback card entirely. We require a clean keyup AFTER feedback renders
-  // before the next keydown will advance.
+  //
+  // This flow is surprisingly racy because the same Enter that submitted the
+  // answer usually overlaps the feedback render. We need THREE independent
+  // guards or the feedback screen gets skipped:
+  //   1. Ignore OS key-repeat (e.repeat).
+  //   2. Require a minimum dwell since feedback rendered, so that very-fast
+  //      "submit Enter → grader resolved → advance Enter" key bursts can't
+  //      accidentally fire nextQuestion before the user sees the result.
+  //   3. Require a clean keyup AFTER feedback renders before any keydown
+  //      counts as an advance — this kills the held-Enter auto-repeat path.
   useEffect(() => {
     if (phase !== "feedback") return;
+    const MIN_DWELL_MS = 400;
+    const mountedAt = performance.now();
     let armed = false;
+    const isAdvanceKey = (e: KeyboardEvent) =>
+      e.key === "Enter" || e.code === "Space" || e.key === " ";
     const onDown = (e: KeyboardEvent) => {
-      if (!armed) return;
+      if (!isAdvanceKey(e)) return;
       if (e.repeat) return;
-      if (e.key === "Enter" || e.code === "Space" || e.key === " ") {
-        e.preventDefault();
-        if (!submitting) void nextQuestion();
-      }
+      if (performance.now() - mountedAt < MIN_DWELL_MS) return;
+      if (!armed) return;
+      e.preventDefault();
+      if (!submitting) void nextQuestion();
     };
     const onUp = (e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.code === "Space" || e.key === " ") {
-        armed = true;
-      }
+      if (!isAdvanceKey(e)) return;
+      if (performance.now() - mountedAt < MIN_DWELL_MS) return;
+      armed = true;
     };
     window.addEventListener("keydown", onDown);
     window.addEventListener("keyup", onUp);
@@ -581,15 +676,26 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
     };
   }, [phase, submitting, nextQuestion]);
 
+  /** True when the current feedback represents a neg (buzzed during the stem
+   *  AND got it wrong). Negs MUST NOT reveal the full stem or the hidden MC
+   *  options — doing so would reward buzzing early to "peek". */
+  const isNeg = !!(feedback && feedback.interrupt && !feedback.correct);
+
   /** Text shown for the question line (line 0). */
   const questionText = useMemo(() => {
     if (!current) return "";
-    // Once the user has locked in a guess or the question is complete, always
-    // show the full stem — reviewing requires seeing what was actually asked.
-    if (phase === "answering" || phase === "feedback") return current.question;
+    // Once the user locks in an answer the stem reveals in full — except on
+    // a neg, where we keep it frozen at whatever characters the user actually
+    // heard before they interrupted.
+    if (phase === "answering") return current.question;
+    if (phase === "feedback") {
+      if (!isNeg) return current.question;
+      if (lineIdx > 0) return current.question;
+      return current.question.slice(0, charsShown);
+    }
     if (lineIdx > 0) return current.question;
     return current.question.slice(0, charsShown);
-  }, [current, lineIdx, charsShown, phase]);
+  }, [current, lineIdx, charsShown, phase, isNeg]);
   /** True once the question has finished (so MC options can start appearing). */
   const questionDone = lineIdx > 0 || phase !== "reading";
 
@@ -607,6 +713,21 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
 
   if (phase === "results" && results) {
     return <Results results={results} onReplay={onReplay} />;
+  }
+
+  if (phase === "between-batches") {
+    return (
+      <BetweenBatches
+        answeredCount={attempts.length}
+        score={score}
+        streak={streak}
+        loading={continueLoading}
+        submitting={submitting}
+        error={continueError}
+        onContinue={continueNextBatch}
+        onStop={finishGame}
+      />
+    );
   }
 
   if (!current) return null;
@@ -651,11 +772,9 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {current.options.map((opt, i) => {
             const thisLine = i + 1;
-            const fullReveal = phase === "feedback";
-            // During feedback we always show the full set of options so the
-            // learner can see the right answer in context. Mid-game we stick
-            // to quiz-bowl rules: hide anything that had not begun revealing
-            // before the buzz.
+            // Full reveal only when we're in feedback AND it wasn't a neg.
+            // Negs keep whatever they heard, options included.
+            const fullReveal = phase === "feedback" && !isNeg;
             if (!fullReveal) {
               if (lineIdx < thisLine) return null;
               if (lineIdx === thisLine && charsShown === 0) return null;
@@ -915,6 +1034,72 @@ function Pregame({
           className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium"
         >
           Start Velocity
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BetweenBatches({
+  answeredCount,
+  score,
+  streak,
+  loading,
+  submitting,
+  error,
+  onContinue,
+  onStop,
+}: {
+  answeredCount: number;
+  score: number;
+  streak: number;
+  loading: boolean;
+  submitting: boolean;
+  error: string | null;
+  onContinue: () => void;
+  onStop: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
+      <h3 className="text-xl font-bold">Keep going?</h3>
+      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        You&apos;ve finished a batch of {answeredCount} questions. Running score:{" "}
+        <span className="font-semibold text-gray-900 dark:text-white">
+          {score >= 0 ? `+${score}` : score} pts
+        </span>
+        {streak >= 2 && (
+          <>
+            {" "}
+            &middot; best run{" "}
+            <span className="font-semibold text-amber-600 dark:text-amber-400">
+              🔥 {streak}
+            </span>
+          </>
+        )}
+        .
+      </p>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Continue generates another ~{BATCH_SIZE} fresh questions from the same reading.
+      </p>
+      {error && (
+        <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={loading || submitting}
+          className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-60"
+        >
+          {loading ? "Generating…" : "Continue for more"}
+        </button>
+        <button
+          type="button"
+          onClick={onStop}
+          disabled={loading || submitting}
+          className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium disabled:opacity-60 dark:border-gray-600"
+        >
+          {submitting ? "Finishing…" : "Stop & see results"}
         </button>
       </div>
     </div>
