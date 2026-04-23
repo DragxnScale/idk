@@ -676,26 +676,33 @@ export function VelocityGame({
     };
   }, [phase, submitting, nextQuestion]);
 
-  /** True when the current feedback represents a neg (buzzed during the stem
-   *  AND got it wrong). Negs MUST NOT reveal the full stem or the hidden MC
-   *  options — doing so would reward buzzing early to "peek". */
-  const isNeg = !!(feedback && feedback.interrupt && !feedback.correct);
+  /** True whenever the active question was buzzed mid-stem. Applies during
+   *  both the typing phase and the feedback phase, regardless of whether the
+   *  user ended up correct. Used to suppress the stem + MC-option reveal so
+   *  buzzing early never becomes a way to peek at the rest of the question. */
+  const isInterrupt =
+    phase === "answering"
+      ? interruptRef.current
+      : phase === "feedback"
+        ? !!feedback?.interrupt
+        : false;
 
   /** Text shown for the question line (line 0). */
   const questionText = useMemo(() => {
     if (!current) return "";
-    // Once the user locks in an answer the stem reveals in full — except on
-    // a neg, where we keep it frozen at whatever characters the user actually
-    // heard before they interrupted.
-    if (phase === "answering") return current.question;
-    if (phase === "feedback") {
-      if (!isNeg) return current.question;
+    // Hard rule: any buzz that happened BEFORE the stem finished typing means
+    // we never reveal more than what the user actually heard — not on the
+    // answer input screen, not on the feedback card, and regardless of
+    // whether the answer turned out to be right. Only questions that were
+    // buzzed after the full stem (or never buzzed) are allowed to reveal.
+    if (isInterrupt) {
       if (lineIdx > 0) return current.question;
       return current.question.slice(0, charsShown);
     }
+    if (phase === "answering" || phase === "feedback") return current.question;
     if (lineIdx > 0) return current.question;
     return current.question.slice(0, charsShown);
-  }, [current, lineIdx, charsShown, phase, isNeg]);
+  }, [current, lineIdx, charsShown, phase, isInterrupt]);
   /** True once the question has finished (so MC options can start appearing). */
   const questionDone = lineIdx > 0 || phase !== "reading";
 
@@ -772,9 +779,10 @@ export function VelocityGame({
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {current.options.map((opt, i) => {
             const thisLine = i + 1;
-            // Full reveal only when we're in feedback AND it wasn't a neg.
-            // Negs keep whatever they heard, options included.
-            const fullReveal = phase === "feedback" && !isNeg;
+            // Options reveal only on feedback AND only when the answer was
+            // given AFTER the full stem finished reading. Any interrupt buzz
+            // (correct or not) keeps the hidden options hidden.
+            const fullReveal = phase === "feedback" && !isInterrupt;
             if (!fullReveal) {
               if (lineIdx < thisLine) return null;
               if (lineIdx === thisLine && charsShown === 0) return null;
