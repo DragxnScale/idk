@@ -690,16 +690,20 @@ export function VelocityGame({
   /** Text shown for the question line (line 0). */
   const questionText = useMemo(() => {
     if (!current) return "";
-    // Hard rule: any buzz that happened BEFORE the stem finished typing means
-    // we never reveal more than what the user actually heard — not on the
-    // answer input screen, not on the feedback card, and regardless of
-    // whether the answer turned out to be right. Only questions that were
-    // buzzed after the full stem (or never buzzed) are allowed to reveal.
-    if (isInterrupt) {
-      if (lineIdx > 0) return current.question;
-      return current.question.slice(0, charsShown);
+    // Feedback phase: the user has already committed an answer, so showing the
+    // full stem + options is a pure learning win. Reveal everything regardless
+    // of interrupt/correct/incorrect.
+    if (phase === "feedback") return current.question;
+    // Answering phase: if the buzz happened mid-read, keep the stem frozen at
+    // what the user actually heard — peeking at the rest while typing an
+    // answer would defeat the whole buzzer-interrupt mechanic.
+    if (phase === "answering") {
+      if (isInterrupt) {
+        if (lineIdx > 0) return current.question;
+        return current.question.slice(0, charsShown);
+      }
+      return current.question;
     }
-    if (phase === "answering" || phase === "feedback") return current.question;
     if (lineIdx > 0) return current.question;
     return current.question.slice(0, charsShown);
   }, [current, lineIdx, charsShown, phase, isInterrupt]);
@@ -779,10 +783,11 @@ export function VelocityGame({
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {current.options.map((opt, i) => {
             const thisLine = i + 1;
-            // Options reveal only on feedback AND only when the answer was
-            // given AFTER the full stem finished reading. Any interrupt buzz
-            // (correct or not) keeps the hidden options hidden.
-            const fullReveal = phase === "feedback" && !isInterrupt;
+            // Feedback = learn mode. Always reveal every option + highlight
+            // the correct one, regardless of how the answer was given (correct,
+            // incorrect, neg, or timed out). Peek prevention happens earlier
+            // during the answering phase via the isInterrupt gate on the stem.
+            const fullReveal = phase === "feedback";
             if (!fullReveal) {
               if (lineIdx < thisLine) return null;
               if (lineIdx === thisLine && charsShown === 0) return null;

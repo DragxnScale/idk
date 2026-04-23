@@ -230,41 +230,98 @@ function stemIsContextDependent(stem: string): boolean {
  * constant questions like "How many chromosomes …" or "What is c in m/s?".
  */
 const TEXTBOOK_DATAPOINT_STEM_PATTERNS: RegExp[] = [
-  // "… obtained at 100 s", "… measured at t = 50", "… at 25 °C in this experiment"
+  // "at t = 50", "at t=50"
   /\bat\s+t\s*=\s*\d/i,
-  /\bobtained\s+at\s+\d/i,
-  /\bmeasured\s+at\s+\d/i,
-  /\breached\s+at\s+\d/i,
+  // "At 250 s, ...", "at 100 seconds", "at 60s what is …" — any reference to
+  // a specific time in seconds/minutes/hours as a precondition of the question.
+  /\bat\s+\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|ms)\b/i,
+  /\bafter\s+\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|ms)\b/i,
+  // "obtained / measured / reached / found at 100"
+  /\b(?:obtained|measured|reached|found|calculated|determined)\s+at\s+\d/i,
   // "in this experiment", "for the reaction shown"
   /\bin\s+this\s+(?:experiment|reaction|trial|run|study)\b/i,
   /\bfor\s+the\s+(?:reaction|experiment|graph|curve|plot|table|data\s*set)\s+(?:shown|given|above|below|presented|described)\b/i,
-  // "what instantaneous rate … is obtained", "initial rate of the reaction is measured"
+  // "slope of the tangent to the X curve/plot/graph"
+  /\bslope\s+of\s+the\s+tangent\s+(?:to|at|on|for)\b/i,
+  // "what instantaneous / initial / average rate"
   /\bwhat\s+(?:instantaneous|initial|average)\s+rate\b/i,
+  // "rate of <species> (?:disappearance|appearance|production|consumption|formation)"
+  // when paired with a numeric or "at <time>" context — handled by the
+  // time-based filters above; this one catches bare "rate of disappearance of
+  // NO2" which almost always means a data-point read.
+  /\brate\s+of\s+(?:disappearance|appearance|production|consumption|formation)\s+of\b/i,
   // "the rate/concentration/pH of Solution A/B/…"
   /\b(?:rate|concentration|pH|temperature|pressure|volume|mass|yield|equilibrium\s+constant)\s+of\s+(?:solution|sample|reaction|compound|mixture)\s+[A-Z]\b/i,
-  // "the equilibrium constant/rate constant/k value for this"
+  // "the equilibrium/rate constant for this reaction/system"
   /\b(?:equilibrium\s+constant|rate\s+constant|k\s+value|Ka|Kb|Kc|Kp|Ksp)\s+(?:for|of)\s+(?:this|the)\s+(?:reaction|system|experiment|trial)\b/i,
 ];
 
-/** Shape of a "specific textbook measurement" canonical answer:
- *  scientific notation with units ("4.2 × 10^-5 mol/L·s"), percentages tied
- *  to a reading ("57.3 %"), or raw decimals with chem units. */
-const TEXTBOOK_DATAPOINT_ANSWER = /^\s*[-+]?\d+(?:\.\d+)?\s*(?:[×x*]\s*10\s*\^?\s*[-+]?\d+)?\s*(?:mol\/L·s|mol\/L\*s|mol\/L\s*s|mol\s*\/\s*L·s|mol\/L|M\/s|\/s)\s*$/i;
+/** Shape of a "specific textbook measurement" answer:
+ *  scientific notation with rate-style units ("4.2 × 10^-5 mol/L·s", "2.1e-6 M/s"),
+ *  or plain decimals with chem rate units. */
+const TEXTBOOK_DATAPOINT_ANSWER = /^\s*[-+]?\d+(?:\.\d+)?\s*(?:[×x*eE]\s*10?\s*\^?\s*[-+]?\d+)?\s*(?:mol\/L·s|mol\/L\*s|mol\/L\s*s|mol\s*\/\s*L·s|mol\/L|M\/s|\/s|s\^?-?1)\s*$/i;
+
+/** Cheap scientific-notation detector — true for strings like
+ *  "4.2 × 10^-5 mol/L·s", "2.3e-6", "5 × 10⁻⁴ M/s". Used to flag MC
+ *  questions where every distractor is a read-off-the-graph value. */
+const SCI_NOTATION_SHAPE = /\d(?:\.\d+)?\s*(?:[×x*eE]\s*10?\s*\^?\s*[-+]?\d|e[-+]?\d)/i;
+
+function looksLikeTextbookMeasurement(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  if (TEXTBOOK_DATAPOINT_ANSWER.test(v)) return true;
+  // Scientific notation with any rate-style unit → textbook data.
+  if (SCI_NOTATION_SHAPE.test(v) && /(?:mol|M|s|L|\/)/.test(v)) return true;
+  return false;
+}
 
 function questionIsTextbookDatapoint(
   stem: string,
-  canonicalAnswer: string | undefined
+  canonicalAnswer: string | undefined,
+  mcOptions?: readonly string[]
 ): boolean {
   const s = stem.trim();
   if (!s) return false;
-  const stemHit = TEXTBOOK_DATAPOINT_STEM_PATTERNS.some((re) => re.test(s));
-  if (stemHit) return true;
-  // A numeric answer with explicit rate-style units is almost certainly
-  // a read-off-the-graph value from the reading, regardless of stem phrasing.
-  if (canonicalAnswer && TEXTBOOK_DATAPOINT_ANSWER.test(canonicalAnswer.trim())) {
+  if (TEXTBOOK_DATAPOINT_STEM_PATTERNS.some((re) => re.test(s))) return true;
+  // SA with a rate-unit canonical answer is almost certainly a read-off-the-
+  // graph value, regardless of stem phrasing.
+  if (canonicalAnswer && looksLikeTextbookMeasurement(canonicalAnswer)) {
     return true;
   }
+  // MC where 2+ of the 4 distractors look like rate-unit measurements — the
+  // question is asking the user to pick a specific experimental value.
+  if (mcOptions && mcOptions.length > 0) {
+    const measurementOptions = mcOptions.filter(looksLikeTextbookMeasurement).length;
+    if (measurementOptions >= 2) return true;
+  }
   return false;
+}
+
+/**
+ * Build an aggressive content-only fingerprint of a question stem for fuzzy
+ * dedupe. Strips punctuation, lowercases, drops stopwords and short tokens,
+ * and sorts what's left. Two stems with the same set of significant content
+ * words collapse to the same key — catches "At 250 s, what is the slope…"
+ * vs "What is the slope of the tangent at 250s…" even though the exact
+ * strings differ.
+ */
+function fuzzyStemKey(stem: string): string {
+  const STOP = new Set([
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "of", "in", "on", "at", "to", "from", "by", "for", "with", "as",
+    "and", "or", "but", "so", "than", "then", "that", "this", "these",
+    "those", "it", "its", "what", "which", "who", "whom", "whose", "when",
+    "where", "why", "how", "do", "does", "did", "can", "could", "would",
+    "should", "will", "shall", "may", "might", "must", "about", "above",
+    "below", "into", "onto", "over", "under", "up", "out", "off",
+  ]);
+  return stem
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((tok) => tok.length >= 3 && !STOP.has(tok))
+    .sort()
+    .join(" ");
 }
 
 export async function GET(request: Request) {
@@ -359,6 +416,8 @@ export async function POST(request: Request) {
       }
       for (const q of existingQuestions) {
         existingKeys.add(q.question.trim().toLowerCase());
+        const fuzzy = fuzzyStemKey(q.question);
+        if (fuzzy) existingKeys.add(fuzzy);
       }
       batchTargetCount = Math.max(
         0,
@@ -402,14 +461,17 @@ export async function POST(request: Request) {
         if (
           questionIsTextbookDatapoint(
             q.question,
-            q.type === "sa" ? q.answer : undefined
+            q.type === "sa" ? q.answer : undefined,
+            q.type === "mc" ? q.options : undefined
           )
         ) {
           continue;
         }
         const key = q.question.trim().toLowerCase();
-        if (seen.has(key)) continue;
+        const fuzzy = fuzzyStemKey(q.question);
+        if (seen.has(key) || (fuzzy && seen.has(fuzzy))) continue;
         seen.add(key);
+        if (fuzzy) seen.add(fuzzy);
         bankPool.push(q);
       }
       shuffleInPlace(bankPool);
@@ -474,13 +536,18 @@ Banned reference patterns (automatic reject):
 RULE OF THUMB: before you write a stem, ask yourself "could someone who has never opened this book answer this?" If no — rewrite or pick a different concept.
 
 NO TEXTBOOK-SPECIFIC DATA POINTS (critical — also a HARD REJECT filter)
-Never ask for a numerical value, concentration, rate, temperature, pH, mass, or percentage that is only answerable by reading a specific graph, table, or worked example from the source. These are context-dependent by construction — a cold reader can't compute them. Examples of what gets rejected server-side:
+Never ask for a numerical value, concentration, rate, temperature, pH, mass, or percentage that is only answerable by reading a specific graph, table, or worked example from the source. These are context-dependent by construction — a cold reader can't compute them. This applies to BOTH short-answer AND multiple-choice. An MC question where all four options are scientific-notation rate values (e.g. "4.2 × 10⁻⁵ mol/L·s", "4.3 × 10⁻⁶ mol/L·s", "2.4 × 10⁻⁵ mol/L·s", "8.6 × 10⁻⁶ mol/L·s") is just as textbook-specific as the SA version — the options ARE the graph values. Don't write these.
+
+Examples of what gets rejected server-side:
 - BAD: "What instantaneous rate for NO2 disappearance is obtained at 100 s?" (only answerable by reading a specific graph)
+- BAD (MC): "At 250 s, what is the slope of the tangent to the O2 curve?" with options like "4.2 × 10⁻⁵ mol/L·s" / "4.3 × 10⁻⁶ mol/L·s" / "2.4 × 10⁻⁵ mol/L·s" / "8.6 × 10⁻⁶ mol/L·s" — the whole quartet is a read-off-the-graph quiz.
 - BAD: "At what time does the reaction reach half-completion?" / "What is the concentration at t = 50 s?"
 - BAD: "What is the initial rate measured in this experiment?" / "What yield was obtained in the reaction?"
 - BAD: "What is the equilibrium constant for the reaction shown?"
 - BAD: "What is the pH of Solution A?" / "What molarity of NaOH is used?"
-- BAD: any answer of the form "X × 10^±Y <unit>" that is tied to a specific experiment in the reading.
+- BAD: any answer (or MC option set) of the form "X × 10^±Y <unit>" that is tied to a specific experiment in the reading.
+
+Also avoid "slope of the tangent to the <species> curve at t = …" — this is always a specific-graph question. If you want to test rate-law understanding, ask it as a concept instead: "In a rate law rate = k[A]², how does doubling [A] change the rate?" (MC: "2×", "4×", "8×", "unchanged") — same idea, zero textbook context required.
 
 You MAY ask for numerical values that are universal constants, widely-memorised facts, or values intrinsic to a named entity (not tied to a specific experiment in the source):
 - OK: "How many chromosomes are in a human somatic cell?" answer: 46
@@ -566,12 +633,26 @@ SCHEMA — every field is REQUIRED on EVERY question:
       // never want the user to see a context-dependent question.
       // Also drop stems the user already saw in a previous batch, and reject
       // textbook-specific "read off the graph" numeric-answer questions.
-      const rawQuestions = object.questions.filter(
-        (q) =>
-          !stemIsContextDependent(q.question) &&
-          !questionIsTextbookDatapoint(q.question, q.type === "sa" ? q.answer : undefined) &&
-          !existingKeys.has(q.question.trim().toLowerCase())
-      );
+      // Existing keys are already populated with both exact + fuzzy variants
+      // from the bank pass below, so AI questions that fuzzy-match a bank
+      // question (or a previous-batch question) also get dropped.
+      const rawQuestions = object.questions.filter((q) => {
+        if (stemIsContextDependent(q.question)) return false;
+        if (
+          questionIsTextbookDatapoint(
+            q.question,
+            q.type === "sa" ? q.answer : undefined,
+            q.type === "mc" ? (q.options as readonly string[]) : undefined
+          )
+        ) {
+          return false;
+        }
+        const exact = q.question.trim().toLowerCase();
+        if (existingKeys.has(exact)) return false;
+        const fuzzy = fuzzyStemKey(q.question);
+        if (fuzzy && existingKeys.has(fuzzy)) return false;
+        return true;
+      });
       aiQuestions = rawQuestions.map((q, i) => {
         const roundType = q.roundType ?? (i % 2 === 0 ? "tossup" : "bonus");
         const pairId = (q.pairId && q.pairId.trim()) || String(Math.floor(i / 2) + 1);
@@ -647,8 +728,11 @@ SCHEMA — every field is REQUIRED on EVERY question:
     const batchQuestions: VelocityQuestion[] = [];
     for (const q of [...bankPicked, ...aiQuestions]) {
       const key = q.question.trim().toLowerCase();
+      const fuzzy = fuzzyStemKey(q.question);
       if (combinedSeen.has(key)) continue;
+      if (fuzzy && combinedSeen.has(fuzzy)) continue;
       combinedSeen.add(key);
+      if (fuzzy) combinedSeen.add(fuzzy);
       batchQuestions.push(q);
       if (batchQuestions.length >= batchTargetCount) break;
     }
