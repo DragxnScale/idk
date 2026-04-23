@@ -99,6 +99,17 @@ ACCEPT when:
 - Treat a symbol and its spoken name as interchangeable whenever the question is asking for that symbol. Do NOT reject a Greek-letter name on the grounds that "the canonical answer is the letter, not the name".
 - The user gave a MORE specific, textbook-accurate name for the same phenomenon the canonical answer describes in general terms, and that specific name is the one most experts / textbooks would actually use for the scenario in the question. Example: question asks what process in a lead-acid battery produces H₂ and O₂, canonical answer "decomposition", user answered "electrolysis" — ACCEPT: electrolysis IS the specific process and is a strictly better answer.
 - The user gave a widely-accepted alternate name (e.g. "Krebs cycle" ↔ "citric acid cycle" ↔ "TCA cycle", "mitosis" ↔ "karyokinesis", "sodium chloride" ↔ "table salt").
+- The user gave a **well-known abbreviation, acronym, or initialism** that unambiguously refers to the canonical answer (or vice versa — user wrote the expansion when the canonical is the acronym). Always accept both directions. Examples that MUST be accepted:
+  - "CMB" ↔ "cosmic microwave background" (also "CMBR" ↔ "cosmic microwave background radiation")
+  - "DNA" ↔ "deoxyribonucleic acid", "RNA" ↔ "ribonucleic acid", "mRNA" ↔ "messenger RNA"
+  - "ATP" ↔ "adenosine triphosphate", "ADP" ↔ "adenosine diphosphate", "NAD⁺" / "NADH" ↔ "nicotinamide adenine dinucleotide"
+  - "LHC" ↔ "Large Hadron Collider", "CERN" ↔ "European Organization for Nuclear Research"
+  - "HIV" ↔ "human immunodeficiency virus", "AIDS" ↔ "acquired immunodeficiency syndrome", "COVID" ↔ "coronavirus disease"
+  - "WWII" ↔ "World War II", "NATO" ↔ "North Atlantic Treaty Organization", "UN" ↔ "United Nations"
+  - "PCR" ↔ "polymerase chain reaction", "CRISPR" ↔ (treat as the acronym itself)
+  - "GDP" ↔ "gross domestic product", "CPU" ↔ "central processing unit"
+  - Chemical / SI symbols and element symbols where the question clearly asks for the named thing: "NaCl" ↔ "sodium chloride", "Fe" ↔ "iron", "H₂O" ↔ "water"
+- When unsure whether an abbreviation is standard for the canonical answer, accept it as long as it would be the FIRST thing an expert writes on scratch paper for that concept.
 
 REJECT when:
 - The user's answer refers to a different concept, organ, organism, element, mechanism, etc.

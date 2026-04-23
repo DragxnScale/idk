@@ -550,16 +550,33 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
   }, []);
 
   // Press Enter (or Space) on the feedback card to advance to the next question.
+  // Guard against the same Enter keypress that just submitted the answer: the
+  // grader call is async, so the submit Enter often stays held (or auto-repeats)
+  // right as phase flips to "feedback" — without this guard it would skip past
+  // the feedback card entirely. We require a clean keyup AFTER feedback renders
+  // before the next keydown will advance.
   useEffect(() => {
     if (phase !== "feedback") return;
-    const onKey = (e: KeyboardEvent) => {
+    let armed = false;
+    const onDown = (e: KeyboardEvent) => {
+      if (!armed) return;
+      if (e.repeat) return;
       if (e.key === "Enter" || e.code === "Space" || e.key === " ") {
         e.preventDefault();
         if (!submitting) void nextQuestion();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.code === "Space" || e.key === " ") {
+        armed = true;
+      }
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
   }, [phase, submitting, nextQuestion]);
 
   /** Text shown for the question line (line 0). */
