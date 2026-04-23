@@ -19,6 +19,8 @@ export type VelocityQuestion =
       correctIndex: 0 | 1 | 2 | 3;
       topic: string;
       explanation?: string;
+      /** 1-indexed page this concept was sourced from. */
+      pageIndex?: number;
     }
   | {
       type: "sa";
@@ -26,8 +28,13 @@ export type VelocityQuestion =
       pairId: string;
       question: string;
       answer: string;
+      /** Extra strings the grader should accept as correct — synonyms,
+       *  more-specific textbook names, common acronym/expansion pairs, etc. */
+      acceptedAnswers?: string[];
       topic: string;
       explanation?: string;
+      /** 1-indexed page this concept was sourced from. */
+      pageIndex?: number;
     };
 
 /** MC buzz letters, in display order. */

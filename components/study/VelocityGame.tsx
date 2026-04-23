@@ -431,6 +431,8 @@ export function VelocityGame({ questions, velocityGameId, initialResults, onRepl
           correctAnswer: current.answer,
           userAnswer: answerText,
           topic: current.topic,
+          acceptedAnswers:
+            current.type === "sa" ? current.acceptedAnswers ?? [] : [],
         }),
       });
       if (res.ok) {

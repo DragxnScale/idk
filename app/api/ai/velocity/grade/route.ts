@@ -12,6 +12,9 @@ const bodySchema = z.object({
   correctAnswer: z.string().min(1).max(500),
   userAnswer: z.string().max(500),
   topic: z.string().max(200).optional(),
+  /** Generator-provided alternate correct answers (synonyms / specific
+   *  names / acronym-expansion pairs). Checked locally before the AI call. */
+  acceptedAnswers: z.array(z.string().max(500)).max(8).optional(),
 });
 
 const gradeSchema = z.object({
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  const { question, correctAnswer, userAnswer, topic } = parsed.data;
+  const { question, correctAnswer, userAnswer, topic, acceptedAnswers } = parsed.data;
 
   const trimmed = userAnswer.trim();
   if (!trimmed) {
@@ -71,6 +74,19 @@ export async function POST(request: Request) {
       reason: "Matches the canonical answer.",
       source: "local",
     });
+  }
+
+  // Also try every generator-provided alternate before paying for the AI call.
+  if (acceptedAnswers && acceptedAnswers.length > 0) {
+    for (const alt of acceptedAnswers) {
+      if (alt && isShortAnswerCorrect(trimmed, alt)) {
+        return NextResponse.json({
+          correct: true,
+          reason: `Matches accepted alternate: ${alt}.`,
+          source: "local",
+        });
+      }
+    }
   }
 
   if (!isAiConfigured()) {
@@ -125,7 +141,11 @@ Return a boolean "correct" and a ONE short sentence "reason" explaining the deci
       schema: gradeSchema,
       system,
       prompt: `Question: ${question}
-Canonical correct answer: ${correctAnswer}${topic ? `\nTopic: ${topic}` : ""}
+Canonical correct answer: ${correctAnswer}${
+        acceptedAnswers && acceptedAnswers.length > 0
+          ? `\nAlso explicitly accepted by the generator: ${acceptedAnswers.join(", ")}`
+          : ""
+      }${topic ? `\nTopic: ${topic}` : ""}
 User's answer: ${trimmed}
 
 Is the user's answer acceptable?`,

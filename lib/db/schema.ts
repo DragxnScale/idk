@@ -324,6 +324,34 @@ export const velocityGames = sqliteTable("velocity_games", {
   completedAt: integer("completed_at", { mode: "timestamp" }),
 });
 
+/**
+ * Reusable question bank for the Velocity minigame.
+ *
+ * Every AI-generated question is persisted here so that subsequent games for the
+ * same document + page set can pull from the existing pool instead of paying
+ * for fresh generation every time. Keyed by `sourceKey` (stable identifier for
+ * the reading material — "textbook:<catalogId>" for shared textbooks, or
+ * "doc:<documentId>" for uploaded PDFs) and `pageIndex` (the 1-indexed page
+ * number the question was sourced from). Questions from textbooks are
+ * automatically shared across all users reading that same textbook.
+ */
+export const velocityQuestionBank = sqliteTable("velocity_question_bank", {
+  id: text("id").primaryKey(),
+  /** "textbook:<id>" for shared textbooks, "doc:<id>" for user uploads. */
+  sourceKey: text("source_key").notNull(),
+  /** 1-indexed page this question's concept was sourced from (0 = unknown). */
+  pageIndex: integer("page_index").notNull().default(0),
+  /** Short concept label (copied from the question for indexing/UI). */
+  topic: text("topic"),
+  /** "mc" | "sa" — stored redundantly so we can filter without JSON parsing. */
+  type: text("type").notNull(),
+  /** Full VelocityQuestion serialised as JSON. */
+  questionJson: text("question_json").notNull(),
+  /** User who triggered the generation run that produced this question. */
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
 // ── Client debug errors (posted from browser; admin reads) ───────────────
 
 export const clientErrorLogs = sqliteTable("client_error_logs", {
