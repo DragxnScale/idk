@@ -222,6 +222,51 @@ function stemIsContextDependent(stem: string): boolean {
   return BANNED_STEM_PATTERNS.some((re) => re.test(s));
 }
 
+/**
+ * Reject questions that read as "look at the graph / table / experiment and
+ * tell me the exact number". The combination of a time/concentration/rate
+ * reference in the stem with a specific-value-shaped canonical answer is the
+ * tell. We keep this narrow to avoid false-positives on legitimate universal-
+ * constant questions like "How many chromosomes …" or "What is c in m/s?".
+ */
+const TEXTBOOK_DATAPOINT_STEM_PATTERNS: RegExp[] = [
+  // "… obtained at 100 s", "… measured at t = 50", "… at 25 °C in this experiment"
+  /\bat\s+t\s*=\s*\d/i,
+  /\bobtained\s+at\s+\d/i,
+  /\bmeasured\s+at\s+\d/i,
+  /\breached\s+at\s+\d/i,
+  // "in this experiment", "for the reaction shown"
+  /\bin\s+this\s+(?:experiment|reaction|trial|run|study)\b/i,
+  /\bfor\s+the\s+(?:reaction|experiment|graph|curve|plot|table|data\s*set)\s+(?:shown|given|above|below|presented|described)\b/i,
+  // "what instantaneous rate … is obtained", "initial rate of the reaction is measured"
+  /\bwhat\s+(?:instantaneous|initial|average)\s+rate\b/i,
+  // "the rate/concentration/pH of Solution A/B/…"
+  /\b(?:rate|concentration|pH|temperature|pressure|volume|mass|yield|equilibrium\s+constant)\s+of\s+(?:solution|sample|reaction|compound|mixture)\s+[A-Z]\b/i,
+  // "the equilibrium constant/rate constant/k value for this"
+  /\b(?:equilibrium\s+constant|rate\s+constant|k\s+value|Ka|Kb|Kc|Kp|Ksp)\s+(?:for|of)\s+(?:this|the)\s+(?:reaction|system|experiment|trial)\b/i,
+];
+
+/** Shape of a "specific textbook measurement" canonical answer:
+ *  scientific notation with units ("4.2 × 10^-5 mol/L·s"), percentages tied
+ *  to a reading ("57.3 %"), or raw decimals with chem units. */
+const TEXTBOOK_DATAPOINT_ANSWER = /^\s*[-+]?\d+(?:\.\d+)?\s*(?:[×x*]\s*10\s*\^?\s*[-+]?\d+)?\s*(?:mol\/L·s|mol\/L\*s|mol\/L\s*s|mol\s*\/\s*L·s|mol\/L|M\/s|\/s)\s*$/i;
+
+function questionIsTextbookDatapoint(
+  stem: string,
+  canonicalAnswer: string | undefined
+): boolean {
+  const s = stem.trim();
+  if (!s) return false;
+  const stemHit = TEXTBOOK_DATAPOINT_STEM_PATTERNS.some((re) => re.test(s));
+  if (stemHit) return true;
+  // A numeric answer with explicit rate-style units is almost certainly
+  // a read-off-the-graph value from the reading, regardless of stem phrasing.
+  if (canonicalAnswer && TEXTBOOK_DATAPOINT_ANSWER.test(canonicalAnswer.trim())) {
+    return true;
+  }
+  return false;
+}
+
 export async function GET(request: Request) {
   const user = await getAppUser();
   if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -351,8 +396,17 @@ export async function POST(request: Request) {
         const q = parseBankQuestion(r.questionJson);
         if (!q) continue;
         // Hard filter: older bank rows may contain context-dependent stems
-        // from before the stricter prompt rules landed. Skip those.
+        // or textbook-specific data-point questions from before the stricter
+        // prompt rules landed. Skip those.
         if (stemIsContextDependent(q.question)) continue;
+        if (
+          questionIsTextbookDatapoint(
+            q.question,
+            q.type === "sa" ? q.answer : undefined
+          )
+        ) {
+          continue;
+        }
         const key = q.question.trim().toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -418,6 +472,24 @@ Banned reference patterns (automatic reject):
   Fix by naming the concept in the stem itself: "About how many million years ago did the Cretaceous–Paleogene extinction occur?" / "What process splits water into H₂ and O₂ in a lead-acid battery during overcharge?"
 
 RULE OF THUMB: before you write a stem, ask yourself "could someone who has never opened this book answer this?" If no — rewrite or pick a different concept.
+
+NO TEXTBOOK-SPECIFIC DATA POINTS (critical — also a HARD REJECT filter)
+Never ask for a numerical value, concentration, rate, temperature, pH, mass, or percentage that is only answerable by reading a specific graph, table, or worked example from the source. These are context-dependent by construction — a cold reader can't compute them. Examples of what gets rejected server-side:
+- BAD: "What instantaneous rate for NO2 disappearance is obtained at 100 s?" (only answerable by reading a specific graph)
+- BAD: "At what time does the reaction reach half-completion?" / "What is the concentration at t = 50 s?"
+- BAD: "What is the initial rate measured in this experiment?" / "What yield was obtained in the reaction?"
+- BAD: "What is the equilibrium constant for the reaction shown?"
+- BAD: "What is the pH of Solution A?" / "What molarity of NaOH is used?"
+- BAD: any answer of the form "X × 10^±Y <unit>" that is tied to a specific experiment in the reading.
+
+You MAY ask for numerical values that are universal constants, widely-memorised facts, or values intrinsic to a named entity (not tied to a specific experiment in the source):
+- OK: "How many chromosomes are in a human somatic cell?" answer: 46
+- OK: "What is the approximate speed of light in a vacuum (m/s)?" answer: "3 × 10^8"
+- OK: "At what temperature (°C) does pure water freeze at 1 atm?" answer: 0
+- OK: "How many constellations are currently officially recognized?" answer: 88
+- OK: atomic numbers, molar masses of simple elements, half-lives of well-known isotopes, the charge on an electron, etc.
+
+Rule of thumb: if the answer would change if we swapped out a different example/experiment from the same textbook, it's textbook-specific → don't ask it. If the answer is a universal fact that would be the same in any textbook, it's fine.
 
 CANONICAL ANSWER QUALITY (short-answer only — read carefully, this is the #1 source of grading complaints)
 - The "answer" field must be the MOST SPECIFIC named process / entity / term that describes the phenomenon in the stem. Never use a generic parent category ("decomposition", "reaction", "predator", "gas") when a specific textbook term exists.
@@ -492,10 +564,12 @@ SCHEMA — every field is REQUIRED on EVERY question:
       // "the example", "the passage", "this battery", etc. before we even
       // look at it further. Prompt-level rules occasionally leak, and we
       // never want the user to see a context-dependent question.
-      // Also drop stems the user already saw in a previous batch.
+      // Also drop stems the user already saw in a previous batch, and reject
+      // textbook-specific "read off the graph" numeric-answer questions.
       const rawQuestions = object.questions.filter(
         (q) =>
           !stemIsContextDependent(q.question) &&
+          !questionIsTextbookDatapoint(q.question, q.type === "sa" ? q.answer : undefined) &&
           !existingKeys.has(q.question.trim().toLowerCase())
       );
       aiQuestions = rawQuestions.map((q, i) => {

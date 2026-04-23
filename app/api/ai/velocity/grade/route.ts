@@ -102,6 +102,15 @@ Decide whether the user's answer should be accepted against the canonical correc
 
 ACCEPT when:
 - The user's answer means the same thing as the canonical answer (synonyms, common names vs. scientific names, alternate casing/spelling, minor typos).
+- The user's answer is a **morphological variant of the canonical answer that refers to the same concept** — adjective ↔ noun ↔ adverb forms of the same root word. Examples that MUST be accepted, in either direction:
+  - "spontaneous" ↔ "spontaneity" ↔ "spontaneously"
+  - "oxidise" / "oxidize" ↔ "oxidation" ↔ "oxidised" ↔ "oxidising"
+  - "respire" ↔ "respiration" ↔ "respiratory"
+  - "electrolyse" ↔ "electrolysis" ↔ "electrolytic"
+  - "endothermic" ↔ "endothermicity" ↔ "endotherm"
+  - "condense" ↔ "condensation" ↔ "condensate"
+  - "catalyse" / "catalyze" ↔ "catalysis" ↔ "catalyst" ↔ "catalytic"
+- Minor misspellings / letter-swaps of the canonical answer (e.g. "spontanious" for "spontaneous", "spontenaity" for "spontaneity", "photosythesis" for "photosynthesis"). If the user's word is clearly a typo of the canonical — same root, off by one or two letters — ACCEPT.
 - The user's answer contains the canonical answer plus extra but still-correct qualifying words.
 - A numeric answer matches the canonical number (allow equivalent forms like "1/2" vs "0.5", "3.5" vs "3 1/2", "5 sqrt(6)" vs "5√6").
 - The user's answer names the same specific entity (e.g. "parabola" and "parabolic" for "parabola (ACCEPT: parabolic)").
