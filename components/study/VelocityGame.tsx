@@ -85,7 +85,11 @@ interface Props {
   onContinueBatch?: () => Promise<VelocityQuestion[]>;
 }
 
-const POST_READ_GRACE_MS = 4000;
+/** After the typewriter finishes reading the stem (and MC options), the user
+ *  has this many milliseconds to hit the buzzer before the question is auto-
+ *  marked wrong. A visible countdown bar appears on the BUZZ button during
+ *  this window so the user can see how much thinking time they have left. */
+const POST_READ_GRACE_MS = 8000;
 /** Base answer window for a toss-up. Bonuses get this base replaced with
  *  approximately the question's reading time plus a generous think buffer
  *  (see BONUS_ANSWER_BUFFER_MS below). */
@@ -93,6 +97,10 @@ const TOSSUP_ANSWER_TIME_MS = 5000;
 /** Extra thinking time granted on bonus questions, added on top of the
  *  stem's reading duration so the learner always has time to work it out. */
 const BONUS_ANSWER_BUFFER_MS = 20000;
+/** When the post-buzz answer countdown drops at or below this threshold,
+ *  the progress bar turns red, the time label pulses, and a soft warning
+ *  tone plays once. Gives the user a clear "hurry up" signal on bonuses. */
+const ANSWER_WARNING_MS = 5000;
 /** Pause between lines in the typewriter script (e.g. between the question and the first option). */
 const INTER_LINE_PAUSE_MS = 300;
 const SOUND_PREF_KEY = "velocity-sound-on";
@@ -113,7 +121,7 @@ function getRoundType(index: number): "tossup" | "bonus" {
 function useSoundPlayer(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
   return useCallback(
-    (kind: "buzz" | "correct" | "wrong") => {
+    (kind: "buzz" | "correct" | "wrong" | "warn") => {
       if (!enabled || typeof window === "undefined") return;
       try {
         const Ctor =
@@ -144,6 +152,10 @@ function useSoundPlayer(enabled: boolean) {
         } else if (kind === "wrong") {
           playTone(220, 0, 0.18, "sawtooth", 0.18);
           playTone(140, 0.12, 0.26, "sawtooth", 0.14);
+        } else if (kind === "warn") {
+          // Short, high, polite "hurry up" blip — two quick sine pips.
+          playTone(880, 0, 0.08, "sine", 0.12);
+          playTone(1180, 0.1, 0.1, "sine", 0.12);
         }
       } catch {
         /* audio unavailable — silently skip */
@@ -199,10 +211,17 @@ export function VelocityGame({
   const [streak, setStreak] = useState(0);
   /** How much time is left after the buzz, for the countdown bar. */
   const [answerMsLeft, setAnswerMsLeft] = useState<number | null>(null);
+  /** How much time is left in the post-reading "buzz now or lose it" grace
+   *  window. `null` whenever the typewriter is still reading or the user has
+   *  already buzzed. */
+  const [graceMsLeft, setGraceMsLeft] = useState<number | null>(null);
 
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const graceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const answerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** True once the 5-second "hurry up" warning has been played for the
+   *  current question, so we don't spam it every tick. */
+  const warnedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   /** True once the typewriter has read the entire script for the current question. */
   const revealDoneRef = useRef(false);
@@ -222,7 +241,7 @@ export function VelocityGame({
       typewriterRef.current = null;
     }
     if (graceTimerRef.current) {
-      clearTimeout(graceTimerRef.current);
+      clearInterval(graceTimerRef.current);
       graceTimerRef.current = null;
     }
     if (answerTimerRef.current) {
@@ -317,6 +336,7 @@ export function VelocityGame({
   const handleBuzz = useCallback(() => {
     if (phase !== "reading" || !current) return;
     clearTimers();
+    setGraceMsLeft(null);
     interruptRef.current = !revealDoneRef.current;
     playSound("buzz");
     setPhase("answering");
@@ -340,6 +360,14 @@ export function VelocityGame({
       const elapsed = performance.now() - buzzTime;
       const left = Math.max(0, windowMs - elapsed);
       setAnswerMsLeft(left);
+      // Play a single "hurry up" blip when the remaining time first drops
+      // to or below the warning threshold. Only useful on bonuses (which
+      // have > 5s total) — toss-ups would just start at <5s and play once,
+      // which is still a correct behaviour, just less helpful.
+      if (!warnedRef.current && left <= ANSWER_WARNING_MS && windowMs > ANSWER_WARNING_MS) {
+        warnedRef.current = true;
+        playSound("warn");
+      }
       if (left <= 0) {
         if (answerTimerRef.current) {
           clearInterval(answerTimerRef.current);
@@ -357,8 +385,10 @@ export function VelocityGame({
     setLineIdx(0);
     setCharsShown(0);
     setAnswerText("");
+    setGraceMsLeft(null);
     revealDoneRef.current = false;
     interruptRef.current = false;
+    warnedRef.current = false;
     const start = performance.now();
     setStartedAt(start);
     const msPerChar = SPEED_MS_PER_CHAR[speed];
@@ -389,9 +419,23 @@ export function VelocityGame({
           revealDoneRef.current = true;
           setLineIdx(localLine);
           setCharsShown(0);
-          graceTimerRef.current = setTimeout(() => {
-            handleReadTimeout();
-          }, POST_READ_GRACE_MS);
+          // Kick off the visible post-read countdown. The user sees a
+          // progress bar under the BUZZ button tick down; if it hits 0
+          // before they buzz, the question is auto-marked wrong.
+          const graceStart = performance.now();
+          setGraceMsLeft(POST_READ_GRACE_MS);
+          graceTimerRef.current = setInterval(() => {
+            const elapsed = performance.now() - graceStart;
+            const left = Math.max(0, POST_READ_GRACE_MS - elapsed);
+            setGraceMsLeft(left);
+            if (left <= 0) {
+              if (graceTimerRef.current) {
+                clearInterval(graceTimerRef.current);
+                graceTimerRef.current = null;
+              }
+              handleReadTimeout();
+            }
+          }, 50);
           return;
         }
         setLineIdx(localLine);
@@ -830,6 +874,26 @@ export function VelocityGame({
           >
             BUZZ
           </button>
+          {graceMsLeft != null && (
+            <div className="flex w-full max-w-xs flex-col gap-1">
+              <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <span>Buzz in…</span>
+                <span className="font-mono tabular-nums">
+                  {(graceMsLeft / 1000).toFixed(1)}s
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                <div
+                  className={`h-full transition-[width] duration-[80ms] ease-linear ${
+                    graceMsLeft <= 3000 ? "bg-red-500" : "bg-amber-400"
+                  } ${graceMsLeft <= 3000 ? "animate-pulse" : ""}`}
+                  style={{
+                    width: `${Math.max(0, Math.min(100, (graceMsLeft / POST_READ_GRACE_MS) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Hit <kbd className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono dark:bg-gray-800">Space</kbd> or tap the buzzer to lock in your answer
           </p>
@@ -838,24 +902,40 @@ export function VelocityGame({
 
       {phase === "answering" && (
         <div className="rounded-2xl border border-black bg-white p-4 dark:border-white dark:bg-gray-900">
-          {/* Post-buzz countdown — freezes while the AI grader is running. */}
-          <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-            <div
-              className={`h-full transition-[width] ${
-                grading ? "bg-gray-400" : answerPct < 30 ? "bg-red-500" : "bg-red-400"
-              }`}
-              style={{
-                width: `${answerPct}%`,
-                transitionDuration: grading ? "0ms" : "80ms",
-                transitionTimingFunction: "linear",
-              }}
-            />
-          </div>
+          {/* Post-buzz countdown — freezes while the AI grader is running.
+              Turns red + pulses under 5s so bonuses get a clear "hurry up". */}
+          {(() => {
+            const warning = !grading && answerMsLeft != null && answerMsLeft <= ANSWER_WARNING_MS;
+            return (
+              <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                <div
+                  className={`h-full transition-[width] ${
+                    grading
+                      ? "bg-gray-400"
+                      : warning
+                        ? "bg-red-500 animate-pulse"
+                        : "bg-red-400"
+                  }`}
+                  style={{
+                    width: `${answerPct}%`,
+                    transitionDuration: grading ? "0ms" : "80ms",
+                    transitionTimingFunction: "linear",
+                  }}
+                />
+              </div>
+            );
+          })()}
           <div className="mb-2 flex items-center justify-between">
             <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
               {current.type === "mc" ? "Type the answer text or W / X / Y / Z" : "Type your answer"}
             </label>
-            <span className="text-xs font-mono tabular-nums text-gray-500">
+            <span
+              className={`text-xs font-mono tabular-nums ${
+                !grading && answerMsLeft != null && answerMsLeft <= ANSWER_WARNING_MS
+                  ? "font-bold text-red-600 dark:text-red-400 animate-pulse"
+                  : "text-gray-500"
+              }`}
+            >
               {grading ? "" : answerMsLeft != null ? `${(answerMsLeft / 1000).toFixed(1)}s` : ""}
             </span>
           </div>

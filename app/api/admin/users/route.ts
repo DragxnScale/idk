@@ -3,6 +3,7 @@ import { requireAdmin, isSuperAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users as usersTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getDefaultAiTokenLimit } from "@/lib/ai-usage";
 
 const SUPER_ADMIN_EMAIL = "jaydenw0711@gmail.com";
 
@@ -14,6 +15,7 @@ export async function GET() {
 
   const allUsers = await db.query.users.findMany();
   const allSessions = await db.query.studySessions.findMany();
+  const defaultLimit = getDefaultAiTokenLimit();
 
   const users = allUsers.map((u) => {
     const userSessions = allSessions.filter((s) => s.userId === u.id);
@@ -22,17 +24,27 @@ export async function GET() {
     const lastSession = userSessions
       .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))[0];
 
+    // Effective limit the user is actually being capped at right now.
+    // Null means unlimited (neither user override nor deploy-level default
+    // is set). Super admin (owner) is always unlimited.
+    const explicit = typeof u.aiTokenLimit === "number" && u.aiTokenLimit > 0 ? u.aiTokenLimit : null;
+    const isSuperAdminUser = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+    const effectiveLimit = isSuperAdminUser ? null : explicit ?? defaultLimit;
+
     return {
       id: u.id,
       email: u.email,
       name: u.name ?? null,
-      isAdmin: u.isAdmin === true || u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(),
-      isSuperAdmin: u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(),
+      isAdmin: u.isAdmin === true || isSuperAdminUser,
+      isSuperAdmin: isSuperAdminUser,
       createdAt: u.createdAt?.toISOString() ?? null,
       sessionCount: completed.length,
       totalMinutes: completed.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0),
       lastActiveAt: lastSession?.startedAt?.toISOString() ?? null,
       hasActiveSession: !!active,
+      aiTokensUsed: u.aiTokensUsed ?? 0,
+      aiTokenLimit: explicit,
+      aiTokenLimitEffective: effectiveLimit,
     };
   });
 

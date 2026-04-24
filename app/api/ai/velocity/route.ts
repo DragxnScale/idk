@@ -12,6 +12,7 @@ import {
   velocityQuestionBank,
 } from "@/lib/db/schema";
 import type { VelocityQuestion } from "@/lib/velocity-match";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 /** Record AI / runtime failures so admins can inspect them in the debug log. */
 async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
@@ -363,6 +364,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const overBudget = await assertAiBudget(user.id);
+  if (overBudget) return overBudget;
+
   const body = (await request.json().catch(() => ({}))) as {
     sessionId?: string;
     accumulatedText?: string;
@@ -583,6 +587,17 @@ PAIRING RULES (critical):
 - Set "roundType" to "tossup" or "bonus" correctly.
 - Use the same "pairId" for the toss-up and its bonus. Pair IDs can be "1", "2", ... "${targetPairs}".
 
+MATH & CALCULATION QUESTIONS → BONUSES ONLY
+- Toss-ups are a 5-second race; bonuses give the user ~20 seconds. Any question that requires the user to *do arithmetic in their head* belongs in the BONUS slot, never the toss-up.
+- Treat a question as "math" (and therefore bonus-only) if ANY of these are true:
+  * the answer is a computed number (molarity, mole count, pH, kinetic energy, momentum, velocity, probability, percent yield, concentration after dilution, Ka/Kb from pKa, final temperature from q = mcΔT, half-life remaining, etc.).
+  * the stem contains explicit numeric inputs the user must combine ("Given [HCl] = 0.050 M and [OH⁻] = 2.0 × 10⁻³ M, what is…", "A 2.5 g sample…", "At 250 K and 1.2 atm…").
+  * the canonical answer is a formula the user must rearrange and plug values into, even if the numbers are simple.
+- Concept / recall / definition questions stay on the toss-up side. Example pair:
+  * TOSSUP (concept, fast recall): "In the equation q = mcΔT, what property does 'c' represent?" → "specific heat capacity"
+  * BONUS (math, needs ~20s): "How much heat is required to raise the temperature of 50.0 g of water (c = 4.18 J/g·°C) by 25.0 °C?" → "5225 J" (or "5.2 × 10³ J")
+- If a concept has no natural numeric question, don't force one — write two concept questions instead. Never put a calculation on the toss-up just to fill the slot.
+
 SOURCE PAGE TAGGING (required on every question)
 - Every page in the reading is demarcated by a "[Page N]" marker (1-indexed). For each question, set "pageIndex" to the N of the page where the concept the question asks about is primarily introduced or explained.
 - If the concept spans multiple pages, choose the first page where it is defined/introduced.
@@ -613,7 +628,7 @@ SA:
 SCHEMA — every field is REQUIRED on EVERY question:
 - roundType, pairId, type, question, options (4 strings), correctIndex (0–3), answer, acceptedAnswers (array of strings, may be empty), topic (2–5 words labelling the concept), explanation (one short sentence), pageIndex (integer from the reading, 0 if unknown).`;
 
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: payloadSchema,
         system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
@@ -625,6 +640,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
           notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
         }`,
       });
+      await recordAiUsage(user.id, "/api/ai/velocity", usage);
 
       const readingPagesSet = new Set(readingPages);
       // Final server-side safety net: drop any stem that still references

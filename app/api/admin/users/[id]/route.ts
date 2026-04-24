@@ -52,6 +52,8 @@ export async function GET(
       inactivityTimeout: target.inactivityTimeout ?? null,
       storageBytes: target.storageBytes ?? 0,
       storageQuotaBytes: target.storageQuotaBytes ?? null,
+      aiTokensUsed: target.aiTokensUsed ?? 0,
+      aiTokenLimit: target.aiTokenLimit ?? null,
     },
     sessions: sessions.map((s) => ({
       id: s.id,
@@ -91,6 +93,21 @@ export async function PATCH(
       typeof body.storageQuotaBytes === "number" && body.storageQuotaBytes > 0
         ? body.storageQuotaBytes
         : null;
+  }
+
+  // Per-user AI token budget cap. null = fall back to DEFAULT_AI_TOKEN_LIMIT
+  // from lib/ai-usage.ts (or `AI_TOKEN_LIMIT_DEFAULT` env var).
+  if ("aiTokenLimit" in body) {
+    updates.aiTokenLimit =
+      typeof body.aiTokenLimit === "number" && body.aiTokenLimit > 0
+        ? body.aiTokenLimit
+        : null;
+  }
+
+  // Reset the lifetime AI token counter back to zero. Useful for
+  // "fresh start" / monthly billing-style resets.
+  if (body.resetAiTokens === true) {
+    updates.aiTokensUsed = 0;
   }
 
   if (Object.keys(updates).length === 0) {

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
 import { aiNotes, publicNotes } from "@/lib/db/schema";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Bump this whenever the notes system prompt changes.
@@ -72,12 +73,16 @@ export async function POST(request: Request) {
     );
   }
 
+  const overBudget = await assertAiBudget(user.id);
+  if (overBudget) return overBudget;
+
   const ownerExtra = await getAiOwnerStyleExtra();
-  const { text: rawNotes } = await generateText({
+  const { text: rawNotes, usage } = await generateText({
     model: openai(MODEL),
     system: appendOwnerStyleToSystem(BASE_SYSTEM, ownerExtra),
     prompt: `Page ${pageNumber}:\n\n${pageText.slice(0, 6000)}`,
   });
+  await recordAiUsage(user.id, "/api/ai/notes", usage);
 
   content = stripLatexForAiNotes(rawNotes);
 

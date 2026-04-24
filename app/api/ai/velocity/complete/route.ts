@@ -7,6 +7,7 @@ import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
   const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
@@ -170,7 +171,10 @@ export async function POST(request: Request) {
   };
 
   let review: z.infer<typeof reviewSchema> | null = null;
-  if (isAiConfigured()) {
+  // Skip the AI review step (not the whole completion) when over budget —
+  // scoring + stats still persist, just the review is left null.
+  const reviewOverBudget = isAiConfigured() ? await assertAiBudget(user.id) : null;
+  if (isAiConfigured() && !reviewOverBudget) {
     const wrong = attempts.filter((a) => !a.correct);
     const ownerExtra = await getAiOwnerStyleExtra();
     const summary = attempts
@@ -189,7 +193,7 @@ Produce:
 Keep everything short and actionable. No filler.`;
 
     try {
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: reviewSchema,
         system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
@@ -197,6 +201,7 @@ Keep everything short and actionable. No filler.`;
           avgReactionMs ?? "n/a"
         } ms.\n\nAttempts:\n${summary}\n\nWrong answers: ${wrong.length}.`,
       });
+      await recordAiUsage(user.id, "/api/ai/velocity/complete", usage);
       review = object;
     } catch (err) {
       await logServerFailure(user.id, user.email ?? null, err, {

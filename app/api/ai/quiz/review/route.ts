@@ -16,6 +16,7 @@ import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { quizzes } from "@/lib/db/schema";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 interface WrongQuestion {
   question: string;
@@ -73,6 +74,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const overBudget = await assertAiBudget(user.id);
+  if (overBudget) return overBudget;
+
   // ── Generate targeted review for wrong answers ───────────────────────
   const ownerExtra = await getAiOwnerStyleExtra();
   const wrongSummary = wrongQuestions
@@ -88,12 +92,13 @@ Based ONLY on the questions they got wrong, generate:
 
 Do not add review items for topics the student already demonstrated they understand.`;
 
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: reviewSchema,
     system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
     prompt: `Questions the student answered incorrectly:\n\n${wrongSummary}`,
   });
+  await recordAiUsage(user.id, "/api/ai/quiz/review", usage);
 
   const review = { perfect: false, ...object };
 

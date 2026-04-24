@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { requireSuperOwner } from "@/lib/admin";
 import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const MAX_MESSAGES = 24;
 const MAX_MSG_LEN = 4000;
@@ -59,10 +60,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: openai(MODEL),
       messages,
     });
+    // Owner chat is super-admin only; no budget gate (owner has no cap) but
+    // we still record so the admin dashboard shows the tokens spent.
+    if (session.user?.id) {
+      await recordAiUsage(session.user.id, "/api/admin/owner-ai/chat", usage);
+    }
     return NextResponse.json({ role: "assistant" as const, content: text });
   } catch (e) {
     console.error("[owner-ai/chat]", e);

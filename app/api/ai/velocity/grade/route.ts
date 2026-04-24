@@ -6,6 +6,7 @@ import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { clientErrorLogs } from "@/lib/db/schema";
 import { isShortAnswerCorrect } from "@/lib/velocity-match";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 const bodySchema = z.object({
   question: z.string().min(1).max(2000),
@@ -96,6 +97,20 @@ export async function POST(request: Request) {
     );
   }
 
+  // If the user is over their AI token allowance, fall back to a strict
+  // local result instead of 429ing the grader — mid-round is a bad time
+  // to derail gameplay. Already-accepted-locally answers above have
+  // returned early, so trimmed here is something the local matcher
+  // couldn't accept: we return "incorrect" and tell them why.
+  const overBudget = await assertAiBudget(user.id);
+  if (overBudget) {
+    return NextResponse.json({
+      correct: false,
+      reason: "AI grader skipped — token budget reached. Accepted only exact matches.",
+      source: "fallback",
+    });
+  }
+
   const system = `You are grading a short-answer reaction quiz question (NSB / quiz-bowl style).
 
 Decide whether the user's answer should be accepted against the canonical correct answer. Err on the side of acceptance when the user clearly identified the same thing — this is a fast reaction game, not a spelling bee.
@@ -145,7 +160,7 @@ REJECT when:
 Return a boolean "correct" and a ONE short sentence "reason" explaining the decision in plain language (no preamble).`;
 
   try {
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: gradeSchema,
       system,
@@ -159,6 +174,7 @@ User's answer: ${trimmed}
 
 Is the user's answer acceptable?`,
     });
+    await recordAiUsage(user.id, "/api/ai/velocity/grade", usage);
     return NextResponse.json({ ...object, source: "ai" });
   } catch (err) {
     await logServerFailure(user.id, user.email ?? null, err, {

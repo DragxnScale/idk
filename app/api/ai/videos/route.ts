@@ -7,6 +7,7 @@ import { openai, MODEL, isAiConfigured } from "@/lib/ai";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 const videoSchema = z.object({
   videos: z.array(
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const overBudget = await assertAiBudget(user.id);
+  if (overBudget) return overBudget;
+
   const { sessionId, accumulatedText } = await request.json() as {
     sessionId: string;
     accumulatedText: string;
@@ -94,12 +98,13 @@ Rules:
 - Each video should cover a DIFFERENT concept from the reading — don't repeat topics
 - The reason should be one crisp sentence explaining exactly what gap this video fills`;
 
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: videoSchema,
     system: appendOwnerStyleToSystem(baseVideoSystem, ownerExtra),
     prompt: `Study session reading material (excerpt):\n\n${accumulatedText.slice(0, 8000)}`,
   });
+  await recordAiUsage(user.id, "/api/ai/videos", usage);
 
   await db
     .update(studySessions)

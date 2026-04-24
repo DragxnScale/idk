@@ -19,6 +19,12 @@ interface UserRow {
   totalMinutes: number;
   lastActiveAt: string | null;
   hasActiveSession?: boolean;
+  /** Lifetime prompt + completion token total across all AI routes. */
+  aiTokensUsed?: number;
+  /** Per-user override. null when falling back to the deploy-level default. */
+  aiTokenLimit?: number | null;
+  /** Effective limit actually enforced: per-user override OR the default. null = unlimited. */
+  aiTokenLimitEffective?: number | null;
 }
 
 interface UserSession {
@@ -274,6 +280,10 @@ function UsersTab() {
   const [wipingAll, setWipingAll] = useState(false);
   const [userInactivityTimeout, setUserInactivityTimeout] = useState<string>("");
   const [userStorageQuotaMB, setUserStorageQuotaMB] = useState<string>("");
+  const [userAiTokenLimit, setUserAiTokenLimit] = useState<string>("");
+  const [userAiTokensUsed, setUserAiTokensUsed] = useState<number>(0);
+  const [savingAiTokenLimit, setSavingAiTokenLimit] = useState(false);
+  const [resettingAiTokens, setResettingAiTokens] = useState(false);
   const [savingInactivity, setSavingInactivity] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -384,6 +394,8 @@ function UsersTab() {
     setUserSessions(null);
     setUserInactivityTimeout("");
     setUserStorageQuotaMB("");
+    setUserAiTokenLimit("");
+    setUserAiTokensUsed(user.aiTokensUsed ?? 0);
     const res = await fetch(`/api/admin/users/${user.id}`);
     if (res.ok) {
       const data = await res.json();
@@ -393,6 +405,12 @@ function UsersTab() {
       }
       if (data.user?.storageQuotaBytes != null) {
         setUserStorageQuotaMB(String(Math.round(data.user.storageQuotaBytes / 1024 / 1024)));
+      }
+      if (data.user?.aiTokenLimit != null) {
+        setUserAiTokenLimit(String(data.user.aiTokenLimit));
+      }
+      if (typeof data.user?.aiTokensUsed === "number") {
+        setUserAiTokensUsed(data.user.aiTokensUsed);
       }
     }
   }
@@ -868,6 +886,147 @@ function UsersTab() {
           </div>
         </div>
 
+        {/* AI token usage + limit */}
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold mb-1">AI token usage</h3>
+              <p className="text-xs text-gray-500">
+                Lifetime prompt + completion tokens this user has spent across every AI feature (notes, quizzes, flashcards, videos, Velocity generation + grading).
+              </p>
+            </div>
+            {selectedUser.aiTokenLimitEffective != null && (
+              <span
+                className={`text-xs font-mono whitespace-nowrap px-2 py-1 rounded ${
+                  userAiTokensUsed >= selectedUser.aiTokenLimitEffective
+                    ? "bg-red-900/50 text-red-300"
+                    : userAiTokensUsed / selectedUser.aiTokenLimitEffective > 0.75
+                      ? "bg-amber-900/50 text-amber-300"
+                      : "bg-gray-800 text-gray-300"
+                }`}
+              >
+                {userAiTokensUsed.toLocaleString()} / {selectedUser.aiTokenLimitEffective.toLocaleString()}
+              </span>
+            )}
+            {selectedUser.aiTokenLimitEffective == null && (
+              <span className="text-xs font-mono whitespace-nowrap px-2 py-1 rounded bg-gray-800 text-gray-300">
+                {userAiTokensUsed.toLocaleString()} / unlimited
+              </span>
+            )}
+          </div>
+
+          {selectedUser.aiTokenLimitEffective != null && (
+            <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-gray-950">
+              <div
+                className={`h-full transition-[width] ${
+                  userAiTokensUsed >= selectedUser.aiTokenLimitEffective
+                    ? "bg-red-500"
+                    : userAiTokensUsed / selectedUser.aiTokenLimitEffective > 0.75
+                      ? "bg-amber-400"
+                      : "bg-green-500"
+                }`}
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(0, (userAiTokensUsed / selectedUser.aiTokenLimitEffective) * 100)
+                  )}%`,
+                }}
+              />
+            </div>
+          )}
+
+          <p className="text-xs text-gray-500 mb-2">
+            Per-user token limit. Leave blank to fall back to the deploy-level default. When a user reaches their limit, new AI calls return a 429 and the UI shows &quot;Contact an admin&quot;.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="number"
+              min={1}
+              step={1000}
+              value={userAiTokenLimit}
+              onChange={(e) => setUserAiTokenLimit(e.target.value)}
+              placeholder="e.g. 500000"
+              className="w-40 rounded-lg border border-gray-700 bg-gray-950 px-3 py-1.5 text-sm"
+            />
+            <span className="text-xs text-gray-500">tokens</span>
+            <button
+              onClick={async () => {
+                if (!selectedUser) return;
+                setSavingAiTokenLimit(true);
+                try {
+                  const limit = userAiTokenLimit === "" ? null : Number(userAiTokenLimit);
+                  await fetch(`/api/admin/users/${selectedUser.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ aiTokenLimit: limit }),
+                  });
+                  setUsers((prev) =>
+                    prev?.map((u) =>
+                      u.id === selectedUser.id
+                        ? { ...u, aiTokenLimit: limit, aiTokenLimitEffective: limit ?? u.aiTokenLimitEffective ?? null }
+                        : u
+                    ) ?? null
+                  );
+                } finally {
+                  setSavingAiTokenLimit(false);
+                }
+              }}
+              disabled={savingAiTokenLimit}
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black disabled:opacity-50"
+            >
+              {savingAiTokenLimit ? "Saving…" : "Save limit"}
+            </button>
+            {userAiTokenLimit !== "" && (
+              <button
+                onClick={async () => {
+                  if (!selectedUser) return;
+                  setUserAiTokenLimit("");
+                  setSavingAiTokenLimit(true);
+                  try {
+                    await fetch(`/api/admin/users/${selectedUser.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ aiTokenLimit: null }),
+                    });
+                    setUsers((prev) =>
+                      prev?.map((u) => (u.id === selectedUser.id ? { ...u, aiTokenLimit: null } : u)) ?? null
+                    );
+                  } finally {
+                    setSavingAiTokenLimit(false);
+                  }
+                }}
+                className="text-xs text-gray-400 hover:underline"
+              >
+                Reset to default
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                if (!selectedUser) return;
+                if (!confirm(`Reset ${selectedUser.email}'s AI token counter to 0?`)) return;
+                setResettingAiTokens(true);
+                try {
+                  await fetch(`/api/admin/users/${selectedUser.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ resetAiTokens: true }),
+                  });
+                  setUserAiTokensUsed(0);
+                  setUsers((prev) =>
+                    prev?.map((u) => (u.id === selectedUser.id ? { ...u, aiTokensUsed: 0 } : u)) ?? null
+                  );
+                } finally {
+                  setResettingAiTokens(false);
+                }
+              }}
+              disabled={resettingAiTokens}
+              className="ml-auto text-xs text-red-400 hover:underline disabled:opacity-50"
+            >
+              {resettingAiTokens ? "Resetting…" : "Reset counter"}
+            </button>
+          </div>
+        </div>
+
         {/* Storage quota override */}
         <div className="bg-gray-900 rounded-lg p-4 mb-4">
           <h3 className="text-sm font-semibold mb-2">Storage quota override</h3>
@@ -1031,14 +1190,14 @@ function UsersTab() {
         <table className="w-full text-sm min-w-[700px]">
           <thead className="bg-gray-900 border-b border-gray-800">
             <tr>
-              {["User", "Role", "Joined", "Sessions", "Study Time", "Last Active", ""].map((h) => (
+              {["User", "Role", "Joined", "Sessions", "Study Time", "AI Tokens", "Last Active", ""].map((h) => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No users found.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No users found.</td></tr>
             )}
             {filtered.map((user) => (
               <tr key={user.id} className="bg-gray-950 hover:bg-gray-900 transition">
@@ -1079,6 +1238,22 @@ function UsersTab() {
                 </td>
                 <td className="px-4 py-3 text-gray-300">{user.sessionCount}</td>
                 <td className="px-4 py-3 text-gray-300">{fmtMinutes(user.totalMinutes)}</td>
+                <td className="px-4 py-3 text-xs font-mono">
+                  {(() => {
+                    const used = user.aiTokensUsed ?? 0;
+                    const limit = user.aiTokenLimitEffective;
+                    if (limit == null) {
+                      return <span className="text-gray-400">{used.toLocaleString()}</span>;
+                    }
+                    const pct = limit > 0 ? used / limit : 0;
+                    const color = pct >= 1 ? "text-red-400" : pct > 0.75 ? "text-amber-400" : "text-gray-300";
+                    return (
+                      <span className={color} title={`${used.toLocaleString()} / ${limit.toLocaleString()}`}>
+                        {used.toLocaleString()}<span className="text-gray-600"> / {limit.toLocaleString()}</span>
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="px-4 py-3 text-gray-400">
                   {user.lastActiveAt ? new Date(user.lastActiveAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Never"}
                 </td>

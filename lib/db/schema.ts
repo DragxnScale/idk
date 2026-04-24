@@ -22,6 +22,8 @@ export const users = sqliteTable("users", {
   pomodoroCycles: integer("pomodoro_cycles"),         // cycles before long break, default 4
   storageBytes: integer("storage_bytes").default(0),         // running total of user upload bytes
   storageQuotaBytes: integer("storage_quota_bytes"),         // null = use DEFAULT_QUOTA_BYTES
+  aiTokensUsed: integer("ai_tokens_used").default(0),         // lifetime sum of prompt+completion tokens across every AI route
+  aiTokenLimit: integer("ai_token_limit"),                    // null = use DEFAULT_AI_TOKEN_LIMIT from env / code
   themeId: text("theme_id"), // custom theme color set id
   image: text("image"),
   emailVerified: integer("email_verified", { mode: "timestamp" }),
@@ -350,6 +352,28 @@ export const velocityQuestionBank = sqliteTable("velocity_question_bank", {
   /** User who triggered the generation run that produced this question. */
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+/**
+ * Per-call AI usage log. One row every time we call OpenAI on a user's
+ * behalf — lets admins see a full history of which routes a user spent
+ * tokens on, when, and how much each call cost. The running `aiTokensUsed`
+ * counter on `users` is the sum of `totalTokens` across all rows here for
+ * that user (we keep the counter denormalised for fast reads).
+ */
+export const aiUsageLogs = sqliteTable("ai_usage_logs", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** e.g. "/api/ai/notes", "/api/ai/velocity", "/api/admin/owner-ai/chat" */
+  route: text("route").notNull(),
+  /** OpenAI model id used for the call. */
+  model: text("model"),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
 // ── Client debug errors (posted from browser; admin reads) ───────────────

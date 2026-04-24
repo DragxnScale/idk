@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { quizzes, aiNotes, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
 // ── Constants ──────────────────────────────────────────────────────────
 /** Hard ceiling on question count to avoid burning excessive tokens. */
@@ -67,6 +68,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const overBudget = await assertAiBudget(authUser.id);
+  if (overBudget) return overBudget;
+
   const body = await request.json();
   const { sessionId, accumulatedText } = body as {
     sessionId: string;
@@ -109,7 +113,7 @@ Generate exactly ${targetQ} multiple-choice questions testing comprehension of t
 - Distribute questions evenly across all the major topics in the reading.
 - Questions should test understanding and application, not just surface recall.`;
 
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: questionsSchema,
     system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
@@ -117,6 +121,7 @@ Generate exactly ${targetQ} multiple-choice questions testing comprehension of t
       notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
     }`,
   });
+  await recordAiUsage(authUser.id, "/api/ai/quiz", usage);
 
   // ── Shuffle answer options so correct index is randomised ────────────
   const questions = object.questions.map(shuffleOptions);
