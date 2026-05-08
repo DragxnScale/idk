@@ -9,6 +9,9 @@ import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settin
 import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
+export const maxDuration = 60;
+
 async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
   const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
   const stack = err instanceof Error ? err.stack ?? null : null;

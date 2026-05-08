@@ -9,6 +9,9 @@ import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
+export const maxDuration = 60;
+
 const videoSchema = z.object({
   videos: z.array(
     z.object({

@@ -361,6 +361,18 @@ export const velocityQuestionBank = sqliteTable("velocity_question_bank", {
   /** User who triggered the generation run that produced this question. */
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp" }),
+  /**
+   * Number of times users have hit "Report" on this question. Reads from
+   * the bank filter out any row with reportCount above
+   * `BAD_QUESTION_REPORT_THRESHOLD` so a single bad question can't keep
+   * showing up to every future user. Admins can inspect the questionJson
+   * to decide whether to keep, fix, or hard-delete the row.
+   */
+  reportCount: integer("report_count").notNull().default(0),
+  /** Free-form reason from the most recent reporter (truncated to 500 chars). */
+  lastReportReason: text("last_report_reason"),
+  /** When the question was first reported. Null = never reported. */
+  firstReportedAt: integer("first_reported_at", { mode: "timestamp" }),
 });
 
 /**

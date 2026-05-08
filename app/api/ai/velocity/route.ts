@@ -14,6 +14,17 @@ import {
 import type { VelocityQuestion } from "@/lib/velocity-match";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/**
+ * Allow up to 60 seconds of compute on Vercel functions (the Pro tier
+ * default cap). The Velocity generator does a single `generateObject`
+ * call that returns up to 24 questions; with cold starts plus slow
+ * OpenAI responses this can run 30-50s and would otherwise hit Vercel's
+ * default 10s function timeout and silently fail. If you upgrade to a
+ * higher tier you can raise this to 300; on hobby tier it caps at 10
+ * regardless of this value, so generation will still fail there.
+ */
+export const maxDuration = 60;
+
 /** Record AI / runtime failures so admins can inspect them in the debug log. */
 async function logServerFailure(userId: string | null, email: string | null, err: unknown, extra?: unknown) {
   const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
@@ -48,6 +59,13 @@ const PAIR_COUNT = 12;
 const MAX_QUESTIONS = PAIR_COUNT * 2;
 /** Questions per batch (generated per /api/ai/velocity call). */
 const DEFAULT_Q = PAIR_COUNT * 2;
+/**
+ * Number of user reports needed before a banked Velocity question is
+ * permanently hidden from future games. Set to 1 — even a single report
+ * keeps the question out of rotation; admins can still inspect the row
+ * and either fix the AI prompt or hard-delete it.
+ */
+const BAD_QUESTION_REPORT_THRESHOLD = 1;
 /** Absolute cap on total questions in a single velocity_games row
  *  (initial batch + one continuation). */
 const MAX_TOTAL_Q = DEFAULT_Q * 2;
@@ -450,8 +468,15 @@ export async function POST(request: Request) {
     let bankPool: VelocityQuestion[] = [];
     if (sourceKey && readingPages.length > 0) {
       const rows = await db.query.velocityQuestionBank.findMany({
-        where: (b, { and: a, eq: e, inArray: inA }) =>
-          a(e(b.sourceKey, sourceKey), inA(b.pageIndex, readingPages)),
+        where: (b, { and: a, eq: e, inArray: inA, lt }) =>
+          a(
+            e(b.sourceKey, sourceKey),
+            inA(b.pageIndex, readingPages),
+            // Skip questions that have been reported by users. Threshold is
+            // intentionally low (1) — we'd rather generate a fresh question
+            // than show one that even a single user flagged as bad.
+            lt(b.reportCount, BAD_QUESTION_REPORT_THRESHOLD)
+          ),
         limit: 400,
       });
       const seen = new Set<string>(existingKeys);

@@ -18,6 +18,9 @@ import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settin
 import { quizzes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
+export const maxDuration = 60;
+
 interface WrongQuestion {
   question: string;
   correctAnswer: string;

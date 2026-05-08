@@ -9,6 +9,9 @@ import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
 import { aiNotes, publicNotes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
+export const maxDuration = 60;
+
 /**
  * Bump this whenever the notes system prompt changes.
  * Any public note stored with a lower version is treated as stale and

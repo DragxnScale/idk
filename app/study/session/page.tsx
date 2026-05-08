@@ -302,6 +302,18 @@ function StudySessionInner() {
             setCurrentPage(lp);
             lastFlushedPageRef.current = lp;
           }
+          // Restore any per-page extracted text from before the pause/crash
+          // so post-session AI features (Velocity, quizzes, flashcards) still
+          // see content from earlier pages even if the user only opens a
+          // few new ones after resuming.
+          try {
+            const cached = sessionStorage.getItem(`session-text-${active.id}`);
+            if (cached && cached.length > accumulatedTextRef.current.length) {
+              accumulatedTextRef.current = cached;
+            }
+          } catch {
+            // sessionStorage may be unavailable; non-fatal.
+          }
           if (active.studyGoal) {
             setLinkedStudyGoalId(active.studyGoal.id);
             setStudyGoalPriorMinutes(active.studyGoal.completedMinutes);
@@ -636,7 +648,18 @@ function StudySessionInner() {
       return next;
     });
     accumulatedTextRef.current += `\n\n[Page ${page}]\n${text}`;
-  }, []);
+    // Persist incrementally so a tab crash mid-session doesn't lose
+    // all extracted text. The summary page reads from this same key
+    // when generating Velocity / quiz / etc.
+    if (sessionId) {
+      try {
+        sessionStorage.setItem(`session-text-${sessionId}`, accumulatedTextRef.current);
+      } catch {
+        // sessionStorage can be full or disabled — non-fatal, the final
+        // snapshot in handleEnd is the safety net.
+      }
+    }
+  }, [sessionId]);
 
   const handleStart = useCallback(async () => {
     setError(null);

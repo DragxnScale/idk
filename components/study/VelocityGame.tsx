@@ -205,6 +205,15 @@ export function VelocityGame({
     points: number;
   } | null>(null);
 
+  /**
+   * Tracks which question stems the user has already reported in this game
+   * so the Report button flips to "Reported" after click. Per-game state
+   * (no persistence) — repeated reports across games still bump the
+   * server-side counter.
+   */
+  const [reportedStems, setReportedStems] = useState<Set<string>>(() => new Set());
+  const [reporting, setReporting] = useState(false);
+
   /** Running NSB-style score. */
   const [score, setScore] = useState(0);
   /** Current consecutive-correct streak. */
@@ -1011,7 +1020,61 @@ export function VelocityGame({
               Explanation: {feedback.explanation}
             </p>
           )}
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex items-center justify-between gap-2">
+            {(() => {
+              const stem = current?.question ?? "";
+              const alreadyReported = reportedStems.has(stem);
+              return (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!stem || alreadyReported || reporting) return;
+                    setReporting(true);
+                    const reason =
+                      window.prompt(
+                        "What's wrong with this question?\n(Optional — leave blank to report without a reason.)",
+                        ""
+                      ) ?? null;
+                    if (reason === null) {
+                      setReporting(false);
+                      return;
+                    }
+                    try {
+                      await fetch("/api/ai/velocity/report", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          question: stem,
+                          reason: reason.trim() || undefined,
+                        }),
+                      });
+                      setReportedStems((prev) => {
+                        const next = new Set(prev);
+                        next.add(stem);
+                        return next;
+                      });
+                    } catch {
+                      // Non-fatal: user can try again on the next question.
+                    } finally {
+                      setReporting(false);
+                    }
+                  }}
+                  disabled={alreadyReported || reporting || !stem}
+                  title={
+                    alreadyReported
+                      ? "You've reported this question — it won't be served to other users."
+                      : "Flag this question as bad (wrong, confusing, or off-topic). Reported questions are removed from the bank and not shown to future users."
+                  }
+                  className={`text-xs underline-offset-2 hover:underline disabled:no-underline ${
+                    alreadyReported
+                      ? "text-gray-400 cursor-default"
+                      : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                  }`}
+                >
+                  {alreadyReported ? "Reported" : reporting ? "Reporting…" : "Report bad question"}
+                </button>
+              );
+            })()}
             <button
               type="button"
               onClick={nextQuestion}

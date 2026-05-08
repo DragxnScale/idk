@@ -9,6 +9,9 @@ import { quizzes, aiNotes, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
+/** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
+export const maxDuration = 60;
+
 // ── Constants ──────────────────────────────────────────────────────────
 /** Hard ceiling on question count to avoid burning excessive tokens. */
 const MAX_QUESTIONS = 25;

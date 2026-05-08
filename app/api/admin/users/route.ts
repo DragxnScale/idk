@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isSuperAdmin, requireSameOrigin } from "@/lib/admin";
 import { db } from "@/lib/db";
-import { users as usersTable } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { users as usersTable, studySessions as sessionsTable } from "@/lib/db/schema";
+import { eq, sql, isNotNull, isNull } from "drizzle-orm";
 import { getDefaultAiTokenLimit } from "@/lib/ai-usage";
 
 const SUPER_ADMIN_EMAIL = "jaydenw0711@gmail.com";
@@ -13,20 +13,54 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const allUsers = await db.query.users.findMany();
-  const allSessions = await db.query.studySessions.findMany();
+  // Aggregate session stats per-user in SQL (one query each) instead of
+  // pulling every row from study_sessions and aggregating in JS. At
+  // ~1k users with ~50 sessions each, the old findMany approach moved
+  // 50k rows over the wire on every admin page load.
+  const [allUsers, completedAgg, activeAgg, lastActiveAgg] = await Promise.all([
+    db.query.users.findMany(),
+    db
+      .select({
+        userId: sessionsTable.userId,
+        sessionCount: sql<number>`count(*)`.as("session_count"),
+        totalMinutes: sql<number>`coalesce(sum(${sessionsTable.totalFocusedMinutes}), 0)`.as("total_minutes"),
+      })
+      .from(sessionsTable)
+      .where(isNotNull(sessionsTable.endedAt))
+      .groupBy(sessionsTable.userId),
+    db
+      .select({ userId: sessionsTable.userId })
+      .from(sessionsTable)
+      .where(isNull(sessionsTable.endedAt))
+      .groupBy(sessionsTable.userId),
+    db
+      .select({
+        userId: sessionsTable.userId,
+        lastStartedAt: sql<number | null>`max(${sessionsTable.startedAt})`.as("last_started_at"),
+      })
+      .from(sessionsTable)
+      .groupBy(sessionsTable.userId),
+  ]);
+
+  const completedByUser = new Map(
+    completedAgg.map((r) => [r.userId, { count: Number(r.sessionCount ?? 0), minutes: Number(r.totalMinutes ?? 0) }])
+  );
+  const activeUserIds = new Set(activeAgg.map((r) => r.userId));
+  const lastActiveByUser = new Map(
+    lastActiveAgg.map((r) => {
+      const raw = r.lastStartedAt;
+      if (raw == null) return [r.userId, null] as const;
+      // Drizzle returns timestamp-mode integers as ms-since-epoch numbers.
+      const d = new Date(typeof raw === "number" ? raw * 1000 : raw);
+      return [r.userId, isNaN(d.getTime()) ? null : d.toISOString()] as const;
+    })
+  );
+
   const defaultLimit = getDefaultAiTokenLimit();
 
   const users = allUsers.map((u) => {
-    const userSessions = allSessions.filter((s) => s.userId === u.id);
-    const completed = userSessions.filter((s) => s.endedAt);
-    const active = userSessions.find((s) => !s.endedAt);
-    const lastSession = userSessions
-      .sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0))[0];
+    const completed = completedByUser.get(u.id) ?? { count: 0, minutes: 0 };
 
-    // Effective limit the user is actually being capped at right now.
-    // Null means unlimited (neither user override nor deploy-level default
-    // is set). Super admin (owner) is always unlimited.
     const explicit = typeof u.aiTokenLimit === "number" && u.aiTokenLimit > 0 ? u.aiTokenLimit : null;
     const isSuperAdminUser = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
     const effectiveLimit = isSuperAdminUser ? null : explicit ?? defaultLimit;
@@ -38,10 +72,10 @@ export async function GET() {
       isAdmin: u.isAdmin === true || isSuperAdminUser,
       isSuperAdmin: isSuperAdminUser,
       createdAt: u.createdAt?.toISOString() ?? null,
-      sessionCount: completed.length,
-      totalMinutes: completed.reduce((s, r) => s + (r.totalFocusedMinutes ?? 0), 0),
-      lastActiveAt: lastSession?.startedAt?.toISOString() ?? null,
-      hasActiveSession: !!active,
+      sessionCount: completed.count,
+      totalMinutes: completed.minutes,
+      lastActiveAt: lastActiveByUser.get(u.id) ?? null,
+      hasActiveSession: activeUserIds.has(u.id),
       aiTokensUsed: u.aiTokensUsed ?? 0,
       aiTokenLimit: explicit,
       aiTokenLimitEffective: effectiveLimit,
