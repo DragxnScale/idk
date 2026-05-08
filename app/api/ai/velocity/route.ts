@@ -3,7 +3,7 @@ import { generateObject } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import {
@@ -631,13 +631,16 @@ SCHEMA — every field is REQUIRED on EVERY question:
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: payloadSchema,
-        system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
+        system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
         prompt: `Reading material (non-content / front-matter pages have already been removed where possible). Pages in the reading: ${
           readingPages.length > 0 ? readingPages.join(", ") : "unknown"
-        }. When tagging "pageIndex", use one of those numbers (or 0 if the concept cannot be tied to a specific page).\n\n${stripNonContentPages(
-          accumulatedText
-        ).slice(0, 10000)}\n\n${
-          notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
+        }. When tagging "pageIndex", use one of those numbers (or 0 if the concept cannot be tied to a specific page).\n\n${wrapUntrusted(
+          "reading material",
+          stripNonContentPages(accumulatedText).slice(0, 10000)
+        )}${
+          notesContext
+            ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
+            : ""
         }`,
       });
       await recordAiUsage(user.id, "/api/ai/velocity", usage);

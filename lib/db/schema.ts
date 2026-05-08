@@ -29,6 +29,15 @@ export const users = sqliteTable("users", {
   emailVerified: integer("email_verified", { mode: "timestamp" }),
   mutedUntil: integer("muted_until", { mode: "timestamp" }),
   isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
+  /**
+   * "Super owner" flag — granted owner-level capabilities (manage admins,
+   * use Owner AI chat, etc.) without depending on a hardcoded email match.
+   * Set this to `true` on yourself in Turso so you can never lock yourself
+   * out by losing access to the email used at signup. Multiple owners are
+   * allowed; the email-based fallback (`SUPER_ADMIN_EMAIL` in lib/admin.ts)
+   * still works as a safety net.
+   */
+  isOwner: integer("is_owner", { mode: "boolean" }).default(false),
   blocked: integer("blocked", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),

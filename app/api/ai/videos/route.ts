@@ -3,7 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
@@ -101,8 +101,11 @@ Rules:
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: videoSchema,
-    system: appendOwnerStyleToSystem(baseVideoSystem, ownerExtra),
-    prompt: `Study session reading material (excerpt):\n\n${accumulatedText.slice(0, 8000)}`,
+    system: appendOwnerStyleToSystem(baseVideoSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    prompt: `Suggest YouTube videos based on the reading material below.\n\n${wrapUntrusted(
+      "reading material",
+      accumulatedText.slice(0, 8000)
+    )}`,
   });
   await recordAiUsage(user.id, "/api/ai/videos", usage);
 

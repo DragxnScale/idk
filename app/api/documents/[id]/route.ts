@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: Params) {
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const admin = await isAdmin(user.id);
+  const admin = user.email ? await isAdmin(user.email) : false;
   if (doc.userId !== user.id && !admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -48,7 +48,7 @@ export async function PATCH(request: Request, { params }: Params) {
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const admin = await isAdmin(user.id);
+  const admin = user.email ? await isAdmin(user.email) : false;
   if (doc.userId !== user.id && !admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
-import { requireAdmin, isAdmin, isSuperAdmin } from "@/lib/admin";
+import { requireAdmin, isAdmin, isSuperAdmin, requireSameOrigin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users, studySessions, pageVisits, bannedEmails } from "@/lib/db/schema";
 
@@ -73,6 +73,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  if (!requireSameOrigin()) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+  }
   const session = await requireAdmin();
   if (!session) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -122,6 +125,9 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  if (!requireSameOrigin()) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+  }
   const session = await requireAdmin();
   if (!session) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

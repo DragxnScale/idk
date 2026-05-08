@@ -3,7 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { flashcards, aiNotes } from "@/lib/db/schema";
@@ -79,8 +79,11 @@ Rules:
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: flashcardSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
-    prompt: `Study notes:\n\n${notesSummary.slice(0, 12000)}`,
+    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    prompt: `Generate flashcards from the study notes below.\n\n${wrapUntrusted(
+      "study notes",
+      notesSummary.slice(0, 12000)
+    )}`,
   });
   await recordAiUsage(user.id, "/api/ai/flashcards", usage);
 

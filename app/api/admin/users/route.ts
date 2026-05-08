@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isSuperAdmin } from "@/lib/admin";
+import { requireAdmin, isSuperAdmin, requireSameOrigin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { users as usersTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -54,6 +54,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  if (!requireSameOrigin()) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+  }
   const session = await requireAdmin();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

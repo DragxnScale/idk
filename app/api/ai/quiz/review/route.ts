@@ -12,7 +12,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { quizzes } from "@/lib/db/schema";
@@ -95,8 +95,11 @@ Do not add review items for topics the student already demonstrated they underst
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: reviewSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
-    prompt: `Questions the student answered incorrectly:\n\n${wrongSummary}`,
+    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    prompt: `Generate review material targeting the questions below.\n\n${wrapUntrusted(
+      "wrong answers",
+      wrongSummary
+    )}`,
   });
   await recordAiUsage(user.id, "/api/ai/quiz/review", usage);
 

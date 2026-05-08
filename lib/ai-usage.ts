@@ -9,16 +9,18 @@ import { MODEL } from "@/lib/ai";
  * Fallback AI token budget used when a user has no per-user limit set
  * (`users.aiTokenLimit IS NULL`). Override at deploy time via the
  * `AI_TOKEN_LIMIT_DEFAULT` env var. Set to `0` (or any negative) to mean
- * "unlimited" — useful for local dev where you don't want to babysit a quota.
+ * "unlimited" — the admin UI will still show the running `aiTokensUsed`
+ * counter so the owner can watch spend and set per-user caps manually.
  *
- * Defaults to 500k tokens per user — roughly 100-200 notes calls or a
- * couple dozen quiz/velocity generations with room to spare.
+ * Currently defaults to `0` (unlimited). Bump this — or set
+ * `AI_TOKEN_LIMIT_DEFAULT` in Vercel — when you want a blanket cap on
+ * every user without needing to edit each row.
  */
 const DEFAULT_LIMIT_ENV = process.env.AI_TOKEN_LIMIT_DEFAULT;
 const DEFAULT_AI_TOKEN_LIMIT: number =
   DEFAULT_LIMIT_ENV != null && DEFAULT_LIMIT_ENV !== "" && Number.isFinite(Number(DEFAULT_LIMIT_ENV))
     ? Number(DEFAULT_LIMIT_ENV)
-    : 500_000;
+    : 0;
 
 /** Represents the effective token-quota state for a single user. */
 export interface AiTokenStatus {

@@ -3,7 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
@@ -196,10 +196,13 @@ Keep everything short and actionable. No filler.`;
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: reviewSchema,
-        system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
+        system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
         prompt: `Accuracy: ${accuracy}% (${correctCount}/${total}). Avg reaction: ${
           avgReactionMs ?? "n/a"
-        } ms.\n\nAttempts:\n${summary}\n\nWrong answers: ${wrong.length}.`,
+        } ms.\n\n${wrapUntrusted(
+          "attempts log",
+          summary
+        )}\n\nWrong answers: ${wrong.length}.`,
       });
       await recordAiUsage(user.id, "/api/ai/velocity/complete", usage);
       review = object;

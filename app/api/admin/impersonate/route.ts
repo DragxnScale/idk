@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { isAdmin } from "@/lib/admin";
+import { isAdmin, requireSameOrigin } from "@/lib/admin";
 import { VIEW_AS_COOKIE } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -11,6 +11,9 @@ import { users } from "@/lib/db/schema";
  * Sets or clears view-as-user cookie for admins only.
  */
 export async function POST(request: Request) {
+  if (!requireSameOrigin()) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+  }
   const session = await auth();
   if (!session?.user?.email || !(await isAdmin(session.user.email))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

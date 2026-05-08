@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { quizzes, aiNotes, users } from "@/lib/db/schema";
@@ -116,9 +116,14 @@ Generate exactly ${targetQ} multiple-choice questions testing comprehension of t
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: questionsSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra),
-    prompt: `Reading material:\n${accumulatedText.slice(0, 10000)}\n\n${
-      notesContext ? `Session notes:\n${notesContext.slice(0, 3000)}` : ""
+    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    prompt: `Generate the quiz from the reading material below.\n\n${wrapUntrusted(
+      "reading material",
+      accumulatedText.slice(0, 10000)
+    )}${
+      notesContext
+        ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
+        : ""
     }`,
   });
   await recordAiUsage(authUser.id, "/api/ai/quiz", usage);

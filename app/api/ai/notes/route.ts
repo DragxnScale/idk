@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { and, eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
@@ -79,8 +79,11 @@ export async function POST(request: Request) {
   const ownerExtra = await getAiOwnerStyleExtra();
   const { text: rawNotes, usage } = await generateText({
     model: openai(MODEL),
-    system: appendOwnerStyleToSystem(BASE_SYSTEM, ownerExtra),
-    prompt: `Page ${pageNumber}:\n\n${pageText.slice(0, 6000)}`,
+    system: appendOwnerStyleToSystem(BASE_SYSTEM, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    prompt: `Generate notes for page ${pageNumber} of the textbook.\n\n${wrapUntrusted(
+      "page text",
+      pageText.slice(0, 6000)
+    )}`,
   });
   await recordAiUsage(user.id, "/api/ai/notes", usage);
 

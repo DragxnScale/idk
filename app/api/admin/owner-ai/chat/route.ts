@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { requireSuperOwner } from "@/lib/admin";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { recordAiUsage } from "@/lib/ai-usage";
 
 const MAX_MESSAGES = 24;
@@ -60,9 +60,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Owner AI chat is trusted (owner-only), but we still prepend a system
+    // message with the standard untrusted-input guard so that any pasted
+    // text (logs, error messages, third-party responses) doesn't get
+    // interpreted as instructions to the model.
+    const messagesWithGuard: { role: Role; content: string }[] = [
+      { role: "system", content: `You are an internal debugging assistant for the project owner.${UNTRUSTED_INPUT_GUARD}` },
+      ...messages,
+    ];
     const { text, usage } = await generateText({
       model: openai(MODEL),
-      messages,
+      messages: messagesWithGuard,
     });
     // Owner chat is super-admin only; no budget gate (owner has no cap) but
     // we still record so the admin dashboard shows the tokens spent.
