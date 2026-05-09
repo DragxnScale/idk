@@ -248,6 +248,7 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | POST | `/api/user/drive/import` | Import PDF from URL or ZIP (streams to Blob). |
 | POST | `/api/user/drive/link` | Link external URL as document. |
 | GET | `/api/user/storage` | Returns `{ usedBytes, quotaBytes, pct, usedFormatted, quotaFormatted }` for the current user. |
+| GET | `/api/user/ai-usage` | Returns the caller's AI token usage: `{ used, limit, remaining, overBudget, pct, unlimited, breakdown[] }`. `breakdown` is the last-30-days per-route token + call count, used by the dashboard "AI usage" card. |
 | GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`, Pomodoro config). |
 | PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz bounds; Pomodoro fields: focus 1–90 min, break 1–30 min, long break 1–60 min, cycles 1–10). |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |

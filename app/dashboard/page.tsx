@@ -117,6 +117,25 @@ export default function DashboardPage() {
     lastStudiedAt: string | null;
   }[]>([]);
 
+  // Per-user AI token usage. Mirrors the admin Users-tab counter so the
+  // user can see their own consumption without admin access.
+  const [aiUsage, setAiUsage] = useState<{
+    used: number;
+    limit: number | null;
+    remaining: number | null;
+    overBudget: boolean;
+    pct: number | null;
+    unlimited: boolean;
+    breakdown: { route: string; tokens: number; calls: number }[];
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/user/ai-usage")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setAiUsage)
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     async function fetchStats(retries = 3): Promise<StatsData | null> {
       for (let i = 0; i < retries; i++) {
@@ -476,6 +495,98 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold mb-4">Activity</h2>
           <HeatmapCalendar />
         </div>
+
+        {/* AI token usage */}
+        {aiUsage && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex items-baseline justify-between gap-4 mb-3">
+              <h2 className="text-sm font-semibold">AI usage</h2>
+              <span
+                className={`text-xs font-mono ${
+                  aiUsage.overBudget
+                    ? "text-red-500 font-bold"
+                    : aiUsage.pct != null && aiUsage.pct >= 75
+                      ? "text-amber-500"
+                      : "text-gray-500 dark:text-gray-400"
+                }`}
+                title={
+                  aiUsage.unlimited
+                    ? "No cap is currently enforced for your account."
+                    : `${aiUsage.used.toLocaleString()} of ${aiUsage.limit?.toLocaleString() ?? "—"} tokens used`
+                }
+              >
+                {aiUsage.used.toLocaleString()}
+                <span className="text-gray-400">
+                  {aiUsage.unlimited
+                    ? " tokens used"
+                    : ` / ${aiUsage.limit?.toLocaleString() ?? "—"} tokens`}
+                </span>
+              </span>
+            </div>
+
+            {!aiUsage.unlimited && aiUsage.pct != null && (
+              <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    aiUsage.pct >= 100
+                      ? "bg-red-500"
+                      : aiUsage.pct >= 75
+                        ? "bg-amber-500"
+                        : "bg-accent"
+                  }`}
+                  style={{ width: `${Math.min(100, aiUsage.pct)}%` }}
+                />
+              </div>
+            )}
+
+            {aiUsage.overBudget ? (
+              <p className="text-xs text-red-500 font-medium">
+                You&apos;ve hit your AI token limit. Notes, quizzes, flashcards, and Velocity question generation are paused — contact an admin to raise the cap.
+              </p>
+            ) : aiUsage.unlimited ? (
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Tracked for transparency — no cap currently applied.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {aiUsage.remaining?.toLocaleString() ?? "—"} tokens remaining ({aiUsage.pct ?? 0}% used).
+              </p>
+            )}
+
+            {aiUsage.breakdown.length > 0 && (
+              <div className="mt-4 border-t border-gray-100 dark:border-gray-800 pt-3">
+                <p className="text-[11px] uppercase tracking-wide font-semibold text-gray-400 mb-2">
+                  Last 30 days · by feature
+                </p>
+                <ul className="space-y-1">
+                  {aiUsage.breakdown.map((b) => {
+                    const label = (() => {
+                      const m = b.route.match(/\/api\/ai\/([^/]+)(?:\/(.+))?/);
+                      if (!m) return b.route;
+                      const [, head, tail] = m;
+                      return tail ? `${head} (${tail.replace("/", " · ")})` : head;
+                    })();
+                    return (
+                      <li
+                        key={b.route}
+                        className="flex items-baseline justify-between text-xs text-gray-600 dark:text-gray-300"
+                      >
+                        <span className="capitalize">{label}</span>
+                        <span className="font-mono text-gray-500 dark:text-gray-400">
+                          {b.tokens.toLocaleString()}
+                          <span className="text-gray-400 dark:text-gray-500">
+                            {" "}
+                            · {b.calls} call{b.calls !== 1 ? "s" : ""}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Textbook progress */}
         {textbookProgress.length > 0 && (
