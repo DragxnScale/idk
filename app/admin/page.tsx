@@ -2630,12 +2630,24 @@ interface BlobItem {
   uploadedAt: string;
 }
 
+function isPdfBlobPathname(pathname: string): boolean {
+  const lower = pathname.toLowerCase();
+  try {
+    const last = decodeURIComponent(lower.split("/").pop() ?? "");
+    return last.endsWith(".pdf");
+  } catch {
+    return lower.endsWith(".pdf");
+  }
+}
+
 function StorageTab() {
   const [blobs, setBlobs] = useState<BlobItem[]>([]);
   const [totalSize, setTotalSize] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BlobItem | null>(null);
+  /** When set, an overlay shows this blob in an iframe (PDF) or opens a new tab (non-PDF). */
+  const [previewBlob, setPreviewBlob] = useState<BlobItem | null>(null);
   const [filter, setFilter] = useState<"all" | "user" | "admin">("all");
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState<{
@@ -2668,6 +2680,23 @@ function StorageTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!previewBlob) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewBlob(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewBlob]);
+
+  function openBlobPreview(blob: BlobItem) {
+    if (isPdfBlobPathname(blob.pathname)) {
+      setPreviewBlob(blob);
+    } else {
+      window.open(blob.url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   async function deleteBlob(blob: BlobItem) {
     setDeleting(blob.url);
@@ -2795,7 +2824,14 @@ function StorageTab() {
             return (
               <div key={blob.url} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate" title={name}>{name}</p>
+                  <button
+                    type="button"
+                    onClick={() => openBlobPreview(blob)}
+                    className="text-left text-sm font-medium truncate w-full max-w-full text-white hover:text-cyan-300 hover:underline underline-offset-2 cursor-pointer"
+                    title={isPdfBlobPathname(blob.pathname) ? "View PDF" : "Open file in new tab"}
+                  >
+                    {name}
+                  </button>
                   <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
                     <span className={`px-1.5 py-0.5 rounded font-medium ${isUserUpload(blob) ? "bg-blue-900/50 text-blue-400" : "bg-green-900/50 text-green-400"}`}>
                       {isUserUpload(blob) ? "User" : "Catalog"}
@@ -2805,21 +2841,67 @@ function StorageTab() {
                     <span className="truncate max-w-[200px] text-gray-600" title={folder}>{folder}/</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setConfirmDelete(blob)}
-                  disabled={deleting === blob.url}
-                  className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40 flex-shrink-0"
-                >
-                  {deleting === blob.url ? "…" : "Delete"}
-                </button>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openBlobPreview(blob)}
+                    className="rounded-md border border-cyan-800 px-3 py-1 text-xs text-cyan-400 hover:bg-cyan-900/30 transition"
+                    title={isPdfBlobPathname(blob.pathname) ? "Preview PDF" : "Open in new tab"}
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(blob)}
+                    disabled={deleting === blob.url}
+                    className="rounded-md border border-red-800 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30 transition disabled:opacity-40"
+                  >
+                    {deleting === blob.url ? "…" : "Delete"}
+                  </button>
+                </div>
               </div>
             );
           })}
       </div>
 
+      {/* PDF preview (blob URL is public; admin-only page) */}
+      {previewBlob && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-black/90 backdrop-blur-sm p-3 sm:p-6">
+          <div className="flex items-center justify-between gap-3 mb-3 shrink-0 max-w-6xl mx-auto w-full">
+            <p className="text-sm font-medium text-white truncate pr-4" title={decodeURIComponent(previewBlob.pathname.split("/").pop() ?? previewBlob.pathname)}>
+              {decodeURIComponent(previewBlob.pathname.split("/").pop() ?? previewBlob.pathname)}
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href={previewBlob.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 transition"
+              >
+                Open in new tab
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewBlob(null)}
+                className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black hover:bg-gray-200 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 max-w-6xl mx-auto w-full rounded-lg border border-gray-800 overflow-hidden bg-gray-950">
+            <iframe
+              title="PDF preview"
+              src={previewBlob.url}
+              className="w-full h-full min-h-[70vh] border-0"
+            />
+          </div>
+          <p className="text-center text-[11px] text-gray-500 mt-2 shrink-0">Press Escape to close</p>
+        </div>
+      )}
+
       {/* Delete confirmation modal */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
             <h2 className="text-base font-semibold mb-1">Delete this blob?</h2>
             <p className="text-sm text-gray-400 mb-1 truncate">{decodeURIComponent(confirmDelete.pathname)}</p>

@@ -81,7 +81,7 @@ High-level map (only meaningful directories and notable files).
 │   │   ├── session/[id]/summary/page.tsx  # Post-session: stats, notes, quiz, review, flashcards
 │   │   └── history/page.tsx
 │   ├── settings/page.tsx
-│   ├── admin/page.tsx            # Admin console (guarded)
+│   ├── admin/page.tsx            # Admin console (guarded); Storage tab: PDF blob preview overlay
 │   └── api/                      # Route handlers (see §5)
 ├── components/
 │   ├── study/                    # Timer, PDF, picker, AI notes, quiz, review, flashcards
@@ -513,6 +513,10 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 **Dashboard**
 
 - **`PageViewerModal.tsx`** — Simplified PDF view for a bookmark item.
+
+**Admin (`app/admin/page.tsx`)**
+
+- **Storage / Blob uploads tab** — Lists Vercel Blob pathnames; **View** and clickable **PDF** titles open a full-screen preview (`iframe` to the blob URL, Escape to close, optional "Open in new tab"); non-PDF filenames open in a new browser tab instead. Delete confirmation modal stacks above the preview (`z-index`).
 
 ### 7.3 Dashboard features
 
