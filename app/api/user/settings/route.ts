@@ -45,13 +45,56 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { currentPassword, newExitPassword, dailyMinutesGoal, dailySessionsGoal, inactivityTimeout, themeId, quizMinQuestions, quizMaxQuestions, defaultGoalType, defaultTargetValue, name, pomodoroEnabled, pomodoroFocusMin, pomodoroBreakMin, pomodoroLongBreakMin, pomodoroCycles } = body;
+  const {
+    currentPassword,
+    newExitPassword,
+    currentLoginPassword,
+    newLoginPassword,
+    confirmLoginPassword,
+    dailyMinutesGoal,
+    dailySessionsGoal,
+    inactivityTimeout,
+    themeId,
+    quizMinQuestions,
+    quizMaxQuestions,
+    defaultGoalType,
+    defaultTargetValue,
+    name,
+    pomodoroEnabled,
+    pomodoroFocusMin,
+    pomodoroBreakMin,
+    pomodoroLongBreakMin,
+    pomodoroCycles,
+  } = body;
 
   const row = await db.query.users.findFirst({
     where: (u, { eq }) => eq(u.id, authUser.id),
   });
   if (!row) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  // ── Login password change ─────────────────────────────────────────
+  if (currentLoginPassword !== undefined && newLoginPassword !== undefined) {
+    if (typeof newLoginPassword !== "string" || newLoginPassword.length < 6) {
+      return NextResponse.json(
+        { error: "New login password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+    if (typeof confirmLoginPassword !== "string" || confirmLoginPassword !== newLoginPassword) {
+      return NextResponse.json({ error: "New login passwords do not match" }, { status: 400 });
+    }
+    if (!row.passwordHash) {
+      return NextResponse.json({ error: "No login password set for this account" }, { status: 400 });
+    }
+    const valid = await verifyPassword(String(currentLoginPassword), row.passwordHash);
+    if (!valid) {
+      return NextResponse.json({ error: "Incorrect current password" }, { status: 401 });
+    }
+    const passwordHash = await hashPassword(newLoginPassword);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, authUser.id));
+    return NextResponse.json({ ok: true });
   }
 
   // ── Exit password change ──────────────────────────────────────────

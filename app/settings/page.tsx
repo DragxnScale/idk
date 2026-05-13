@@ -360,21 +360,62 @@ export default function SettingsPage() {
     }
   }
 
-  // ── Exit password ───────────────────────────────────────────────────
+  // ── Exit password + login password ─────────────────────────────────
   const [currentPassword, setCurrentPassword] = useState("");
   const [newExitPassword, setNewExitPassword] = useState("");
-  const [confirmExitPassword, setConfirmExitPassword] = useState("");
   const [pwStatus, setPwStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [pwMessage, setPwMessage] = useState<string | null>(null);
+
+  const [loginCurrentPassword, setLoginCurrentPassword] = useState("");
+  const [loginNewPassword, setLoginNewPassword] = useState("");
+  const [loginConfirmPassword, setLoginConfirmPassword] = useState("");
+  const [loginPwStatus, setLoginPwStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [loginPwMessage, setLoginPwMessage] = useState<string | null>(null);
+
+  async function handleLoginPasswordSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginPwMessage(null);
+    if (loginNewPassword !== loginConfirmPassword) {
+      setLoginPwStatus("error");
+      setLoginPwMessage("New passwords don't match.");
+      return;
+    }
+    if (loginNewPassword.length < 6) {
+      setLoginPwStatus("error");
+      setLoginPwMessage("Login password must be at least 6 characters.");
+      return;
+    }
+    setLoginPwStatus("loading");
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentLoginPassword: loginCurrentPassword,
+          newLoginPassword: loginNewPassword,
+          confirmLoginPassword: loginConfirmPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setLoginPwStatus("success");
+        setLoginPwMessage("Login password updated.");
+        setLoginCurrentPassword("");
+        setLoginNewPassword("");
+        setLoginConfirmPassword("");
+      } else {
+        setLoginPwStatus("error");
+        setLoginPwMessage(data.error ?? "Something went wrong.");
+      }
+    } catch {
+      setLoginPwStatus("error");
+      setLoginPwMessage("Network error. Please try again.");
+    }
+  }
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPwMessage(null);
-    if (newExitPassword !== confirmExitPassword) {
-      setPwStatus("error");
-      setPwMessage("New passwords don't match.");
-      return;
-    }
     if (newExitPassword.length < 4) {
       setPwStatus("error");
       setPwMessage("Exit password must be at least 4 characters.");
@@ -393,7 +434,6 @@ export default function SettingsPage() {
         setPwMessage("Exit password updated.");
         setCurrentPassword("");
         setNewExitPassword("");
-        setConfirmExitPassword("");
       } else {
         setPwStatus("error");
         setPwMessage(data.error ?? "Something went wrong.");
@@ -778,14 +818,62 @@ export default function SettingsPage() {
                 <h2 className={titleClass("exit-password", "mb-1")}>
                   <SuiText page="settings" k="exit-password.title" def="Exit password" as="span" />
                 </h2>
-                <p className={descClass("exit-password", "mb-5")}>
-                  <SuiText
-                    page="settings"
-                    k="exit-password.desc"
-                    def="Required to end a study session early. Defaults to your login password if not changed."
-                    as="span"
-                  />
-                </p>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/50 mb-5">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Change login password</h3>
+                  <form onSubmit={handleLoginPasswordSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current password</label>
+                      <input
+                        type="password"
+                        value={loginCurrentPassword}
+                        onChange={(e) => setLoginCurrentPassword(e.target.value)}
+                        required
+                        autoComplete="current-password"
+                        placeholder="Your current login password"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New password</label>
+                      <input
+                        type="password"
+                        value={loginNewPassword}
+                        onChange={(e) => setLoginNewPassword(e.target.value)}
+                        required
+                        autoComplete="new-password"
+                        placeholder="At least 6 characters"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new password</label>
+                      <input
+                        type="password"
+                        value={loginConfirmPassword}
+                        onChange={(e) => setLoginConfirmPassword(e.target.value)}
+                        required
+                        autoComplete="new-password"
+                        placeholder="Repeat new password"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                      />
+                    </div>
+                    {loginPwMessage && (
+                      <p className={`text-sm ${loginPwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                        {loginPwMessage}
+                      </p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={loginPwStatus === "loading"}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-50"
+                    >
+                      {loginPwStatus === "loading" ? "Updating…" : "Update login password"}
+                    </button>
+                  </form>
+                </div>
+
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Exit session password</h3>
                 <form onSubmit={handlePasswordSubmit} className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current login password</label>
@@ -794,10 +882,6 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New exit password</label>
                     <input type="password" value={newExitPassword} onChange={(e) => setNewExitPassword(e.target.value)} required autoComplete="new-password" placeholder="At least 4 characters" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new exit password</label>
-                    <input type="password" value={confirmExitPassword} onChange={(e) => setConfirmExitPassword(e.target.value)} required autoComplete="new-password" placeholder="Repeat new exit password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
                   </div>
                   {pwMessage && (
                     <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
