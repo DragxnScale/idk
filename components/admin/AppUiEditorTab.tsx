@@ -588,7 +588,7 @@ export function AppUiEditorTab() {
 
             <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
               <h3 className="text-base font-semibold mb-1">
-                <Editable suiKey="exit-password.title" def="Exit password" />
+                <Editable suiKey="exit-password.title" def="Passwords" />
               </h3>
               <p className="text-sm text-slate-400 mb-4">
                 <Editable

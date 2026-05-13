@@ -99,6 +99,7 @@ High-level map (only meaningful directories and notable files).
 │   │   └── seed-textbooks.ts
 │   ├── password.ts               # Password hashing / verification
 │   ├── prefs.ts                  # User prefs (e.g. PDF zoom)
+│   ├── pdf-client-url.ts         # `pdfClientLoadUrl()` — Vercel Blob → `/api/blob/serve`, else `/api/proxy/pdf`
 │   ├── themes.ts                 # Theme tokens
 │   ├── music.ts                  # Study playlist helpers
 │   └── store.ts                  # Client-side store utilities
@@ -513,11 +514,11 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 **Dashboard**
 
-- **`PageViewerModal.tsx`** — Simplified PDF view for a bookmark item.
+- **`PageViewerModal.tsx`** — Simplified PDF view for a bookmark item; uses **`pdfClientLoadUrl()`** so stored `file_url` blobs load via `/api/blob/serve` (private blob auth + pdf.js range quirks) and other HTTPS PDFs via `/api/proxy/pdf`.
 
 **Admin (`app/admin/page.tsx`)**
 
-- **Storage / Blob uploads tab** — Lists Vercel Blob pathnames; **View** and clickable **PDF** titles open a full-screen preview (`iframe` to the blob URL, Escape to close, optional "Open in new tab"); non-PDF filenames open in a new browser tab instead. Delete confirmation modal stacks above the preview (`z-index`).
+- **Storage / Blob uploads tab** — Lists Vercel Blob pathnames; **View** and clickable **PDF** titles open a full-screen preview (`iframe` to **`/api/blob/serve?url=…`** so private blobs and Safari's PDF plug-in get authenticated bytes, Escape to close, "Open in new tab" uses the same URL); non-PDF filenames open the raw blob URL in a new browser tab instead. Delete confirmation modal stacks above the preview (`z-index`).
 
 ### 7.3 Dashboard features
 

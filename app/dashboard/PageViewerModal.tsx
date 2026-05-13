@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import { pdfClientLoadUrl } from "@/lib/pdf-client-url";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -146,13 +147,15 @@ export default function PageViewerModal({
     firstMark?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [item, pageNum]);
 
+  const proxiedUrl = item.pdfUrl ? pdfClientLoadUrl(item.pdfUrl) : "";
+  const pdfOptions = useMemo(
+    () => (proxiedUrl.includes("/api/blob/serve") ? { disableAutoFetch: true, disableStream: true } : {}),
+    [proxiedUrl]
+  );
+
   if (!item.pdfUrl) return null;
 
   const renderWidth = containerWidth || 600;
-  const isExternal = item.pdfUrl.startsWith("http");
-  const proxiedUrl = isExternal
-    ? `/api/proxy/pdf?url=${encodeURIComponent(item.pdfUrl)}`
-    : item.pdfUrl;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -225,6 +228,7 @@ export default function PageViewerModal({
           <div ref={pageWrapRef}>
             <Document
               file={proxiedUrl}
+              options={pdfOptions}
               onLoadSuccess={({ numPages: total }) => setNumPages(total)}
               loading={
                 <div className="flex min-h-[300px] items-center justify-center">

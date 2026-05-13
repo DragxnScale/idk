@@ -2690,6 +2690,11 @@ function StorageTab() {
     return () => window.removeEventListener("keydown", onKey);
   }, [previewBlob]);
 
+  /** Authenticated same-origin URL so private blobs and Safari iframe PDF work. */
+  function blobPdfServeSrc(blob: BlobItem): string {
+    return `/api/blob/serve?url=${encodeURIComponent(blob.url)}`;
+  }
+
   function openBlobPreview(blob: BlobItem) {
     if (isPdfBlobPathname(blob.pathname)) {
       setPreviewBlob(blob);
@@ -2872,7 +2877,7 @@ function StorageTab() {
             </p>
             <div className="flex items-center gap-2 shrink-0">
               <a
-                href={previewBlob.url}
+                href={blobPdfServeSrc(previewBlob)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 transition"
@@ -2891,7 +2896,7 @@ function StorageTab() {
           <div className="flex-1 min-h-0 max-w-6xl mx-auto w-full rounded-lg border border-gray-800 overflow-hidden bg-gray-950">
             <iframe
               title="PDF preview"
-              src={previewBlob.url}
+              src={blobPdfServeSrc(previewBlob)}
               className="w-full h-full min-h-[70vh] border-0"
             />
           </div>

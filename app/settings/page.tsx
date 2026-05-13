@@ -883,7 +883,7 @@ export default function SettingsPage() {
               <section key="exit-password" style={{ ...cardGridCol("exit-password"), ...cardStyle("exit-password") }} className={CS}>
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <h2 className={titleClass("exit-password", "mb-0")}>
-                    <SuiText page="settings" k="exit-password.title" def="Exit password" as="span" />
+                    <SuiText page="settings" k="exit-password.title" def="Passwords" as="span" />
                   </h2>
                   {passwordFormsUnlocked && (
                     <button

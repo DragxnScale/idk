@@ -14,6 +14,7 @@ import { enqueueOfflineSession, updateOfflineSession, syncOfflineSessions, isOff
 import { PomodoroTimer } from "@/components/study/PomodoroTimer";
 import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
 import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
+import { pdfClientLoadUrl } from "@/lib/pdf-client-url";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 const PdfViewer = dynamic(
@@ -981,27 +982,18 @@ function StudySessionInner() {
   function getPdfUrl(): string | null {
     if (!selectedDoc) return null;
 
-    function serveBlobUrl(url: string): string {
-      if (url.includes(".private.blob.vercel-storage.com")) {
-        return `/api/blob/serve?url=${encodeURIComponent(url)}`;
-      }
-      return url;
-    }
-
     if (selectedDoc.type === "upload") {
       if (selectedDoc.sourceUrl) {
         const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-        if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
+        if (isBlob) return pdfClientLoadUrl(selectedDoc.sourceUrl);
         const isExternal = !selectedDoc.sourceUrl.startsWith("/");
-        if (isExternal) return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
+        if (isExternal) return pdfClientLoadUrl(selectedDoc.sourceUrl);
         return selectedDoc.sourceUrl;
       }
       return `/api/documents/${selectedDoc.documentId}/file`;
     }
     if (selectedDoc.type === "textbook" && selectedDoc.sourceUrl) {
-      const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-      if (isBlob) return serveBlobUrl(selectedDoc.sourceUrl);
-      return `/api/proxy/pdf?url=${encodeURIComponent(selectedDoc.sourceUrl)}`;
+      return pdfClientLoadUrl(selectedDoc.sourceUrl);
     }
     return null;
   }
