@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
+import { putPdf } from "@/lib/storage-backend";
 
 export async function POST(request: Request) {
   const user = await getAppUser();
@@ -21,7 +21,8 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   const filename = `${user.id}/${id}.pdf`;
 
-  const blob = await put(filename, file, { access: "public", contentType: "application/pdf" });
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const stored = await putPdf(filename, buffer, { contentType: "application/pdf" });
 
   const now = new Date();
   await db.insert(documents).values({
@@ -29,10 +30,11 @@ export async function POST(request: Request) {
     userId: user.id,
     title,
     sourceType: "upload",
-    fileUrl: blob.url,
+    fileUrl: stored.url,
+    fileSizeBytes: file.size,
     createdAt: now,
     updatedAt: now,
   });
 
-  return NextResponse.json({ id, title, fileUrl: blob.url });
+  return NextResponse.json({ id, title, fileUrl: stored.url });
 }

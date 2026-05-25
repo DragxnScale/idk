@@ -1,8 +1,10 @@
-import { put } from "@vercel/blob";
 import { decode } from "next-auth/jwt";
 import { NextResponse } from "next/server";
+import { putPdf } from "@/lib/storage-backend";
 
-export const runtime = "edge";
+// Node runtime — the storage adapter pulls in @aws-sdk/lib-storage which
+// needs Node streams. Vercel Blob `put` works on Node too.
+export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const SESSION_COOKIE = "sf.session-token";
@@ -34,10 +36,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
-  }
-
   const { searchParams } = new URL(request.url);
   const pathname = searchParams.get("pathname");
   if (!pathname) {
@@ -49,12 +47,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const blob = await put(pathname, request.body, {
-      access: "public",
+    const stored = await putPdf(pathname, request.body, {
       contentType: "application/pdf",
-      multipart: true,
     });
-    return NextResponse.json({ url: blob.url, pathname: blob.pathname });
+    return NextResponse.json({ url: stored.url, pathname: stored.pathname });
   } catch (err) {
     console.error("[stream-upload] error:", err);
     return NextResponse.json(

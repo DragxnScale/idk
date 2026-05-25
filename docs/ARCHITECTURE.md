@@ -20,7 +20,7 @@ flowchart LR
   end
   subgraph data [Data and AI]
     DB[(LibSQL / SQLite)]
-    Blob[Vercel Blob CDN]
+    Blob[(Vercel Blob CDN<br/>or Cloudflare R2)]
     OAI[OpenAI API]
   end
   UI --> API
@@ -46,7 +46,7 @@ flowchart LR
 | Database | `@libsql/client` — `DATABASE_URL` (file or Turso), optional `DATABASE_AUTH_TOKEN` |
 | AI | Vercel AI SDK (`ai`), `@ai-sdk/openai`, Zod schemas |
 | PDF | `react-pdf` + pdf.js (worker from unpkg) |
-| Storage | `@vercel/blob` — all uploads use `access: "public"` for CDN delivery |
+| Storage | `@vercel/blob` (default) **or** Cloudflare R2 (S3-compatible) — selected per-deployment via `STORAGE_BACKEND`. The adapter in `lib/storage-backend.ts` does dispatch by URL host on read/delete so legacy and new URLs coexist during migration. |
 | Compression | `fflate` (ZIP import on drive) |
 
 **Build / config**
@@ -99,7 +99,9 @@ High-level map (only meaningful directories and notable files).
 │   │   └── seed-textbooks.ts
 │   ├── password.ts               # Password hashing / verification
 │   ├── prefs.ts                  # User prefs (e.g. PDF zoom)
-│   ├── pdf-client-url.ts         # `pdfClientLoadUrl()` — Vercel Blob → `/api/blob/serve`, else `/api/proxy/pdf`
+│   ├── pdf-client-url.ts         # `pdfClientLoadUrl()` — Vercel Blob / R2 → `/api/blob/serve`, else `/api/proxy/pdf`
+│   ├── storage-backend.ts        # Pluggable PDF storage adapter (Vercel Blob + Cloudflare R2)
+│   ├── upload-client.ts          # Browser-side `uploadPdfToStorage()` — handles both VB token + R2 presigned PUT
 │   ├── themes.ts                 # Theme tokens
 │   ├── music.ts                  # Study playlist helpers
 │   └── store.ts                  # Client-side store utilities
@@ -108,6 +110,7 @@ High-level map (only meaningful directories and notable files).
 ├── public/                       # Static assets, sw.js, icons
 ├── scripts/
 │   ├── migrate-blobs-public.mjs  # One-off: re-upload private blobs as public
+│   ├── migrate-vercel-blob-to-r2.mjs # One-shot: copy every PDF from Vercel Blob to Cloudflare R2 + rewrite URLs in DB
 │   └── bump-version.mjs
 ├── docs/
 │   └── ARCHITECTURE.md           # This file
@@ -295,13 +298,13 @@ All uploads use `access: "public"` so PDFs are served directly from the Vercel C
 
 | Method | Path | Runtime / notes |
 |--------|------|-------------------|
-| POST | `/api/blob/upload` | Server upload helper. |
-| POST | `/api/blob/upload-direct` | Stream body to Blob + insert `documents`. |
-| POST | `/api/blob/stream-upload` | **Edge** — JWT from cookie for auth; multipart stream. |
-| POST | `/api/blob/multipart` | Multipart completion / parts. |
-| POST | `/api/blob/token` | Legacy or internal token issuance. |
-| POST | `/api/blob/client-token` | Token for **client-side** `@vercel/blob/client` uploads. |
-| GET, HEAD | `/api/blob/serve` | Serve or probe blob access. |
+| POST | `/api/blob/upload` | Vercel Blob `handleUpload()` callback. Only used while `STORAGE_BACKEND=vercel-blob`. |
+| POST | `/api/blob/upload-direct` | Streams the request body to the active backend (`putPdf()`), inserts a `documents` row, returns the stored URL. |
+| POST | `/api/blob/stream-upload` | Same idea, JWT-from-cookie auth, longer `maxDuration` for big files. |
+| POST | `/api/blob/multipart` | Vercel-Blob-specific multipart completion. Unused on R2 (presigned PUT covers our file sizes). |
+| POST | `/api/blob/token` | Legacy Vercel-Blob token issuance. |
+| POST | `/api/blob/client-token` | **Backend-aware client upload init.** Returns `{ backend: "vercel-blob", clientToken }` while VB is active, or `{ backend: "r2", uploadUrl, objectUrl, pathname }` for R2 (a presigned PUT URL the browser writes directly to). The browser-side `lib/upload-client.ts` handles both shapes. |
+| GET, HEAD | `/api/blob/serve` | Authenticated PDF read proxy. Dispatches by URL host via `lib/storage-backend.ts` so legacy Vercel Blob URLs and new Cloudflare R2 URLs both work, including `Range` requests. |
 | GET | `/api/blob/health` | Health check (admin-only). |
 
 ### 5.12 Admin APIs
@@ -316,7 +319,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session — session meta, document info, full `pageVisits[]`, plus **`quiz`** (score / accuracy / questions with highlighted correct option / review) and **`velocity`** (accuracy / reaction stats / per-attempt log with topic, user answer, correct answer, reaction time / growth areas). Admin UI renders dedicated **Quiz Performance** + **Velocity Performance** cards in the session detail view. |
 | GET | `/api/admin/catalog/cleanup-blobs` | Dry-run preview: reports how many rows/blobs would be deleted and estimated freed bytes. |
 | POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Recalculates `storageBytes` for affected users. |
-| GET, DELETE | `/api/admin/blobs` | List / delete blobs. |
+| GET, DELETE | `/api/admin/blobs` | List / delete blobs. `GET` lists across **every configured backend** (Vercel Blob and/or Cloudflare R2) via `lib/storage-backend.ts`, tags each row with `backend: "vercel-blob" \| "r2"`, and enriches user-upload rows from `documents.file_url` + `users` so they include `documentTitle`, `documentSourceType`, and uploader `{ id, name, email }`. `DELETE` dispatches by URL host so legacy and new objects are removed from the right backend. |
 | GET | `/api/admin/blob-lookup` | Resolve blob metadata. |
 | GET, POST | `/api/admin/blob-token` | Token for admin uploads (admin-only). |
 | GET | `/api/admin/blob-client-token` | Client token for admin UI. |
@@ -518,7 +521,7 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 **Admin (`app/admin/page.tsx`)**
 
-- **Storage / Blob uploads tab** — Lists Vercel Blob pathnames; **View** and clickable **PDF** titles open a full-screen preview (`iframe` to **`/api/blob/serve?url=…`** so private blobs and Safari's PDF plug-in get authenticated bytes, Escape to close, "Open in new tab" uses the same URL); non-PDF filenames open the raw blob URL in a new browser tab instead. Delete confirmation modal stacks above the preview (`z-index`).
+- **Storage / Blob uploads tab** — Lists every PDF stored across the active backends (Vercel Blob and/or Cloudflare R2). Each row carries a **VB / R2** badge so the admin can tell which backend hosts the object. User-upload rows show **Uploaded by** with the owner name/email from `GET /api/admin/blobs`; **View** and clickable **PDF** titles open a full-screen preview (`iframe` to **`/api/blob/serve?url=…`** so private VB blobs, R2 SigV4 reads, and Safari's PDF plug-in all get authenticated bytes, Escape to close, "Open in new tab" uses the same URL); non-PDF filenames open the raw blob URL in a new browser tab instead. Delete confirmation modal stacks above the preview (`z-index`).
 
 ### 7.3 Dashboard features
 
@@ -575,6 +578,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 | `npm run db:push` | Drizzle push schema to DB. |
 | `npm run db:generate` / `db:migrate` | Migrations. |
 | `scripts/migrate-blobs-public.mjs` | Migrates private Blob URLs in `textbook_catalog` to public. |
+| `scripts/migrate-vercel-blob-to-r2.mjs` | Copies every PDF from Vercel Blob into Cloudflare R2 and rewrites `documents.file_url`, `textbook_catalog.cached_blob_url`, `textbook_catalog.source_url`. Defaults to dry-run; pass `--execute` to copy + rewrite, `--delete-source` to also clean up Vercel Blob afterwards. |
 | `scripts/bump-version.mjs` | Version bump helper (runs automatically on commit via git hook). |
 
 ---
@@ -587,7 +591,9 @@ See **`.env.example`** for the canonical list. Typical production setup:
 - `DATABASE_URL`, optional `DATABASE_AUTH_TOKEN`
 - `OPENAI_API_KEY` (all AI features)
 - `AI_TOKEN_LIMIT_DEFAULT` — per-user lifetime AI token cap used when `users.ai_token_limit` is null. Default `0` (unlimited; usage is still tracked for admins). Set to any positive number to enforce a blanket cap. Admins can always override per-user from the Users tab regardless of this setting.
-- `BLOB_READ_WRITE_TOKEN` (uploads / Blob)
+- `STORAGE_BACKEND` — `"vercel-blob"` (default) or `"r2"`. Selects which backend new uploads go to. Reads of existing URLs are dispatched by host so flipping this only affects writes.
+- `BLOB_READ_WRITE_TOKEN` — required while `STORAGE_BACKEND=vercel-blob`, **and** during the migration window so legacy Vercel Blob URLs still serve through `/api/blob/serve`.
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` — required when `STORAGE_BACKEND=r2` (and to run `scripts/migrate-vercel-blob-to-r2.mjs`). Optional `R2_PUBLIC_BASE_URL` for a custom-domain public bucket.
 - Archive keys for admin Archive upload features
 
 ---

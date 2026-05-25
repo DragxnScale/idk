@@ -1,9 +1,29 @@
+/**
+ * Authenticated PDF read proxy.
+ *
+ * Browser-side PDF viewers (react-pdf, iframe `<embed>`) can't speak to
+ * private Vercel Blob URLs (they need a bearer token) or to R2 (auth-
+ * required SigV4). This route adds the right authentication for the
+ * URL's host and streams the bytes back same-origin so the cookie-based
+ * session is the gating factor.
+ *
+ * Backend dispatch lives in `lib/storage-backend.ts` — adding a new
+ * blob host means editing that file, not this one.
+ */
 import { NextResponse } from "next/server";
 import { decode } from "next-auth/jwt";
+import {
+  fetchPdf,
+  headPdf,
+  isR2Url,
+  isVercelBlobUrl,
+} from "@/lib/storage-backend";
 
 const SESSION_COOKIE = "sf.session-token";
 
-export const runtime = "edge";
+// Node runtime — the AWS SDK pulls in some Node APIs the Edge runtime
+// doesn't expose. Vercel Blob fetch still works fine on Node.
+export const runtime = "nodejs";
 
 async function getUserId(request: Request): Promise<string | null> {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -25,11 +45,13 @@ async function getUserId(request: Request): Promise<string | null> {
   }
 }
 
-function parseBlobParams(request: Request) {
+function readUrlParam(request: Request): string | null {
   const { searchParams } = new URL(request.url);
-  const url = searchParams.get("url");
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  return { url, blobToken };
+  return searchParams.get("url");
+}
+
+function isAllowedHost(url: string): boolean {
+  return isVercelBlobUrl(url) || isR2Url(url);
 }
 
 export async function HEAD(request: Request) {
@@ -38,27 +60,21 @@ export async function HEAD(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { url, blobToken } = parseBlobParams(request);
-  if (!url || !url.includes("blob.vercel-storage.com")) {
+  const url = readUrlParam(request);
+  if (!url || !isAllowedHost(url)) {
     return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
-  }
-  if (!blobToken) {
-    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
   }
 
   try {
-    const blobRes = await fetch(url, {
-      method: "HEAD",
-      headers: { Authorization: `Bearer ${blobToken}` },
-    });
-    if (!blobRes.ok) {
-      return new Response(null, { status: blobRes.status });
+    const probe = await headPdf(url);
+    if (probe.status >= 400) {
+      return new Response(null, { status: probe.status });
     }
     return new Response(null, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Length": blobRes.headers.get("Content-Length") || "0",
+        "Content-Length": probe.size ?? "0",
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, max-age=3600",
       },
@@ -74,43 +90,32 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { url, blobToken } = parseBlobParams(request);
-  if (!url || !url.includes("blob.vercel-storage.com")) {
+  const url = readUrlParam(request);
+  if (!url || !isAllowedHost(url)) {
     return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
-  }
-  if (!blobToken) {
-    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
   }
 
   try {
-    const fetchHeaders: Record<string, string> = {
-      Authorization: `Bearer ${blobToken}`,
-    };
-    const rangeHeader = request.headers.get("range");
-    if (rangeHeader) {
-      fetchHeaders["Range"] = rangeHeader;
-    }
+    const range = request.headers.get("range");
+    const result = await fetchPdf(url, range);
 
-    const blobRes = await fetch(url, { headers: fetchHeaders });
-    if (!blobRes.ok && blobRes.status !== 206) {
+    if (result.status >= 400) {
       return NextResponse.json(
-        { error: `Blob CDN returned ${blobRes.status}` },
-        { status: blobRes.status }
+        { error: `Storage backend returned ${result.status}` },
+        { status: result.status }
       );
     }
 
     const resHeaders: Record<string, string> = {
-      "Content-Type": "application/pdf",
+      "Content-Type": result.contentType || "application/pdf",
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=3600",
     };
-    const cl = blobRes.headers.get("Content-Length");
-    if (cl) resHeaders["Content-Length"] = cl;
-    const cr = blobRes.headers.get("Content-Range");
-    if (cr) resHeaders["Content-Range"] = cr;
+    if (result.contentLength) resHeaders["Content-Length"] = result.contentLength;
+    if (result.contentRange) resHeaders["Content-Range"] = result.contentRange;
 
-    return new Response(blobRes.body, {
-      status: blobRes.status,
+    return new Response(result.body, {
+      status: result.status,
       headers: resHeaders,
     });
   } catch (e) {

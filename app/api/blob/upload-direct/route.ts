@@ -1,9 +1,10 @@
-import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
+import { putPdf } from "@/lib/storage-backend";
 
+export const runtime = "nodejs";
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
@@ -19,14 +20,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error("[blob-upload-direct] BLOB_READ_WRITE_TOKEN is not set");
-    return NextResponse.json(
-      { error: "Storage not configured. Use the link paste option instead." },
-      { status: 500 }
-    );
-  }
-
   const { searchParams } = new URL(request.url);
   const title = searchParams.get("title") || "Untitled";
   const filename = searchParams.get("filename") || `${title}.pdf`;
@@ -40,13 +33,11 @@ export async function POST(request: Request) {
     const pathname = `${user.id}/${id}/${filename}`;
     console.log("[blob-upload-direct] uploading", pathname);
 
-    const blob = await put(pathname, request.body, {
-      access: "public",
+    const stored = await putPdf(pathname, request.body, {
       contentType: "application/pdf",
-      multipart: true,
     });
 
-    console.log("[blob-upload-direct] blob created:", blob.url);
+    console.log("[blob-upload-direct] stored:", stored.url);
 
     const now = new Date();
     await db.insert(documents).values({
@@ -54,12 +45,12 @@ export async function POST(request: Request) {
       userId: user.id,
       title,
       sourceType: "upload",
-      fileUrl: blob.url,
+      fileUrl: stored.url,
       createdAt: now,
       updatedAt: now,
     });
 
-    return NextResponse.json({ id, title, fileUrl: blob.url });
+    return NextResponse.json({ id, title, fileUrl: stored.url });
   } catch (err) {
     console.error("[blob-upload-direct] error:", err);
     const msg = (err as Error).message || "Upload failed";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createMultipartUploader } from "@vercel/blob/client";
+import { uploadPdfToStorage } from "@/lib/upload-client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
 import { AppUiEditorTab } from "@/components/admin/AppUiEditorTab";
@@ -1901,49 +1901,13 @@ function UploadTab() {
 
     addLog(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
 
-    const PART_SIZE = 8 * 1024 * 1024;
     let blobUrl: string;
     try {
-      setStatusLabel("Getting upload token…");
-      const tokenRes = await fetch("/api/blob/client-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pathname: blobPathname, admin: true }),
-      });
-      if (!tokenRes.ok) {
-        const err = await tokenRes.json().catch(() => ({}));
-        throw new Error(err.error || `Token request failed (${tokenRes.status})`);
-      }
-      const { clientToken } = await tokenRes.json();
-      addLog("Token received, starting multipart upload…");
-
-      const uploader = await createMultipartUploader(blobPathname, {
-        access: "private",
-        token: clientToken,
-        contentType: "application/pdf",
-      });
-
-      const totalParts = Math.ceil(file.size / PART_SIZE);
-      const parts: { etag: string; partNumber: number }[] = [];
-
-      for (let i = 0; i < totalParts; i++) {
-        const start = i * PART_SIZE;
-        const end = Math.min(start + PART_SIZE, file.size);
-        const chunk = file.slice(start, end);
-        const partNumber = i + 1;
-        const pct = Math.round(((i + 0.5) / totalParts) * 85);
+      blobUrl = await uploadPdfToStorage(file, blobPathname, (pct, label) => {
         setProgress(pct);
-        setStatusLabel(`Uploading… ${pct}% (part ${partNumber}/${totalParts})`);
-        if (partNumber % 5 === 1) addLog(`Uploading part ${partNumber}/${totalParts}`);
-
-        const part = await uploader.uploadPart(partNumber, chunk);
-        parts.push(part);
-      }
-
-      setProgress(88);
-      setStatusLabel("Finishing upload…");
-      const blob = await uploader.complete(parts);
-      blobUrl = blob.url;
+        setStatusLabel(label);
+        if (pct === 2 || pct % 25 === 0) addLog(label);
+      }, { admin: true });
       setProgress(90);
       addLog(`Stored: ${blobUrl}`);
     } catch (e) {
@@ -2628,6 +2592,12 @@ interface BlobItem {
   pathname: string;
   size: number;
   uploadedAt: string;
+  /** Which backend currently hosts this blob (filled in by the API). */
+  backend?: "vercel-blob" | "r2";
+  documentId: string | null;
+  documentTitle: string | null;
+  documentSourceType: string | null;
+  uploader: { id: string; name: string | null; email: string } | null;
 }
 
 function isPdfBlobPathname(pathname: string): boolean {
@@ -2723,7 +2693,7 @@ function StorageTab() {
     return `${bytes} B`;
   };
 
-  const isUserUpload = (b: BlobItem) => b.pathname.startsWith("uploads/");
+  const isUserUpload = (b: BlobItem) => b.documentSourceType === "upload" || b.pathname.startsWith("uploads/");
   const isAdminUpload = (b: BlobItem) => b.pathname.startsWith("public/");
 
   const filtered = blobs.filter((b) => {
@@ -2826,6 +2796,11 @@ function StorageTab() {
           .map((blob) => {
             const name = decodeURIComponent(blob.pathname.split("/").pop() ?? blob.pathname);
             const folder = blob.pathname.substring(0, blob.pathname.lastIndexOf("/"));
+            const uploaderLabel = blob.uploader
+              ? blob.uploader.name
+                ? `${blob.uploader.name} <${blob.uploader.email}>`
+                : blob.uploader.email
+              : null;
             return (
               <div key={blob.url} className="rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
@@ -2841,10 +2816,34 @@ function StorageTab() {
                     <span className={`px-1.5 py-0.5 rounded font-medium ${isUserUpload(blob) ? "bg-blue-900/50 text-blue-400" : "bg-green-900/50 text-green-400"}`}>
                       {isUserUpload(blob) ? "User" : "Catalog"}
                     </span>
+                    {blob.backend && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-medium uppercase tracking-wide text-[10px] ${
+                          blob.backend === "r2"
+                            ? "bg-orange-900/40 text-orange-300"
+                            : "bg-gray-800 text-gray-400"
+                        }`}
+                        title={blob.backend === "r2" ? "Cloudflare R2" : "Vercel Blob"}
+                      >
+                        {blob.backend === "r2" ? "R2" : "VB"}
+                      </span>
+                    )}
                     <span className="font-mono">{fmtSize(blob.size)}</span>
                     <span>{new Date(blob.uploadedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                     <span className="truncate max-w-[200px] text-gray-600" title={folder}>{folder}/</span>
                   </div>
+                  {isUserUpload(blob) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                      <span className="rounded bg-blue-950/50 px-1.5 py-0.5 font-medium text-blue-300">
+                        Uploaded by {uploaderLabel ?? "unknown user"}
+                      </span>
+                      {blob.documentTitle && (
+                        <span className="truncate max-w-[280px]" title={blob.documentTitle}>
+                          Document: {blob.documentTitle}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-2">
                   <button

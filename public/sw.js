@@ -1,6 +1,7 @@
-// Bowl Beacon Service Worker — v4 offline-capable
+// Bowl Beacon Service Worker — v5 offline-capable
 // v4: PDF eviction groups by logical URL (range requests = one PDF), not raw cache entry count.
-const CACHE_VERSION = "v4";
+// v5: Cache-first also matches *.r2.cloudflarestorage.com so PDFs migrated to R2 stay cacheable.
+const CACHE_VERSION = "v5";
 const SHELL_CACHE = `bowlbeacon-shell-${CACHE_VERSION}`;
 const API_CACHE = `bowlbeacon-api-${CACHE_VERSION}`;
 const PDF_CACHE = `bowlbeacon-pdf-${CACHE_VERSION}`;
@@ -61,6 +62,14 @@ self.addEventListener("fetch", (event) => {
 
   // Public Vercel Blob PDFs: cache-first
   if (url.hostname.endsWith("blob.vercel-storage.com") && url.pathname.endsWith(".pdf")) {
+    event.respondWith(cacheFirst(request, PDF_CACHE));
+    return;
+  }
+
+  // Cloudflare R2 PDFs: same treatment for any deployment that ever exposes
+  // direct R2 URLs (custom domain or r2.dev). The proxy path above already
+  // handles auth-required reads.
+  if (url.hostname.endsWith(".r2.cloudflarestorage.com") && url.pathname.endsWith(".pdf")) {
     event.respondWith(cacheFirst(request, PDF_CACHE));
     return;
   }

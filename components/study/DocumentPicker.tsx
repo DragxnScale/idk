@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createMultipartUploader } from "@vercel/blob/client";
+import { uploadPdfToStorage } from "@/lib/upload-client";
 import { pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -399,50 +399,16 @@ function UploadPanel({
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   }
 
-  const PART_SIZE = 8 * 1024 * 1024; // 8MB parts (above Vercel Blob's 5MB minimum)
-
+  /**
+   * Wraps the unified upload helper so the picker doesn't have to know
+   * which storage backend the server is currently using.
+   */
   async function directUpload(
     file: File,
     pathname: string,
     onProgress: (pct: number, label: string) => void
   ): Promise<string> {
-    onProgress(0, "Getting upload token…");
-    const tokenRes = await fetch("/api/blob/client-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pathname }),
-    });
-    if (!tokenRes.ok) {
-      const err = await tokenRes.json().catch(() => ({}));
-      throw new Error(err.error || `Token request failed (${tokenRes.status})`);
-    }
-    const { clientToken } = await tokenRes.json();
-
-    onProgress(2, "Starting upload…");
-    const uploader = await createMultipartUploader(pathname, {
-      access: "private",
-      token: clientToken,
-      contentType: "application/pdf",
-    });
-
-    const totalParts = Math.ceil(file.size / PART_SIZE);
-    const parts: { etag: string; partNumber: number }[] = [];
-
-    for (let i = 0; i < totalParts; i++) {
-      const start = i * PART_SIZE;
-      const end = Math.min(start + PART_SIZE, file.size);
-      const chunk = file.slice(start, end);
-      const partNumber = i + 1;
-      const pct = Math.round(((i + 0.5) / totalParts) * 88) + 2;
-      onProgress(pct, `Uploading… ${pct}% (part ${partNumber}/${totalParts})`);
-
-      const part = await uploader.uploadPart(partNumber, chunk);
-      parts.push(part);
-    }
-
-    onProgress(92, "Finishing upload…");
-    const blob = await uploader.complete(parts);
-    return blob.url;
+    return uploadPdfToStorage(file, pathname, onProgress);
   }
 
   async function uploadAll() {

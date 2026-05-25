@@ -4,11 +4,11 @@
  */
 import { NextResponse } from "next/server";
 import { isNotNull, eq, and, sql } from "drizzle-orm";
-import { del } from "@vercel/blob";
 import { requireAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { documents, textbookCatalog, users } from "@/lib/db/schema";
 import { formatBytes } from "@/lib/storage";
+import { deletePdf } from "@/lib/storage-backend";
 
 export async function GET() {
   const session = await requireAdmin();
@@ -52,7 +52,7 @@ export async function POST() {
 
   for (const doc of catalogDocs) {
     if (doc.fileUrl) {
-      try { await del(doc.fileUrl); } catch { errors.push(`blob: ${doc.fileUrl}`); }
+      try { await deletePdf(doc.fileUrl); } catch { errors.push(`blob: ${doc.fileUrl}`); }
     }
     await db.delete(documents).where(eq(documents.id, doc.id));
     deletedRows++;
@@ -67,7 +67,7 @@ export async function POST() {
 
   for (const row of catalogBlobRows) {
     if (row.cachedBlobUrl) {
-      try { await del(row.cachedBlobUrl); } catch { errors.push(`catalog blob: ${row.cachedBlobUrl}`); }
+      try { await deletePdf(row.cachedBlobUrl); } catch { errors.push(`catalog blob: ${row.cachedBlobUrl}`); }
       await db.update(textbookCatalog).set({ cachedBlobUrl: null }).where(eq(textbookCatalog.id, row.id));
     }
   }

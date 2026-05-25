@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { requireAdmin } from "@/lib/admin";
+import { putPdf } from "@/lib/storage-backend";
 
+export const runtime = "nodejs";
 export const maxDuration = 120;
 
 async function resolveArchiveUrl(url: string): Promise<string> {
@@ -29,10 +30,6 @@ async function resolveArchiveUrl(url: string): Promise<string> {
 export async function POST(request: Request) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
-  }
 
   const { url: rawUrl, identifier } = await request.json();
   if (!rawUrl || typeof rawUrl !== "string") {
@@ -65,11 +62,10 @@ export async function POST(request: Request) {
   const pathname = `public/${identifier || "archive"}/${filename}`;
 
   try {
-    const blob = await put(pathname, fetchRes.body!, {
-      access: "public",
+    const stored = await putPdf(pathname, fetchRes.body!, {
       contentType: "application/pdf",
     });
-    return NextResponse.json({ blobUrl: blob.url, pathname: blob.pathname });
+    return NextResponse.json({ blobUrl: stored.url, pathname: stored.pathname });
   } catch (e) {
     console.error("[admin/download-store] error:", e);
     return NextResponse.json(

@@ -1,8 +1,9 @@
-import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { requireAdminEdge } from "@/lib/admin-edge";
+import { putPdf } from "@/lib/storage-backend";
 
-export const runtime = "edge";
+// Node runtime — see lib/storage-backend.ts header comment.
+export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
@@ -17,11 +18,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error("[blob-stream] BLOB_READ_WRITE_TOKEN not set");
-    return NextResponse.json({ error: "Storage not configured (BLOB_READ_WRITE_TOKEN missing)" }, { status: 500 });
-  }
-
   const { searchParams } = new URL(request.url);
   const pathname = searchParams.get("pathname");
   if (!pathname) {
@@ -34,13 +30,11 @@ export async function POST(request: Request) {
 
   try {
     console.log("[blob-stream] uploading:", pathname);
-    const blob = await put(pathname, request.body, {
-      access: "public",
+    const stored = await putPdf(pathname, request.body, {
       contentType: "application/pdf",
-      multipart: true,
     });
-    console.log("[blob-stream] done:", blob.url);
-    return NextResponse.json({ url: blob.url });
+    console.log("[blob-stream] done:", stored.url);
+    return NextResponse.json({ url: stored.url });
   } catch (err) {
     console.error("[blob-stream] put() error:", err);
     return NextResponse.json(

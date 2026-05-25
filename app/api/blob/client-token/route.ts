@@ -1,11 +1,26 @@
+/**
+ * Client upload init.
+ *
+ * Returns whichever upload contract matches the active storage backend:
+ *
+ *   - vercel-blob: { backend: "vercel-blob", clientToken } — used with
+ *     `createMultipartUploader` from `@vercel/blob/client`.
+ *   - r2: { backend: "r2", uploadUrl, objectUrl } — the browser PUTs the
+ *     raw file body to `uploadUrl` and tells the server to register the
+ *     final `objectUrl` as a document.
+ *
+ * The browser-side `lib/upload-client.ts` handles both shapes.
+ */
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { decode } from "next-auth/jwt";
+import { ACTIVE_BACKEND, r2PresignedPutUrl } from "@/lib/storage-backend";
 
 const SESSION_COOKIE = "sf.session-token";
 const ADMIN_EMAIL = "jaydenw0711@gmail.com";
 
-export const runtime = "edge";
+// Node runtime — the storage adapter pulls in the AWS SDK.
+export const runtime = "nodejs";
 
 async function getUser(request: Request): Promise<{ id: string; isAdmin: boolean } | null> {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -36,11 +51,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
-  }
-
   let body: { pathname: string; admin?: boolean };
   try {
     body = await request.json();
@@ -56,6 +66,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // ── R2 path: hand back a presigned PUT URL ───────────────────────
+  if (ACTIVE_BACKEND === "r2") {
+    try {
+      const { uploadUrl, objectUrl } = await r2PresignedPutUrl(body.pathname, {
+        contentType: "application/pdf",
+        // 30 minutes is plenty for a single-shot PUT of a study PDF.
+        expiresInSeconds: 30 * 60,
+      });
+      return NextResponse.json({
+        backend: "r2",
+        uploadUrl,
+        objectUrl,
+        pathname: body.pathname,
+      });
+    } catch (e) {
+      console.error("[client-token] r2 presign error:", e);
+      return NextResponse.json(
+        { error: (e as Error).message || "Presign failed" },
+        { status: 500 }
+      );
+    }
+  }
+
+  // ── Vercel Blob path: existing client-token flow ─────────────────
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
+  }
+
   try {
     const clientToken = await generateClientTokenFromReadWriteToken({
       token,
@@ -65,7 +104,7 @@ export async function POST(request: Request) {
       validUntil: Date.now() + 2 * 60 * 60 * 1000,
       addRandomSuffix: false,
     });
-    return NextResponse.json({ clientToken });
+    return NextResponse.json({ backend: "vercel-blob", clientToken });
   } catch (e) {
     console.error("[client-token] error:", e);
     return NextResponse.json(

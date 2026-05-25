@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { eq, and, sql } from "drizzle-orm";
-import { del } from "@vercel/blob";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents, users } from "@/lib/db/schema";
+import { deletePdf } from "@/lib/storage-backend";
 
 export async function GET() {
   const user = await getAppUser();
@@ -46,9 +46,10 @@ export async function DELETE(request: Request) {
 
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Delete the blob from Vercel Blob storage
+  // Delete from whichever backend hosts the URL (handles legacy VB
+  // URLs and new R2 URLs during/after migration).
   if (doc.fileUrl) {
-    await del(doc.fileUrl).catch(() => {});
+    await deletePdf(doc.fileUrl).catch(() => {});
   }
 
   await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, user.id)));

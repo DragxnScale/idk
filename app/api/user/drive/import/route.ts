@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { unzipSync } from "fflate";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
+import { putPdf } from "@/lib/storage-backend";
 
+export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const ZIP_MAX_BYTES = 500 * 1024 * 1024;
@@ -95,8 +96,7 @@ export async function POST(request: Request) {
     const title = titleFromUrl(url);
     const filename = `${user.id}/${id}.pdf`;
 
-    const blob = await put(filename, fetchRes.body!, {
-      access: "public",
+    const stored = await putPdf(filename, fetchRes.body!, {
       contentType: "application/pdf",
     });
 
@@ -106,12 +106,12 @@ export async function POST(request: Request) {
       userId: user.id,
       title,
       sourceType: "upload",
-      fileUrl: blob.url,
+      fileUrl: stored.url,
       createdAt: now,
       updatedAt: now,
     });
 
-    return NextResponse.json({ imported: [{ id, title, fileUrl: blob.url }] });
+    return NextResponse.json({ imported: [{ id, title, fileUrl: stored.url }] });
   }
 
   // ── ZIP: buffer, check size, unzip, upload each PDF ───────────────────
@@ -129,19 +129,17 @@ export async function POST(request: Request) {
     // Double-check magic bytes in case Content-Type was wrong
     const isPdfMagic = rawBytes[0] === 0x25 && rawBytes[1] === 0x50 && rawBytes[2] === 0x44 && rawBytes[3] === 0x46;
     if (isPdfMagic) {
-      // Server said zip but it's actually a PDF — stream to blob
       const id = crypto.randomUUID();
       const title = titleFromUrl(url);
-      const blob = await put(`${user.id}/${id}.pdf`, Buffer.from(rawBytes), {
-        access: "public",
+      const stored = await putPdf(`${user.id}/${id}.pdf`, Buffer.from(rawBytes), {
         contentType: "application/pdf",
       });
       const now = new Date();
       await db.insert(documents).values({
         id, userId: user.id, title, sourceType: "upload",
-        fileUrl: blob.url, createdAt: now, updatedAt: now,
+        fileUrl: stored.url, createdAt: now, updatedAt: now,
       });
-      return NextResponse.json({ imported: [{ id, title, fileUrl: blob.url }] });
+      return NextResponse.json({ imported: [{ id, title, fileUrl: stored.url }] });
     }
 
     let unzipped: ReturnType<typeof unzipSync>;
@@ -168,15 +166,14 @@ export async function POST(request: Request) {
     for (const [name, bytes] of pdfEntries) {
       const id = crypto.randomUUID();
       const title = titleFromUrl(url, name.split("/").pop());
-      const blob = await put(`${user.id}/${id}.pdf`, Buffer.from(bytes), {
-        access: "public",
+      const stored = await putPdf(`${user.id}/${id}.pdf`, Buffer.from(bytes), {
         contentType: "application/pdf",
       });
       await db.insert(documents).values({
         id, userId: user.id, title, sourceType: "upload",
-        fileUrl: blob.url, createdAt: now, updatedAt: now,
+        fileUrl: stored.url, createdAt: now, updatedAt: now,
       });
-      imported.push({ id, title, fileUrl: blob.url });
+      imported.push({ id, title, fileUrl: stored.url });
     }
 
     return NextResponse.json({ imported });
