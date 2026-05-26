@@ -102,6 +102,7 @@ High-level map (only meaningful directories and notable files).
 │   ├── pdf-client-url.ts         # `pdfClientLoadUrl()` — Vercel Blob / R2 → `/api/blob/serve`, else `/api/proxy/pdf`
 │   ├── storage-backend.ts        # Pluggable PDF storage adapter (Vercel Blob + Cloudflare R2)
 │   ├── upload-client.ts          # Browser-side `uploadPdfToStorage()` — handles both VB token + R2 presigned PUT
+│   ├── youtube.ts                # YouTube Data API client used by /api/ai/videos to resolve real video URLs
 │   ├── themes.ts                 # Theme tokens
 │   ├── music.ts                  # Study playlist helpers
 │   └── store.ts                  # Client-side store utilities
@@ -138,7 +139,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 **Study core**
 
 - `study_goals` — cumulative **multi-session time goals**: `goal_type` (`time`), `target_value` (total focused minutes across linked sessions), optional `document_json`, `status` (`active`|`completed`), `completed_at`.
-- `study_sessions` — goal type/value (per-session “sitting” target), start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]`), `document_json` (resume), `videos_json` (cached AI video recs). **`session_state`** (`live`|`paused`): paused rows are kept open when starting another session is blocked; **`study_goal_id`** optionally links to `study_goals` for cumulative progress across ended sessions until the goal total is reached.
+- `study_sessions` — goal type/value (per-session “sitting” target), start/end, focused minutes, `pages_visited` (count), `visited_pages_list` (JSON `number[]`), `document_json` (resume), `videos_json` (cached AI video recs — see `/api/ai/videos`; the JSON shape stores **resolved** YouTube videos including channel + thumbnail + real watch URL, paginated 5/page on the summary screen). **`session_state`** (`live`|`paused`): paused rows are kept open when starting another session is blocked; **`study_goal_id`** optionally links to `study_goals` for cumulative progress across ended sessions until the goal total is reached.
 - `documents` — per-user PDFs: `file_url` (Blob), `source_type`, optional catalog link, `extracted_text`, `chapter_page_ranges` (user-defined TOC JSON), `page_offset` (PDF page alignment), `file_size_bytes` (used for quota tracking).
 - `textbook_catalog` — shared books: `source_url`, `cached_blob_url` (single global public Blob copy; populated on first access), chapter page ranges JSON, visibility flags.
 - `session_content` — links session to document and chapter/page range.
@@ -373,7 +374,7 @@ Every AI route is gated by a per-user token budget. The design is intentionally 
 | `/api/ai/notes` | POST, GET | `generateText` | `ai_notes` + `public_notes` cache |
 | `/api/ai/quiz` | POST, GET | `generateObject` + Zod `quizSchema` | `quizzes` table |
 | `/api/ai/quiz/review` | POST | `generateObject` | updates `quizzes.review_json` + `score` |
-| `/api/ai/videos` | GET, POST | `generateObject` + Zod `videoSchema` | `study_sessions.videos_json` |
+| `/api/ai/videos` | GET, POST | Two-stage: (1) `generateObject` picks 8–15 chapter topics + a preferred channel for each (Organic Chem Tutor for chem, Amoeba Sisters for bio, etc.). (2) `lib/youtube.ts` resolves each topic to a **real** YouTube video via the Data API. Falls back to a channel-scoped YouTube search URL if `YOUTUBE_API_KEY` is missing or quota is hit. POST accepts `refresh: true` to regenerate. | `study_sessions.videos_json` (now `{ topic, title, channel, videoUrl, videoId, thumbnailUrl, reason, resolved }[]`) |
 | `/api/ai/flashcards` | POST, GET | `generateObject` + Zod `flashcardSchema` | `flashcards` table |
 | `/api/ai/velocity` | POST, GET | `generateObject` + **flat** Zod schema (OpenAI structured outputs reject `oneOf`, so both MC and SA share one object shape — per-type normalisation happens in TS). Generates in **batches of 12 toss-up/bonus pairs (24 questions)**; POST accepts `continueFromGameId` to append a second batch to the same game (hard cap = 48 total). | `velocity_games.questions_json` |
 | `/api/ai/velocity/grade` | POST | `generateObject` that accepts/rejects a user short-answer against the canonical answer — fast-path via `isShortAnswerCorrect` for obvious hits, otherwise AI decides synonyms / typos / missing-distinguishing-word cases | — (stateless) |
@@ -594,6 +595,7 @@ See **`.env.example`** for the canonical list. Typical production setup:
 - `STORAGE_BACKEND` — `"vercel-blob"` (default) or `"r2"`. Selects which backend new uploads go to. Reads of existing URLs are dispatched by host so flipping this only affects writes.
 - `BLOB_READ_WRITE_TOKEN` — required while `STORAGE_BACKEND=vercel-blob`, **and** during the migration window so legacy Vercel Blob URLs still serve through `/api/blob/serve`.
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` — required when `STORAGE_BACKEND=r2` (and to run `scripts/migrate-vercel-blob-to-r2.mjs`). Optional `R2_PUBLIC_BASE_URL` for a custom-domain public bucket.
+- `YOUTUBE_API_KEY` — optional. When set, `/api/ai/videos` resolves AI-generated topics into real YouTube video URLs scoped to the channels we prefer (Organic Chem Tutor, Amoeba Sisters, etc.) via the YouTube Data API v3. Without it, the route degrades to channel-scoped search URLs.
 - Archive keys for admin Archive upload features
 
 ---
