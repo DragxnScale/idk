@@ -692,40 +692,35 @@ export function VelocityGame({
 
   // Press Enter (or Space) on the feedback card to advance to the next question.
   //
-  // This flow is surprisingly racy because the same Enter that submitted the
-  // answer usually overlaps the feedback render. We need THREE independent
-  // guards or the feedback screen gets skipped:
-  //   1. Ignore OS key-repeat (e.repeat).
+  // Two guards keep the same Enter that submitted the answer from also
+  // skipping past the feedback:
+  //   1. Ignore OS key-repeat (e.repeat) — kills the held-Enter auto-repeat
+  //      path so holding Enter through the grader doesn't fire advance once
+  //      feedback mounts.
   //   2. Require a minimum dwell since feedback rendered, so that very-fast
   //      "submit Enter → grader resolved → advance Enter" key bursts can't
   //      accidentally fire nextQuestion before the user sees the result.
-  //   3. Require a clean keyup AFTER feedback renders before any keydown
-  //      counts as an advance — this kills the held-Enter auto-repeat path.
+  //
+  // We rely on the fact that the original submit-Enter keydown bubbles to
+  // window BEFORE this listener is registered (the useEffect runs after the
+  // re-render that flips phase to "feedback"), so that event can never reach
+  // this handler in the first place — only subsequent fresh Enter presses do.
   useEffect(() => {
     if (phase !== "feedback") return;
     const MIN_DWELL_MS = 400;
     const mountedAt = performance.now();
-    let armed = false;
     const isAdvanceKey = (e: KeyboardEvent) =>
       e.key === "Enter" || e.code === "Space" || e.key === " ";
     const onDown = (e: KeyboardEvent) => {
       if (!isAdvanceKey(e)) return;
       if (e.repeat) return;
       if (performance.now() - mountedAt < MIN_DWELL_MS) return;
-      if (!armed) return;
       e.preventDefault();
       if (!submitting) void nextQuestion();
     };
-    const onUp = (e: KeyboardEvent) => {
-      if (!isAdvanceKey(e)) return;
-      if (performance.now() - mountedAt < MIN_DWELL_MS) return;
-      armed = true;
-    };
     window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
     return () => {
       window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
     };
   }, [phase, submitting, nextQuestion]);
 
