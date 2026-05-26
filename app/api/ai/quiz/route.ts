@@ -8,6 +8,7 @@ import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settin
 import { quizzes, aiNotes, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
+import { factCheckQuizQuestions } from "@/lib/ai-fact-check";
 
 /** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
 export const maxDuration = 60;
@@ -148,8 +149,34 @@ For chapters that have very few formulas, the rules collapse to: one definition 
   });
   await recordAiUsage(authUser.id, "/api/ai/quiz", usage);
 
+  // ── Fact-check pass: drop unsupported questions, rewrite fixable ones.
+  // Runs against the same source text + notes the generator saw. If the
+  // verifier itself fails, returns the original list unchanged so we never
+  // block on a broken verifier.
+  const verifierSourceText =
+    accumulatedText.slice(0, 12_000) +
+    (notesContext ? `\n\n--- Session notes ---\n${notesContext.slice(0, 3000)}` : "");
+  const {
+    verified,
+    dropped,
+    fixed,
+    usage: verifierUsage,
+  } = await factCheckQuizQuestions(
+    object.questions,
+    verifierSourceText,
+    ownerExtra
+  );
+  if (verifierUsage) {
+    await recordAiUsage(authUser.id, "/api/ai/quiz/factcheck", verifierUsage);
+  }
+  if (dropped > 0 || fixed > 0) {
+    console.log(
+      `[ai/quiz] fact-check applied: ${fixed} fixed, ${dropped} dropped, ${verified.length} kept`
+    );
+  }
+
   // ── Shuffle answer options so correct index is randomised ────────────
-  const questions = object.questions.map(shuffleOptions);
+  const questions = verified.map(shuffleOptions);
 
   // ── Persist (no review yet — generated after quiz completion) ────────
   const id = crypto.randomUUID();

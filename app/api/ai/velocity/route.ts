@@ -13,6 +13,10 @@ import {
 } from "@/lib/db/schema";
 import type { VelocityQuestion } from "@/lib/velocity-match";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
+import {
+  factCheckVelocityQuestions,
+  type VelocityQuestionDraft,
+} from "@/lib/ai-fact-check";
 
 /**
  * Allow up to 60 seconds of compute on Vercel functions (the Pro tier
@@ -705,7 +709,50 @@ SCHEMA — every field is REQUIRED on EVERY question:
         if (fuzzy && existingKeys.has(fuzzy)) return false;
         return true;
       });
-      aiQuestions = rawQuestions.map((q, i) => {
+
+      // Fact-check pass: verify each question's correct answer against the
+      // source, rewrite fixable mistakes (wrong correctIndex, generic SA
+      // canonical), and drop unsalvageable ones. Pairs (tossup + bonus) are
+      // atomic — if either half is unfixable, both halves go. Falls back to
+      // the unmodified list if the verifier itself fails.
+      const verifierSource =
+        stripNonContentPages(accumulatedText).slice(0, 12_000) +
+        (notesContext
+          ? `\n\n--- Session notes ---\n${notesContext.slice(0, 3000)}`
+          : "");
+      const verifierInput: VelocityQuestionDraft[] = rawQuestions.map((q) => ({
+        type: q.type,
+        roundType: q.roundType,
+        pairId: q.pairId,
+        question: q.question,
+        options: q.options as [string, string, string, string],
+        correctIndex: q.correctIndex,
+        answer: q.answer,
+        acceptedAnswers: q.acceptedAnswers,
+        topic: q.topic,
+        explanation: q.explanation,
+        pageIndex: q.pageIndex,
+      }));
+      const {
+        verified: verifiedFlat,
+        dropped: vDropped,
+        fixed: vFixed,
+        usage: vUsage,
+      } = await factCheckVelocityQuestions(
+        verifierInput,
+        verifierSource,
+        ownerExtra
+      );
+      if (vUsage) {
+        await recordAiUsage(user.id, "/api/ai/velocity/factcheck", vUsage);
+      }
+      if (vDropped > 0 || vFixed > 0) {
+        console.log(
+          `[ai/velocity] fact-check applied: ${vFixed} fixed, ${vDropped} dropped, ${verifiedFlat.length} kept`
+        );
+      }
+
+      aiQuestions = verifiedFlat.map((q, i) => {
         const roundType = q.roundType ?? (i % 2 === 0 ? "tossup" : "bonus");
         const pairId = (q.pairId && q.pairId.trim()) || String(Math.floor(i / 2) + 1);
         // Only accept page indexes the model could actually have seen in the
