@@ -2625,7 +2625,7 @@ function StorageTab() {
   } | null>(null);
 
   async function runCleanup() {
-    if (!confirm("This will delete all per-user catalog PDF blobs and the global catalog cache blobs from Vercel Blob storage. Catalog books will be served via proxy instead. Continue?")) return;
+    if (!confirm("This will delete all per-user catalog PDF blobs and the global catalog cache blobs from object storage. Catalog books will be served via proxy instead. Continue?")) return;
     setCleaning(true);
     setCleanResult(null);
     const res = await fetch("/api/admin/catalog/cleanup-blobs", { method: "POST" });
@@ -2704,7 +2704,8 @@ function StorageTab() {
 
   const userBlobs = blobs.filter(isUserUpload);
   const adminBlobs = blobs.filter(isAdminUpload);
-  const quotaGB = 1;
+  // Cloudflare R2 free tier: 10 GB stored. (Vercel Blob's free tier was 1 GB.)
+  const quotaGB = 10;
   const usedPct = Math.min(100, (totalSize / (quotaGB * 1024 * 1024 * 1024)) * 100);
 
   if (loading) {
@@ -2910,7 +2911,7 @@ function StorageTab() {
             <h2 className="text-base font-semibold mb-1">Delete this blob?</h2>
             <p className="text-sm text-gray-400 mb-1 truncate">{decodeURIComponent(confirmDelete.pathname)}</p>
             <p className="text-sm text-gray-500 mb-1">{fmtSize(confirmDelete.size)}</p>
-            <p className="text-sm text-red-400 mb-5">This will permanently delete the file from Vercel Blob storage. Any sessions or documents referencing it will break.</p>
+            <p className="text-sm text-red-400 mb-5">This will permanently delete the file from object storage. Any sessions or documents referencing it will break.</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(null)} className="flex-1 rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800 transition">Cancel</button>
               <button onClick={() => deleteBlob(confirmDelete)} disabled={deleting === confirmDelete.url} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">

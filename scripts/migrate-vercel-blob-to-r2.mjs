@@ -18,9 +18,9 @@
 import { list, del } from "@vercel/blob";
 import {
   S3Client,
-  PutObjectCommand,
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { createClient } from "@libsql/client";
 import { readFileSync } from "node:fs";
 
@@ -125,15 +125,23 @@ for (const b of allBlobs) {
     const res = await fetch(b.url, {
       headers: { Authorization: `Bearer ${BLOB_TOKEN}` },
     });
-    if (!res.ok) throw new Error(`download ${res.status}`);
-    const bytes = Buffer.from(await res.arrayBuffer());
+    if (!res.ok || !res.body) throw new Error(`download ${res.status}`);
 
-    await s3.send(new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: bytes,
-      ContentType: "application/pdf",
-    }));
+    // Stream the fetch body straight into a multipart upload so we
+    // never hold the whole PDF in RAM and the connection can recover
+    // from intermittent stalls between parts.
+    const upload = new Upload({
+      client: s3,
+      params: {
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: res.body,
+        ContentType: "application/pdf",
+      },
+      partSize: 8 * 1024 * 1024,
+      queueSize: 4,
+    });
+    await upload.done();
 
     console.log("✓ copied");
     copied.push({ url: b.url, newUrl: r2EndpointUrl(key), pathname: key, size: b.size });

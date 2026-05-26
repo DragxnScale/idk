@@ -22,3 +22,5 @@ npm-debug.log*
 drizzle/
 uploads/
 data/
+.vercel
+.env*.local
