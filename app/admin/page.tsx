@@ -1822,6 +1822,22 @@ function UploadTab() {
   const [statusLabel, setStatusLabel] = useState("");
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ── AI table-of-contents extraction ──────────────────────────────
+  // Runs after the PDF lands in storage. Pre-populates the visual
+  // TOC editor below so the admin can review/edit/delete chapters
+  // before committing the catalog row. Failures never block saving.
+  type TocExtractStatus = "idle" | "running" | "found" | "empty" | "error";
+  const [tocExtractStatus, setTocExtractStatus] = useState<TocExtractStatus>("idle");
+  const [tocExtractMessage, setTocExtractMessage] = useState<string | null>(null);
+  /**
+   * True once the file upload + AI extraction step have finished but
+   * the admin hasn't yet committed the catalog row. Gates the
+   * "Save to catalog" button so the catalog write only happens after
+   * the admin has had a chance to review the extracted TOC.
+   */
+  const [awaitingCatalogReview, setAwaitingCatalogReview] = useState(false);
+  const [savingCatalog, setSavingCatalog] = useState(false);
   // Smart upload log. Each entry is structured so the renderer can
   // dedupe consecutive identical (pct, label) events into one line +
   // live-update its byte counter. Without dedupe a 200 MB upload
@@ -1949,15 +1965,13 @@ function UploadTab() {
       return;
     }
 
-    let parsedChapters: Record<string, [number, number]> | null = null;
-    if (addToCatalog) {
-      parsedChapters = tocRowsToRanges(tocRows, pageOffset);
-    }
-
     setStatus("uploading");
     setError(null);
     setProgress(0);
     setDebugLog([]);
+    setTocExtractStatus("idle");
+    setTocExtractMessage(null);
+    setAwaitingCatalogReview(false);
 
     const filename = file.name.replace(/\s+/g, "_");
     const slug = identifier || `bowlbeacon-${slugify(title)}`;
@@ -1992,28 +2006,22 @@ function UploadTab() {
 
     setArchiveUrl(blobUrl);
 
-    if (addToCatalog && parsedChapters) {
-      setStatusLabel("Adding to catalog…");
+    if (addToCatalog) {
+      // Don't auto-save the catalog any more — we want the admin to
+      // review the AI-extracted TOC first. Land on the "review"
+      // screen with the upload complete + AI extraction running. The
+      // catalog write happens when the admin clicks "Save to
+      // catalog" below.
+      setStatusLabel("Scanning PDF for table of contents…");
       setProgress(95);
-      const catalogRes = await fetch("/api/admin/catalog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: slug,
-          title,
-          edition: edition || null,
-          isbn: isbn || null,
-          sourceType: "oer",
-          sourceUrl: blobUrl,
-          chapterPageRanges: parsedChapters,
-          pageOffset,
-        }),
-      });
-      if (!catalogRes.ok) {
-        setError("Uploaded but failed to add to textbook catalog.");
-        setStatus("error");
-        return;
-      }
+      setStatus("done");
+      setProgress(100);
+      setAwaitingCatalogReview(true);
+      // Fire-and-forget — `runTocExtraction` manages its own status
+      // state. The admin can edit the TocEditor in parallel and even
+      // hit "Save to catalog" before extraction settles if they want.
+      void runTocExtraction(blobUrl);
+      return;
     }
 
     setStatus("done");
@@ -2036,7 +2044,118 @@ function UploadTab() {
     setAddToCatalog(true);
     setTocRows([{ label: "1", startPage: 1, endPage: 50 }, { label: "2", startPage: 51, endPage: 100 }]);
     setPageOffset(0);
+    setTocExtractStatus("idle");
+    setTocExtractMessage(null);
+    setAwaitingCatalogReview(false);
+    setSavingCatalog(false);
     if (fileRef.current) fileRef.current.value = "";
+  }
+
+  /**
+   * POST /api/admin/extract-toc with the uploaded PDF's URL. On
+   * success populates the visual TOC editor with the extracted
+   * chapters + page offset; on failure shows an inline message but
+   * never blocks the catalog save (the editor stays editable so the
+   * admin can type the TOC by hand if AI can't find one). Every
+   * branch also writes a line to the upload debug log so the admin
+   * can see what happened end-to-end.
+   */
+  async function runTocExtraction(pdfUrl: string) {
+    setTocExtractStatus("running");
+    setTocExtractMessage(null);
+    addLog("Scanning PDF for table of contents…");
+    try {
+      const res = await fetch("/api/admin/extract-toc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail =
+          (data && typeof data.error === "string" && data.error) ||
+          `HTTP ${res.status}`;
+        setTocExtractStatus("error");
+        setTocExtractMessage(detail);
+        addLog(`AI TOC extract failed: ${detail}`);
+        return;
+      }
+      const ranges = (data?.ranges ?? {}) as Record<string, [number, number]>;
+      const offset = typeof data?.pageOffset === "number" ? data.pageOffset : 0;
+      const foundToc = data?.foundToc === true;
+      const reason = typeof data?.reason === "string" ? data.reason : "";
+      if (!foundToc || Object.keys(ranges).length === 0) {
+        setTocExtractStatus("empty");
+        setTocExtractMessage(
+          reason || "AI couldn't find a table of contents in this PDF."
+        );
+        addLog(`AI TOC extract: no chapters found${reason ? ` (${reason})` : ""}`);
+        return;
+      }
+      const newRows = rangesToTocRows(ranges, offset);
+      setPageOffset(offset);
+      setTocRows(newRows);
+      setTocExtractStatus("found");
+      setTocExtractMessage(
+        `AI extracted ${newRows.length} chapter${
+          newRows.length === 1 ? "" : "s"
+        } with offset ${offset} — please review before saving.`
+      );
+      addLog(
+        `AI TOC extract: ${newRows.length} chapter${
+          newRows.length === 1 ? "" : "s"
+        }, offset ${offset}`
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      setTocExtractStatus("error");
+      setTocExtractMessage(detail);
+      addLog(`AI TOC extract failed: ${detail}`);
+    }
+  }
+
+  /**
+   * Commit the catalog row using whatever's currently in the visual
+   * TOC editor. Called from the new "Save to catalog" button that
+   * shows up after upload + extraction so the admin always has a
+   * chance to review the AI's chapter list before it lands in the
+   * public catalog.
+   */
+  async function handleSaveCatalogAfterReview() {
+    if (!archiveUrl || !title) return;
+    setSavingCatalog(true);
+    setError(null);
+    const slug = identifier || `bowlbeacon-${slugify(title)}`;
+    const parsedChapters = tocRowsToRanges(tocRows, pageOffset);
+    try {
+      const catalogRes = await fetch("/api/admin/catalog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: slug,
+          title,
+          edition: edition || null,
+          isbn: isbn || null,
+          sourceType: "oer",
+          sourceUrl: archiveUrl,
+          chapterPageRanges: parsedChapters,
+          pageOffset,
+        }),
+      });
+      if (!catalogRes.ok) {
+        setError("Failed to add to textbook catalog.");
+        addLog("Catalog save failed");
+        return;
+      }
+      setAwaitingCatalogReview(false);
+      addLog("Catalog row saved");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to save catalog row";
+      setError(msg);
+      addLog(`Catalog save failed: ${msg}`);
+    } finally {
+      setSavingCatalog(false);
+    }
   }
 
   return (
@@ -2084,7 +2203,59 @@ function UploadTab() {
           <p className="text-green-400 font-semibold text-base">Stored!</p>
           <p className="text-sm text-gray-300">Permanent storage link:</p>
           <a href={archiveUrl!} target="_blank" rel="noopener noreferrer" className="block text-sm text-blue-400 underline break-all">{archiveUrl}</a>
-          {addToCatalog && <p className="text-sm text-gray-400">Also added to the textbook catalog — users can now find it in the document picker.</p>}
+          {addToCatalog && !awaitingCatalogReview && (
+            <p className="text-sm text-gray-400">Added to the textbook catalog — users can now find it in the document picker.</p>
+          )}
+
+          {/* Post-upload TOC review for catalog uploads. The PDF is in
+              storage; the AI is scanning the front matter for a TOC.
+              Admin can edit/delete rows then click "Save to catalog". */}
+          {addToCatalog && awaitingCatalogReview && (
+            <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-4 space-y-3 mt-2">
+              <p className="text-sm font-medium text-gray-300">Review table of contents</p>
+              <p className="text-xs text-gray-500">
+                The PDF is uploaded. Review the TOC below — AI tried to fill it in for you —
+                then save the catalog row.
+              </p>
+
+              {/* AI extraction status banner. One of: running, found, empty, error. */}
+              {tocExtractStatus === "running" && (
+                <p className="text-xs text-blue-300 rounded-md border border-blue-800 bg-blue-900/20 px-3 py-2 animate-pulse">
+                  Scanning PDF for table of contents…
+                </p>
+              )}
+              {tocExtractStatus === "found" && tocExtractMessage && (
+                <p className="text-xs text-green-300 rounded-md border border-green-800 bg-green-900/20 px-3 py-2">
+                  {tocExtractMessage}
+                </p>
+              )}
+              {tocExtractStatus === "empty" && (
+                <p className="text-xs text-gray-300 rounded-md border border-gray-700 bg-gray-800/40 px-3 py-2">
+                  {tocExtractMessage || "AI couldn't find a table of contents in this PDF."} You can enter it manually below.
+                </p>
+              )}
+              {tocExtractStatus === "error" && (
+                <p className="text-xs text-red-300 rounded-md border border-red-800 bg-red-900/20 px-3 py-2">
+                  Auto-extract failed: {tocExtractMessage || "Unknown error"}. You can still enter the TOC manually and save.
+                </p>
+              )}
+
+              <TocEditor
+                rows={tocRows}
+                onChange={setTocRows}
+                pageOffset={pageOffset}
+                onPageOffsetChange={setPageOffset}
+              />
+              {error && <p className="text-xs text-red-400">{error}</p>}
+              <button
+                onClick={handleSaveCatalogAfterReview}
+                disabled={savingCatalog || !title}
+                className="w-full rounded-lg bg-white text-black py-2 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40"
+              >
+                {savingCatalog ? "Saving…" : "Save to catalog"}
+              </button>
+            </div>
+          )}
 
           {/* Offer catalog add if from link paste and not yet cataloged */}
           {!addToCatalog && (
