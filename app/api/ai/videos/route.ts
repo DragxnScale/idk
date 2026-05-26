@@ -37,7 +37,7 @@ import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settin
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
-import { searchTopVideo, youtubeSearchUrl } from "@/lib/youtube";
+import { searchTopVideoCandidates, youtubeSearchUrl } from "@/lib/youtube";
 
 /** Allow up to 60s — YouTube API + topic generation. */
 export const maxDuration = 60;
@@ -199,41 +199,74 @@ Rules:
   }
 
   // ── 2. Resolve each topic to a real YouTube video ─────────────────
-  // Run searches in parallel — each call is a single small JSON GET.
-  const videos: VideoRec[] = await Promise.all(
-    topics.map(async (t): Promise<VideoRec> => {
-      const hit = await searchTopVideo(t.searchQuery, {
+  // Run searches in parallel (fast) but request multiple candidates per
+  // topic so we can dedup afterward. Two AI-generated topics will sometimes
+  // resolve to the same top hit (e.g. "manometer pressure" and "barometer
+  // intro" → same Organic Chem Tutor video). When that happens, walk the
+  // candidate list for the second topic to find an alternate.
+  const candidates = await Promise.all(
+    topics.map((t) =>
+      searchTopVideoCandidates(t.searchQuery, {
         channelHint: t.channelHint,
         safeSearch: "strict",
-      });
+        maxResults: 5,
+      })
+    )
+  );
 
-      if (hit) {
-        return {
-          topic: t.topic,
-          title: hit.title,
-          channel: hit.channel,
-          videoUrl: hit.videoUrl,
-          videoId: hit.videoId,
-          thumbnailUrl: hit.thumbnailUrl,
-          reason: t.reason,
-          resolved: true,
-        };
-      }
+  const usedVideoIds = new Set<string>();
+  const usedFallbackUrls = new Set<string>();
+  const videos: VideoRec[] = topics.map((t, i): VideoRec => {
+    const hits = candidates[i] ?? [];
+    const fresh = hits.find((h) => !usedVideoIds.has(h.videoId));
+    if (fresh) {
+      usedVideoIds.add(fresh.videoId);
+      return {
+        topic: t.topic,
+        title: fresh.title,
+        channel: fresh.channel,
+        videoUrl: fresh.videoUrl,
+        videoId: fresh.videoId,
+        thumbnailUrl: fresh.thumbnailUrl,
+        reason: t.reason,
+        resolved: true,
+      };
+    }
 
-      // YouTube API not configured / quota exhausted / no hit — fall back
-      // to a channel-scoped search URL so the link is still useful.
+    // YouTube API not configured / quota exhausted / no hit / every
+    // candidate was already claimed — fall back to a channel-scoped search
+    // URL. Dedup the fallbacks too so identical topic+channel combos can't
+    // produce the same link twice.
+    const fallbackUrl = youtubeSearchUrl(t.searchQuery, t.channelHint);
+    if (usedFallbackUrls.has(fallbackUrl)) {
+      // Soft-skip duplicates by appending the topic name to make the URL
+      // unique without losing the search semantics. (Worst case: top result
+      // shifts slightly — still a real, useful link.)
+      const alt = youtubeSearchUrl(`${t.searchQuery} ${t.topic}`, t.channelHint);
+      usedFallbackUrls.add(alt);
       return {
         topic: t.topic,
         title: t.topic,
         channel: t.channelHint,
-        videoUrl: youtubeSearchUrl(t.searchQuery, t.channelHint),
+        videoUrl: alt,
         videoId: null,
         thumbnailUrl: null,
         reason: t.reason,
         resolved: false,
       };
-    })
-  );
+    }
+    usedFallbackUrls.add(fallbackUrl);
+    return {
+      topic: t.topic,
+      title: t.topic,
+      channel: t.channelHint,
+      videoUrl: fallbackUrl,
+      videoId: null,
+      thumbnailUrl: null,
+      reason: t.reason,
+      resolved: false,
+    };
+  });
 
   await db
     .update(studySessions)
