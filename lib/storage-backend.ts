@@ -15,11 +15,15 @@
 import { del as vbDel, list as vbList, put as vbPut } from "@vercel/blob";
 import {
   S3Client,
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   GetObjectCommand,
   PutObjectCommand,
+  UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -383,4 +387,126 @@ export async function r2PresignedPutUrl(
     expiresIn: opts.expiresInSeconds ?? 60 * 60,
   });
   return { uploadUrl, objectUrl: r2EndpointUrl(key), key };
+}
+
+// ── R2 multipart upload (browser-driven) ─────────────────────────────
+//
+// Single-PUT browser uploads of 150–300 MB textbook PDFs are fragile —
+// a single TCP stall mid-flight (Wi-Fi roam, captive portal re-auth,
+// CDN proxy buffering, an idle timeout at some hop) kills the entire
+// request and forces a full retry from byte 0. S3 multipart uploads
+// replace that one giant request with N independent ~8 MB PUTs, each
+// to its own freshly-signed URL, so a stalled part only costs a
+// retry of that 8 MB chunk instead of the full file.
+//
+// The browser drives the flow via four route actions:
+//   start → createMultipartUpload → { uploadId, key }
+//   sign-part → presigned UploadPart URL per part
+//   complete → completeMultipartUpload(parts)
+//   abort → abortMultipartUpload (called on hard client failure so we
+//     don't leak orphan multipart uploads in R2; R2 bills storage
+//     for incomplete uploads until they're aborted or auto-expired).
+
+/**
+ * Start a multipart upload against R2 and return the upload id +
+ * object key the browser will then use to sign + upload parts.
+ */
+export async function r2StartMultipartUpload(
+  key: string,
+  opts: { contentType?: string } = {}
+): Promise<{ uploadId: string; key: string }> {
+  if (ACTIVE_BACKEND !== "r2") {
+    throw new Error("r2StartMultipartUpload called while backend is not r2");
+  }
+  const res = await r2().send(
+    new CreateMultipartUploadCommand({
+      Bucket: r2Bucket(),
+      Key: key,
+      ContentType: opts.contentType ?? "application/pdf",
+    })
+  );
+  if (!res.UploadId) {
+    throw new Error("R2 CreateMultipartUpload returned no UploadId");
+  }
+  return { uploadId: res.UploadId, key };
+}
+
+/**
+ * Sign a single part PUT URL for a multipart upload. Each part gets
+ * its own URL so failures retry independently.
+ */
+export async function r2PresignedUploadPartUrl(
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  opts: { expiresInSeconds?: number } = {}
+): Promise<{ uploadUrl: string }> {
+  if (ACTIVE_BACKEND !== "r2") {
+    throw new Error("r2PresignedUploadPartUrl called while backend is not r2");
+  }
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10_000) {
+    throw new Error(`Invalid partNumber ${partNumber} (must be 1..10000)`);
+  }
+  const cmd = new UploadPartCommand({
+    Bucket: r2Bucket(),
+    Key: key,
+    UploadId: uploadId,
+    PartNumber: partNumber,
+  });
+  const uploadUrl = await getSignedUrl(r2(), cmd, {
+    expiresIn: opts.expiresInSeconds ?? 60 * 60,
+  });
+  return { uploadUrl };
+}
+
+/**
+ * Finalise a multipart upload. Parts must be sorted by partNumber
+ * ascending — S3/R2 reject CompleteMultipartUpload with
+ * `InvalidPartOrder` if they aren't. The browser passes them in any
+ * order (whichever finishes first) so we re-sort here.
+ */
+export async function r2CompleteMultipartUpload(
+  key: string,
+  uploadId: string,
+  parts: Array<{ partNumber: number; etag: string }>
+): Promise<{ url: string; key: string }> {
+  if (ACTIVE_BACKEND !== "r2") {
+    throw new Error("r2CompleteMultipartUpload called while backend is not r2");
+  }
+  const sorted = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+  await r2().send(
+    new CompleteMultipartUploadCommand({
+      Bucket: r2Bucket(),
+      Key: key,
+      UploadId: uploadId,
+      MultipartUpload: {
+        Parts: sorted.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+      },
+    })
+  );
+  return { url: r2EndpointUrl(key), key };
+}
+
+/**
+ * Abort an in-flight multipart upload. Safe to call on a UploadId
+ * that no longer exists — we swallow NoSuchUpload because callers
+ * (cancel / hard-error paths) shouldn't double-fail because cleanup
+ * already happened.
+ */
+export async function r2AbortMultipartUpload(
+  key: string,
+  uploadId: string
+): Promise<void> {
+  if (ACTIVE_BACKEND !== "r2") {
+    throw new Error("r2AbortMultipartUpload called while backend is not r2");
+  }
+  await r2()
+    .send(
+      new AbortMultipartUploadCommand({
+        Bucket: r2Bucket(),
+        Key: key,
+        UploadId: uploadId,
+      })
+    )
+    .catch(() => {});
 }

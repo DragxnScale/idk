@@ -1779,6 +1779,30 @@ function DebugLogsTab() {
 
 // ── Upload Tab ─────────────────────────────────────────────────────────────
 
+interface UploadLogEntry {
+  /** Wall-clock time of the FIRST time this dedupe key was logged. */
+  time: string;
+  /** `pct|label` — events with the same key collapse into one line. */
+  dedupeKey: string;
+  /** Human label, e.g. "Uploading… 50%" or "Stalled — no progress…". */
+  label: string;
+  /** Latest byte counts for live-updating progress lines. */
+  bytes?: { loaded: number; total: number };
+  /** How many times this line was repeated (for non-byte status lines). */
+  count: number;
+}
+
+function formatUploadLogEntry(e: UploadLogEntry): string {
+  const bytes = e.bytes ? ` (${fmtUploadBytes(e.bytes.loaded, e.bytes.total)})` : "";
+  const count = e.count > 1 ? ` (×${e.count})` : "";
+  return `${e.time}: ${e.label}${bytes}${count}`;
+}
+
+function fmtUploadBytes(loaded: number, total: number): string {
+  const fmt = (b: number) => `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  return `${fmt(loaded)} / ${fmt(total)}`;
+}
+
 function UploadTab() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -1798,8 +1822,48 @@ function UploadTab() {
   const [statusLabel, setStatusLabel] = useState("");
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [debugLog, setDebugLog] = useState<string[]>([]);
-  const addLog = (msg: string) => setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
+  // Smart upload log. Each entry is structured so the renderer can
+  // dedupe consecutive identical (pct, label) events into one line +
+  // live-update its byte counter. Without dedupe a 200 MB upload
+  // produces hundreds of identical "Uploading… 50%" rows that hide
+  // any actually-useful events.
+  const [debugLog, setDebugLog] = useState<UploadLogEntry[]>([]);
+  const addLog = (
+    label: string,
+    opts?: { pct?: number; bytes?: { loaded: number; total: number } }
+  ) =>
+    setDebugLog((prev) => {
+      const time = new Date().toLocaleTimeString();
+      // Dedupe key = (pct, label). Two events with the same key but
+      // different byte counts are treated as updates to the same
+      // line, so the user can see actual byte movement even when the
+      // rounded percentage label is stuck on the same value for many
+      // progress events in a row.
+      const dedupeKey = `${opts?.pct ?? "_"}|${label}`;
+      const last = prev[prev.length - 1];
+      if (last && last.dedupeKey === dedupeKey) {
+        const updated: UploadLogEntry = {
+          ...last,
+          // When the event carries bytes, the user wants live bytes
+          // (data is moving). When it doesn't, the event is just a
+          // status line repeating itself — bump a `(×N)` counter
+          // instead so the row collapses cleanly.
+          bytes: opts?.bytes ?? last.bytes,
+          count: opts?.bytes ? last.count : last.count + 1,
+        };
+        return [...prev.slice(0, -1), updated];
+      }
+      return [
+        ...prev,
+        {
+          time,
+          dedupeKey,
+          label,
+          bytes: opts?.bytes,
+          count: 1,
+        },
+      ];
+    });
 
   // Archive.org link paste state
   const [archiveLink, setArchiveLink] = useState("");
@@ -1903,10 +1967,18 @@ function UploadTab() {
 
     let blobUrl: string;
     try {
-      blobUrl = await uploadPdfToStorage(file, blobPathname, (pct, label) => {
+      blobUrl = await uploadPdfToStorage(file, blobPathname, (pct, label, bytes) => {
         setProgress(pct);
+        // The button label must stay just `Uploading… N%` — the bytes
+        // column is debug-log only. `label` already excludes bytes.
         setStatusLabel(label);
-        if (pct === 2 || pct % 25 === 0) addLog(label);
+        // Log every progress event so the dedupe logger can update the
+        // live bytes counter in place. Previously we only logged at
+        // pct === 2 or pct % 25, which produced a sparse log that gave
+        // no information about whether bytes were actually moving
+        // between those milestones — making "stalled at 75%" look
+        // identical to "uploading at 75%".
+        addLog(label, { pct, bytes });
       }, { admin: true });
       setProgress(90);
       addLog(`Stored: ${blobUrl}`);
@@ -2174,7 +2246,7 @@ function UploadTab() {
             <details open className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3">
               <summary className="text-xs text-gray-500 cursor-pointer select-none">Debug log ({debugLog.length} entries)</summary>
               <pre className="mt-2 text-xs text-gray-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-                {debugLog.join("\n")}
+                {debugLog.map(formatUploadLogEntry).join("\n")}
               </pre>
             </details>
           )}

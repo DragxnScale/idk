@@ -14,7 +14,11 @@
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { decode } from "next-auth/jwt";
-import { ACTIVE_BACKEND, r2PresignedPutUrl } from "@/lib/storage-backend";
+import {
+  ACTIVE_BACKEND,
+  r2EndpointUrl,
+  r2PresignedPutUrl,
+} from "@/lib/storage-backend";
 
 const SESSION_COOKIE = "sf.session-token";
 const ADMIN_EMAIL = "jaydenw0711@gmail.com";
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { pathname: string; admin?: boolean };
+  let body: { pathname: string; admin?: boolean; size?: number };
   try {
     body = await request.json();
   } catch {
@@ -69,6 +73,27 @@ export async function POST(request: Request) {
   // ── R2 path: hand back a presigned PUT URL ───────────────────────
   if (ACTIVE_BACKEND === "r2") {
     try {
+      // Threshold matches `lib/upload-client.ts` — above ~50 MB the single
+      // PUT becomes a stall risk (one TCP connection has to survive minutes
+      // of continuous body streaming through R2's edge). The client is told
+      // `mode: "multipart"` and switches to the chunked path via
+      // `/api/blob/r2-multipart`. We don't open the multipart upload here —
+      // the client does it via `action: "start"` so an abandoned init
+      // doesn't leak an orphan UploadId.
+      const R2_MULTIPART_THRESHOLD_BYTES = 50 * 1024 * 1024;
+      const useMultipart =
+        typeof body.size === "number" &&
+        body.size > R2_MULTIPART_THRESHOLD_BYTES;
+
+      if (useMultipart) {
+        return NextResponse.json({
+          backend: "r2",
+          mode: "multipart",
+          pathname: body.pathname,
+          objectUrl: r2EndpointUrl(body.pathname),
+        });
+      }
+
       const { uploadUrl, objectUrl } = await r2PresignedPutUrl(body.pathname, {
         contentType: "application/pdf",
         // 4 hours: textbook PDFs can be 150–300 MB and admin uploads from
@@ -79,6 +104,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({
         backend: "r2",
+        mode: "single",
         uploadUrl,
         objectUrl,
         pathname: body.pathname,
