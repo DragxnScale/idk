@@ -73,6 +73,13 @@ CALIBRATION:
 - For SA: if the canonical answer is a generic parent category when a specific named term exists in the source (e.g. "decomposition" when the source says "electrolysis"), use "fix" with the more-specific answer.
 - Universal scientific facts (speed of light, freezing point of water, the value of NA, the formula PV=nRT, etc.) are correct even if the *specific source* doesn't restate them. Don't drop a question on PV=nRT just because it's a chemistry chapter — verify the formula and answer are physically/chemically correct.
 
+REDUNDANCY CHECK (run AFTER per-question verdicts are decided):
+- Scan the FULL set of questions you just verified. Count how many test the same single named law / formula / concept.
+- If THREE OR MORE questions clearly test the same single concept (e.g. three questions all about Boyle's law, three on torr-to-atm conversion), AND the reading contains other formulas/laws that NONE of the questions cover, change the verdict for the *weakest* of the duplicates to "drop" with reason "redundant — concept already covered, [missing concept] from the source has zero questions".
+- "Weakest" = pure recognition / definition over application; ambiguous over precise; one with the most-overlapping options.
+- Pressure-unit conversions (torr ↔ atm ↔ mmHg ↔ kPa) collectively get a maximum of ONE slot. If two or more pressure-unit conversion questions appear, drop the extras with reason "pressure-unit conversion overweighted".
+- Don't drop questions on a duplicated concept if the reading really only covers that concept (i.e. there are no uncovered formulas in the source). The goal is balance, not artificial scarcity.
+
 OUTPUT:
 - Return one verdict per input question, in the same order. The "index" field should match the input's array position (0-based).
 - "reason" is one short sentence. It's used in dev logs, never shown to the user — be specific ("MC says option 2 is correct, but option 0 is the actual van der Waals correction term").
@@ -125,7 +132,7 @@ export async function factCheckQuizQuestions(
         UNTRUSTED_INPUT_GUARD,
       prompt: `Source reading material:\n\n${wrapUntrusted(
         "reading material",
-        sourceText.slice(0, 12_000)
+        sourceText.slice(0, 30_000)
       )}\n\nQuestions to fact-check (JSON):\n${JSON.stringify(
         compactInput,
         null,
@@ -244,7 +251,7 @@ export async function factCheckVelocityQuestions(
         UNTRUSTED_INPUT_GUARD,
       prompt: `Source reading material:\n\n${wrapUntrusted(
         "reading material",
-        sourceText.slice(0, 12_000)
+        sourceText.slice(0, 30_000)
       )}\n\nQuestions to fact-check (JSON):\n${JSON.stringify(
         compactInput,
         null,

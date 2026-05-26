@@ -527,13 +527,81 @@ export async function POST(request: Request) {
 
       const baseSystem = `You are writing exactly ${targetCount} quiz-bowl style science questions from the reading, formatted as ${targetPairs} toss-up/bonus pairs for NSB-style play.
 
-TOPIC PRIORITY (fill these first — the user's score lives or dies on whether you covered them):
-1. **Formulas and named equations.** Every formula, law, or named equation that appears in the reading gets at least one toss-up/bonus pair before any topic is repeated. The toss-up tests recognition / what each variable means / which law the equation expresses; the bonus tests application (plug values, rearrange, predict the effect of changing one variable). For a chemistry "gases" chapter that means PV = nRT, P₁V₁ = P₂V₂, V₁/T₁ = V₂/T₂, P_total = ΣP_i, μ_rms = √(3RT/M), the van der Waals correction (P + a(n/V)²)(V − nb) = nRT, Graham's effusion ratio, etc.
-2. **Named laws, principles, and theories.** Boyle's, Charles's, Avogadro's, Dalton's, Graham's, Hess's, Le Chatelier's, Pauli, Aufbau, Hund's, the Kinetic Molecular Theory of gases, etc. Each must show up if it appears in the reading.
-3. **Core definitions and operational vocabulary** — the words a student has to own before they can reason about the chapter (partial pressure, mole fraction, ideal gas, root-mean-square velocity, effusion vs diffusion, etc.). Distractors should be nearby/confusable terms from the same chapter.
-4. **Cause-and-effect / conditions** — when a law applies, when it fails, what makes a gas ideal vs real, etc.
+═══════════════════════════════════════════════════════════════════
+STEP 0 — BUILD A COVERAGE CHECKLIST BEFORE WRITING ANY PAIRS
+═══════════════════════════════════════════════════════════════════
+Before writing a single pair, mentally enumerate every distinct formula and named law in the reading. THIS IS NOT OPTIONAL — it's the only way to avoid the failure mode of writing 5 pairs on Boyle's law and 0 pairs on Charles's law.
 
-Trivia, historical anecdotes, biographical dates, and side examples are LAST priority — only use them if you've already exhausted 1–4 and still need slots.
+Build a list of:
+1. **Every distinct formula / named equation.** For a Zumdahl-style "gases" chapter that's at minimum:
+   - PV = nRT  (ideal gas law)
+   - P₁V₁ = P₂V₂  (Boyle's law)
+   - V₁/T₁ = V₂/T₂  (Charles's law)
+   - V₁/n₁ = V₂/n₂  (Avogadro's law)
+   - (P₁V₁)/(n₁T₁) = (P₂V₂)/(n₂T₂)  (combined gas law)
+   - P_total = Σ P_i  (Dalton's law)
+   - P_i = χ_i · P_total  (mole-fraction form)
+   - μ_rms = √(3RT/M)  (KMT rms speed)
+   - KE_avg = (3/2)RT per mole  (KMT kinetic energy)
+   - rate_A / rate_B = √(M_B / M_A)  (Graham's law)
+   - (P + a(n/V)²)(V − nb) = nRT  (van der Waals)
+   - d = PM/RT  (gas density)
+2. **Every named law, theory, or postulate** in the reading.
+3. **Every core defined term** the chapter introduces (partial pressure, mole fraction, ideal gas, real gas, effusion vs diffusion, root-mean-square speed, STP).
+
+ASSIGN ONE PAIR PER CHECKLIST ITEM before any item gets a second pair. With ${targetPairs} pairs and ~10–12 distinct formulas/laws in a typical gases chapter, that's roughly one pair each — no room to repeat. If you do have leftover slots, the order to fill them is: (a) extra application bonus on the most foundational formulas, (b) cause-and-effect / conditions, (c) trivia.
+
+Pressure-unit conversions (torr ↔ atm ↔ mmHg ↔ kPa) get AT MOST 1 pair across the entire batch. Memorising those conversions is useful but not what the chapter is about.
+
+═══════════════════════════════════════════════════════════════════
+PAIR DESIGN — TOSSUP = RECOGNITION, BONUS = APPLICATION
+═══════════════════════════════════════════════════════════════════
+The strongest pair format for a formula-heavy chapter is:
+- TOSSUP (recognition, fast): names the formula or asks what a variable means.
+- BONUS (application, ~20s think time): gives numeric inputs and asks for the missing variable.
+
+EXAMPLE pair on PV = nRT:
+- TOSSUP: "Which gas law relates pressure, volume, moles, and temperature in a single equation?" → "ideal gas law" (or "PV = nRT")
+- BONUS: "0.500 mol of an ideal gas at 2.00 atm and 300. K occupies what volume? (R = 0.08206 L·atm/mol·K)" → "6.16 L"
+
+EXAMPLE pair on Boyle's law:
+- TOSSUP: "At constant temperature and moles, pressure and volume are inversely proportional — by which named law?" → "Boyle's law"
+- BONUS: "A 5.0 L gas sample at 1.0 atm is isothermally compressed to 2.5 L. What is the new pressure?" → "2.0 atm"
+
+EXAMPLE pair on Charles's law:
+- TOSSUP: "Volume is directly proportional to absolute temperature at constant P and n — which law?" → "Charles's law"
+- BONUS: "A balloon holds 1.00 L at 27 °C. At 327 °C and the same pressure, what is the volume?" → "2.00 L"
+
+EXAMPLE pair on Dalton's law:
+- TOSSUP: "What name is given to the pressure exerted by one component of a gas mixture?" → "partial pressure"
+- BONUS: "A mixture of 2.0 mol N₂ and 3.0 mol O₂ has total pressure 5.0 atm. What is P_O₂?" → "3.0 atm"
+
+EXAMPLE pair on Graham's law:
+- TOSSUP: "Which named law states that effusion rate is inversely proportional to the square root of molar mass?" → "Graham's law"
+- BONUS: "He effuses how many times faster than O₂?" → "2.83" (or "2√2")
+
+═══════════════════════════════════════════════════════════════════
+APPLICATION BONUS REQUIREMENTS (read carefully — this is where pairs usually break)
+═══════════════════════════════════════════════════════════════════
+For every formula in the checklist, the BONUS half should be a plug-and-chug application question:
+- Use ROUND, MEMORABLE numbers (1.0, 2.0, 5.0, 10. atm; 273 K, 300 K, 600 K; 1.00 L, 5.00 L, 22.4 L; 0.500 mol, 1.00 mol, 2.00 mol).
+- ALWAYS include R (or the relevant constant) in the stem when needed: "(R = 0.08206 L·atm/mol·K)".
+- ALWAYS include units in BOTH the stem and the canonical answer.
+- The canonical answer is short: a number with unit, 1–4 words. Distractor options (still required by the schema even for SA) are plausible-but-wrong values from real student mistakes (forgot °C→K, dropped a factor of 2, inverted the ratio, used wrong R).
+- The student should NOT have to memorise non-trivial values — give them what they need in the stem.
+- The numbers MUST be invented for the question, not lifted from a specific worked example or graph in the reading. (See "NO TEXTBOOK-SPECIFIC DATA POINTS" further down.)
+
+The handful of slots that aren't formula application can cover named-law definitions, KMT postulates, real-vs-ideal gas conditions, or vocabulary — but every formula in the checklist gets its application bonus first.
+
+═══════════════════════════════════════════════════════════════════
+TOPIC PRIORITY (fill these in order — checklist must be exhausted before repeats):
+═══════════════════════════════════════════════════════════════════
+1. **Formulas and named equations** — one pair per formula, recognition tossup → application bonus.
+2. **Named laws, principles, and theories** — Boyle's, Charles's, Avogadro's, Dalton's, Graham's, Hess's, Le Chatelier's, Pauli, Aufbau, Hund's, KMT, etc. (Many overlap with category 1; that's fine — the formula pair already counts.)
+3. **Core definitions and operational vocabulary** — partial pressure, mole fraction, ideal gas, root-mean-square velocity, effusion vs diffusion. Distractors should be confusable terms from the same chapter.
+4. **Cause-and-effect / conditions** — when a law applies, when it fails, what makes a gas ideal vs real.
+
+Trivia, historical anecdotes, biographical dates, and side examples are LAST priority — only if you've exhausted 1–4 and still need slots.
 
 SOURCE FILTERING (critical — read before anything else):
 - The reading may contain non-content "front matter" or "back matter" pages from a textbook. You MUST NOT write questions from any of these:
@@ -673,7 +741,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
           readingPages.length > 0 ? readingPages.join(", ") : "unknown"
         }. When tagging "pageIndex", use one of those numbers (or 0 if the concept cannot be tied to a specific page).\n\n${wrapUntrusted(
           "reading material",
-          stripNonContentPages(accumulatedText).slice(0, 10000)
+          stripNonContentPages(accumulatedText).slice(0, 30000)
         )}${
           notesContext
             ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
@@ -716,7 +784,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
       // atomic — if either half is unfixable, both halves go. Falls back to
       // the unmodified list if the verifier itself fails.
       const verifierSource =
-        stripNonContentPages(accumulatedText).slice(0, 12_000) +
+        stripNonContentPages(accumulatedText).slice(0, 30_000) +
         (notesContext
           ? `\n\n--- Session notes ---\n${notesContext.slice(0, 3000)}`
           : "");
