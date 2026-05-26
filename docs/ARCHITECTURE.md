@@ -216,7 +216,7 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | PATCH | `/api/study/sessions` | Update session fields: `totalFocusedMinutes`, `endedAt`, `pagesVisited`, `visitedPagesList`, **`sessionState`** (`live`|`paused`). Ending a session (`endedAt`) recomputes linked **`study_goals`** completion when sum of ended-session minutes reaches `target_value`. |
 | GET | `/api/study/goals` | Active cumulative goals with progress (`completedMinutes` from ended sessions only). |
 | GET | `/api/study/sessions/[id]` | Single session for user. |
-| GET | `/api/study/stats` | Aggregated stats (streak, weekly chart, goals), active session info incl. **`sessionState`**, **`studyGoal`** summary when linked. |
+| GET | `/api/study/stats` | Aggregated stats (streak, weekly chart, goals), active session info incl. **`sessionState`**, **`studyGoal`** summary when linked. **Streak rule**: today is a one-day grace window — if the user hasn't studied yet today, the streak still counts from yesterday backwards. Two consecutive missed days breaks the streak. |
 | GET | `/api/study/chapters-read` | Chapter reading progress helper. |
 
 ### 5.3 Page visits
@@ -260,6 +260,7 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | POST | `/api/user/verify-login-password` | Body `{ password }`. Verifies the password against `users.password_hash` for the signed-in user only (no DB writes). Used by Settings to unlock the combined login-password and exit-password forms. **200** `{ ok: true }`; **401** not signed in or wrong password; **400** invalid JSON, empty password, or account has no login password hash. |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
 | GET | `/api/user/heatmap` | Returns `{ days: { date, minutes }[] }` for the past 365 days for the GitHub-style activity heatmap on the dashboard. |
+| GET | `/api/user/activity-month` | Query `?year=YYYY&month=MM` (defaults to current UTC month). Returns `{ year, month, days: { date, minutes, sessions }[], earliestDate }` for the requested month, plus the user's first-ever session date so the client can disable the back-arrow at the start of history. Powers the `ActivityMonthModal` opened by clicking the heatmap. |
 
 User-uploaded documents are accessible **only by the owner or an admin** — enforced in `GET/PATCH /api/documents/[id]` and `GET /api/user/drive`.
 
@@ -545,7 +546,8 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 ### 7.3 Dashboard features
 
-- **Streak card**: shows current streak with flame icon; amber "at risk" warning if streak > 0 and no session today; green "going strong" if studied today.
+- **Streak card**: shows current streak with flame icon; amber "at risk" warning if streak > 0 and no session today; green "going strong" if studied today. The streak is computed in `/api/study/stats` with a one-day grace window — missing today doesn't break it, but missing both today and yesterday does. (Implementation note: today's `dailyMinutesGoal` is independent of streak preservation.)
+- **Activity heatmap → month modal**: the GitHub-style yearly heatmap (`HeatmapCalendar`) is now an interactive `<button>`. Tapping it opens `ActivityMonthModal` (a 6×7 month grid with prev/next month arrows, keyboard ←/→/Esc shortcuts, and a per-month summary row showing active days, sessions, and minutes). The modal fetches `GET /api/user/activity-month?year=…&month=…`; the back arrow disables once the user reaches `earliestDate` (their first ever session month).
 - **Textbook progress**: fetches `GET /api/user/textbook-progress`; shows each catalog book with a progress bar derived from the **union** of all unique pages visited across sessions (not a sum, so re-reading a page doesn't inflate the count).
 - **Weekly chart**: bar chart of daily study minutes; minimum bar height ensures small values are visible.
 

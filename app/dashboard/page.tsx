@@ -492,7 +492,10 @@ export default function DashboardPage() {
 
         {/* Activity heatmap */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="text-sm font-semibold mb-4">Activity</h2>
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="text-sm font-semibold">Activity</h2>
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">Tap to browse months</span>
+          </div>
           <HeatmapCalendar />
         </div>
 

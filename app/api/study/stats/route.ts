@@ -80,13 +80,25 @@ export async function GET() {
       .filter((r) => r.startedAt)
       .map((r) => r.startedAt!.toISOString().slice(0, 10))
   );
-  for (let i = 0; i < 365; i++) {
+  const dayKey = (offset: number) => {
     const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    if (daySet.has(d.toISOString().slice(0, 10))) {
-      streak++;
-    } else {
-      break;
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  // Today is a grace day: if you haven't studied today yet, the streak still
+  // counts from yesterday. But two consecutive missed days breaks it.
+  const startOffset = daySet.has(dayKey(0))
+    ? 0
+    : daySet.has(dayKey(1))
+      ? 1
+      : -1;
+  if (startOffset >= 0) {
+    for (let i = startOffset; i < 365; i++) {
+      if (daySet.has(dayKey(i))) {
+        streak++;
+      } else {
+        break;
+      }
     }
   }
 

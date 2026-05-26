@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ActivityMonthModal } from "./ActivityMonthModal";
 
 interface DayData {
   date: string;
@@ -22,6 +23,7 @@ export function HeatmapCalendar() {
   const [days, setDays] = useState<DayData[]>([]);
   const [tooltip, setTooltip] = useState<{ date: string; minutes: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/user/heatmap")
@@ -34,7 +36,20 @@ export function HeatmapCalendar() {
     return <div className="h-24 flex items-center justify-center text-sm text-gray-400 animate-pulse">Loading activity…</div>;
   }
 
-  if (days.length === 0) return null;
+  if (days.length === 0) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="h-24 w-full flex items-center justify-center text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-lg border border-dashed border-gray-200 dark:border-gray-800"
+        >
+          No activity yet — tap to browse months
+        </button>
+        {modalOpen && <ActivityMonthModal onClose={() => setModalOpen(false)} />}
+      </>
+    );
+  }
 
   // Group into weeks (columns). First day may not start on Sunday, pad it.
   const firstDay = new Date(days[0].date);
@@ -69,7 +84,13 @@ export function HeatmapCalendar() {
   });
 
   return (
-    <div className="relative overflow-x-auto">
+    <>
+    <button
+      type="button"
+      onClick={() => setModalOpen(true)}
+      aria-label="Open full month calendar"
+      className="relative overflow-x-auto block w-full text-left rounded-md transition cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+    >
       {/* Month labels */}
       <div className="flex gap-[3px] mb-1 pl-8">
         {weeks.map((_, col) => {
@@ -96,7 +117,7 @@ export function HeatmapCalendar() {
             {w.map((day, row) => (
               <div
                 key={row}
-                className={`w-3 h-3 rounded-[2px] cursor-default transition-opacity ${day ? getColor(day.minutes) : "opacity-0"}`}
+                className={`w-3 h-3 rounded-[2px] cursor-pointer transition-opacity ${day ? getColor(day.minutes) : "opacity-0"}`}
                 onMouseEnter={() => day && setTooltip(day)}
                 onMouseLeave={() => setTooltip(null)}
               />
@@ -118,6 +139,8 @@ export function HeatmapCalendar() {
         ))}
         <span className="text-[9px] text-gray-400">More</span>
       </div>
-    </div>
+    </button>
+    {modalOpen && <ActivityMonthModal onClose={() => setModalOpen(false)} />}
+    </>
   );
 }
