@@ -65,7 +65,8 @@ High-level map (only meaningful directories and notable files).
 /
 ├── app/                          # Next.js App Router
 │   ├── layout.tsx                # Root layout: theme script, service worker registration
-│   ├── page.tsx                  # Marketing / landing (PWA install hints)
+│   ├── page.tsx                  # Server shell: redirects to `/dashboard` if a session cookie is present, else renders `HomeLanding`
+│   ├── HomeLanding.tsx           # Marketing / landing (PWA install hints) for unauthenticated visitors
 │   ├── globals.css
 │   ├── manifest.ts               # Web app manifest
 │   ├── icon-192/route.tsx        # Dynamic icon routes
@@ -488,7 +489,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | Route | Role |
 |-------|------|
 | `/` | Landing, install prompts, nav to auth. |
-| `/auth/signin`, `/auth/signup` | Credentials auth. |
+| `/auth/signin`, `/auth/signup` | Credentials auth. Each route is a server shell that redirects already-signed-in users straight to `/dashboard`; the form lives in a sibling `SignInForm.tsx` / `SignUpForm.tsx` client component. The `/` root works the same way — signed-in users never see the marketing page. |
 | `/dashboard` | Stats, **streak card**, **textbook progress**, bookmarks, planner, countdowns. |
 | `/study/session` | Live session: picker, timer, PDF, music, AI notes panel, focus UX; **Pause & leave** (`sessionState` paused); if an open session exists, a **gate** offers only **Resume** (no “end from here” — users must re-enter the session and use **End session** with the exit password). Navigating to **`?resume=`** triggers a fresh stats fetch so resume runs; **`?resume=`** opens the PDF on **`lastPageIndex`** automatically; **start screen** can offer “resume on page N” vs usual start from **`GET /api/study/sessions`**; optional **multi-session cumulative time goal** (`GET /api/study/goals` or new total). |
 | `/study/session/[id]/summary` | Overview, Notes, Quiz, Review, **Flashcards** tabs. |
