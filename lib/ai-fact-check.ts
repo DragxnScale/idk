@@ -74,11 +74,11 @@ CALIBRATION:
 - Universal scientific facts (speed of light, freezing point of water, the value of NA, the formula PV=nRT, etc.) are correct even if the *specific source* doesn't restate them. Don't drop a question on PV=nRT just because it's a chemistry chapter — verify the formula and answer are physically/chemically correct.
 
 REDUNDANCY CHECK (run AFTER per-question verdicts are decided):
-- Scan the FULL set of questions you just verified. Count how many test the same single named law / formula / concept.
-- If THREE OR MORE questions clearly test the same single concept (e.g. three questions all about Boyle's law, three on torr-to-atm conversion), AND the reading contains other formulas/laws that NONE of the questions cover, change the verdict for the *weakest* of the duplicates to "drop" with reason "redundant — concept already covered, [missing concept] from the source has zero questions".
+- Scan the FULL set of questions you just verified. Count how many test the same single named law / formula / theorem / concept / process / event.
+- If THREE OR MORE questions clearly test the same single item (e.g. three questions all about Boyle's law in chemistry, three on the chain rule in calculus, three on the Treaty of Versailles in history), AND the reading contains other comparably-foundational items that NONE of the questions cover, change the verdict for the *weakest* of the duplicates to "drop" with reason "redundant — concept already covered, [missing item] from the source has zero questions".
 - "Weakest" = pure recognition / definition over application; ambiguous over precise; one with the most-overlapping options.
-- Pressure-unit conversions (torr ↔ atm ↔ mmHg ↔ kPa) collectively get a maximum of ONE slot. If two or more pressure-unit conversion questions appear, drop the extras with reason "pressure-unit conversion overweighted".
-- Don't drop questions on a duplicated concept if the reading really only covers that concept (i.e. there are no uncovered formulas in the source). The goal is balance, not artificial scarcity.
+- Any single niche-conversion category gets a maximum of ONE slot per generation. Examples: pressure-unit conversions in chemistry (torr ↔ atm ↔ mmHg ↔ kPa), unit-prefix conversions in physics (kilo / milli / micro), date-arithmetic in history. If two or more of the same niche-conversion category appear, drop the extras with reason "[category] overweighted".
+- Don't drop questions on a duplicated item if the reading really only covers that item (i.e. there are no uncovered comparably-foundational items in the source). The goal is balance, not artificial scarcity.
 
 OUTPUT:
 - Return one verdict per input question, in the same order. The "index" field should match the input's array position (0-based).

@@ -112,28 +112,36 @@ export async function POST(request: Request) {
 Generate exactly ${targetQ} multiple-choice questions testing comprehension of the reading material.
 
 ═══════════════════════════════════════════════════════════════════
+SUBJECT-AGNOSTIC: these rules apply to ANY subject
+═══════════════════════════════════════════════════════════════════
+Chemistry, biology, physics, mathematics, computer science, economics, history, literature — same workflow regardless. The concrete examples below are drawn from a chemistry "gases" chapter because the prompt was tuned against that case, but the rules are domain-neutral. For a biology cell-respiration chapter your checklist items would be glycolysis, Krebs cycle, electron transport chain, ATP yields, oxidative phosphorylation, etc.; for a calculus chapter they'd be the power rule, chain rule, fundamental theorem, definite vs indefinite integrals, etc.; for a history chapter they'd be each named treaty, war, doctrine, person. Translate every "formula" rule below to "named theorem / process / event / canonical fact" for non-quantitative subjects.
+
+═══════════════════════════════════════════════════════════════════
 STEP 0 — BUILD A COVERAGE CHECKLIST BEFORE WRITING ANY QUESTIONS
 ═══════════════════════════════════════════════════════════════════
-Before writing a single question, mentally enumerate everything in the reading that belongs in the checklist below. THIS IS NOT OPTIONAL — it's the only way to avoid the failure mode of writing 6 questions on Boyle's law and 0 on Charles's law.
+Before writing a single question, mentally enumerate everything in the reading that belongs in the checklist below. THIS IS NOT OPTIONAL — it's the only way to avoid the failure mode of writing 6 questions on the first concept and 0 on later ones.
 
 Checklist categories (build this list FIRST, then assign question slots):
-1. **Every distinct formula / named equation.** Including the "obvious" ones the chapter introduces early. For a Zumdahl-style "gases" chapter that's at minimum:
+1. **Every distinct formula / named equation / named result.** Including ones the chapter introduces "in passing". The handful below are illustrative for a chemistry "gases" chapter — for any other subject, replace them with that subject's named formulas, theorems, processes, or canonical procedures.
+   ILLUSTRATIVE (chemistry, gases):
    - PV = nRT  (ideal gas law)
-   - P₁V₁ = P₂V₂ at constant n, T  (Boyle's law)
-   - V₁/T₁ = V₂/T₂ at constant n, P  (Charles's law)
-   - V₁/n₁ = V₂/n₂ at constant T, P  (Avogadro's law)
+   - P₁V₁ = P₂V₂  (Boyle's law)
+   - V₁/T₁ = V₂/T₂  (Charles's law)
+   - V₁/n₁ = V₂/n₂  (Avogadro's law)
    - (P₁V₁)/(n₁T₁) = (P₂V₂)/(n₂T₂)  (combined gas law)
-   - P_total = P_1 + P_2 + … = Σ P_i  (Dalton's law of partial pressures)
-   - P_i = χ_i · P_total  (mole-fraction form of Dalton's law)
-   - μ_rms = √(3RT/M)  (root-mean-square molecular speed, KMT)
-   - KE_avg = (3/2)RT per mole  (translational KE from KMT)
-   - rate_A / rate_B = √(M_B / M_A)  (Graham's law of effusion)
-   - (P + a(n/V)²)(V − nb) = nRT  (van der Waals real-gas equation)
-   - density d = PM/RT  (ideal-gas density)
-   - molar mass M = dRT/P  (rearranged density form)
-2. **Every named law, principle, theorem, or postulate** referenced in the reading (Boyle, Charles, Avogadro, Dalton, Graham, plus the postulates of the Kinetic Molecular Theory).
-3. **Every core defined term** (partial pressure, mole fraction, ideal gas, real gas, effusion vs diffusion, root-mean-square speed, STP).
-4. **Every conceptual relationship** (why real gases deviate from ideal at high P / low T, how molecular speed depends on T and M, what each van der Waals correction term physically represents).
+   - P_total = Σ P_i  (Dalton's law)
+   - P_i = χ_i · P_total  (mole-fraction form)
+   - μ_rms = √(3RT/M)  (KMT rms speed)
+   - KE_avg = (3/2)RT  (KMT kinetic energy)
+   - rate_A / rate_B = √(M_B / M_A)  (Graham's law)
+   - (P + a(n/V)²)(V − nb) = nRT  (van der Waals)
+   - d = PM/RT  (gas density)
+   ILLUSTRATIVE (calculus): power rule, product rule, quotient rule, chain rule, FTC parts I and II, u-substitution, integration by parts, the limit definition of the derivative.
+   ILLUSTRATIVE (cellular biology): glycolysis steps, Krebs cycle, electron transport chain, ATP yields per pathway, fermentation, aerobic vs anaerobic, oxidative phosphorylation.
+   ILLUSTRATIVE (US history WWII): each named conference (Yalta, Potsdam), each named operation (Overlord, Market Garden), each treaty, each major doctrine.
+2. **Every named law, principle, theorem, postulate, or model** referenced in the reading.
+3. **Every core defined term / piece of operational vocabulary** the chapter uses.
+4. **Every conceptual cause-and-effect / conditions** the chapter establishes (when X applies, when X fails, why X behaves the way it does).
 
 If a checklist item is in the reading but you didn't write a question for it, you have failed the assignment. Bias HARD against revisiting a concept until every checklist item has a question.
 
@@ -149,42 +157,47 @@ Of the ${targetQ} total questions, distribute slots roughly as follows:
 ═══════════════════════════════════════════════════════════════════
 STEP 2 — APPLICATION QUESTIONS (READ THIS CAREFULLY — this is where the prompt usually fails)
 ═══════════════════════════════════════════════════════════════════
-An "application" question gives the student real numeric inputs and asks them to (a) pick the right formula and (b) compute a missing quantity. The four answer options are all the SAME unit and SHAPE — three are calculated wrong-but-plausible distractors, one is the correct value.
+An "application" question puts the student in the position of having to (a) pick the right tool from the chapter — formula, theorem, procedure, framework, identification rule — and (b) actually use it on concrete inputs to produce an answer. The four answer options share the same unit / shape — three are plausible-but-wrong, one is correct.
 
-For a gases chapter the application slate MUST include questions structurally identical to these (use the chapter's own numbers, but follow the format exactly):
+For QUANTITATIVE chapters (chemistry, physics, math, econ, anything with formulas), application questions give numeric inputs and ask for a computed missing quantity:
 
-EXAMPLE application question on PV = nRT (find V):
+EXAMPLE — chemistry, PV = nRT (find V):
   "A sample contains 0.500 mol of an ideal gas at 2.00 atm and 300. K. What is the volume? (R = 0.08206 L·atm/mol·K)"
-  Options:
-    "6.16 L"   ← correct: V = nRT/P = (0.500)(0.08206)(300)/2.00
-    "12.3 L"   ← distractor: forgot to divide by P
-    "3.08 L"   ← distractor: divided by 2P
-    "24.6 L"   ← distractor: used T in °C without converting
-  correctIndex points at "6.16 L"
+  Options: "6.16 L" ← correct (V = nRT/P), "12.3 L" (forgot to divide by P), "3.08 L" (divided by 2P), "24.6 L" (used T in °C)
   explanation: "Rearrange PV = nRT to V = nRT/P; with R = 0.08206 L·atm/mol·K and T in kelvin you get 6.16 L."
 
-EXAMPLE application question on Boyle's law:
-  "A 5.0 L sample of gas at 1.0 atm is compressed isothermally to 2.5 L. What is the new pressure?"
-  Options: "2.0 atm" ← correct, "0.50 atm", "1.0 atm", "5.0 atm"
+EXAMPLE — physics kinematics:
+  "A car accelerates from rest at 3.0 m/s² for 4.0 s. How far does it travel?"
+  Options: "24 m" ← correct (½ a t² = ½·3·16), "12 m", "48 m", "6 m"
 
-EXAMPLE application question on Charles's law (in K, not °C):
-  "A balloon at 27 °C holds 1.00 L. What is the volume at 327 °C, pressure constant?"
-  Options: "2.00 L" ← correct (300 K → 600 K, doubles), "1.00 L", "12 L" (used °C), "0.50 L"
+EXAMPLE — calculus, chain rule:
+  "If f(x) = sin(3x²), what is f'(x)?"
+  Options: "6x · cos(3x²)" ← correct, "cos(3x²)", "6x · sin(3x²)", "3x² · cos(3x²)"
 
-EXAMPLE application question on Dalton's law (mole-fraction form):
-  "A mixture of 2.0 mol N₂ and 3.0 mol O₂ exerts a total pressure of 5.0 atm. What is the partial pressure of O₂?"
-  Options: "3.0 atm" ← correct (χ_O₂ = 3/5, P_O₂ = (3/5)(5.0) = 3.0), "2.0 atm", "5.0 atm", "1.5 atm"
+EXAMPLE — biology, Punnett-square ratios:
+  "Two heterozygous parents (Aa × Aa) cross. What fraction of offspring are expected to be homozygous recessive?"
+  Options: "1/4" ← correct, "1/2", "3/4", "1/3"
 
-EXAMPLE application question on Graham's law:
-  "He effuses through a small hole how many times faster than O₂?"
-  Options: "2.83" ← correct (√(32/4) = 2√2 ≈ 2.83), "8", "4", "1.41"
+EXAMPLE — statistics, z-score:
+  "A score of 78 on an exam with mean 70 and standard deviation 4. What is the z-score?"
+  Options: "2.0" ← correct, "0.5", "8", "1.0"
 
-CRITICAL RULES for application questions:
-- Use ROUND, MEMORABLE numbers a student would see in a Zumdahl problem set (1.0, 2.0, 5.0, 10. atm; 273 K, 300 K, 600 K; 1.00 L, 5.00 L, 22.4 L; 0.500 mol, 1.00 mol, 2.00 mol). NEVER fabricate "exotic" data points lifted from a specific worked example in the reading — that's banned (see "TEXTBOOK-SPECIFIC DATA POINTS" below). The numbers must be values you invent that any student could plug into the formula.
-- ALWAYS include R (or the relevant constant) in the stem when needed: "(R = 0.08206 L·atm/mol·K)" so the student doesn't have to memorise it.
-- ALWAYS include the unit in BOTH the stem and every option. All four options share the same unit.
-- Distractors come from REAL student mistakes: forgot to convert °C → K, used wrong R, dropped a factor of 2, inverted the ratio, used °C absolutely.
-- The explanation MUST name the formula and show the rearrangement: "PV = nRT, so V = nRT/P …".
+For QUALITATIVE chapters (history, literature, pure-vocabulary biology), an "application" question still requires the student to *apply* the chapter's framework rather than recall a definition:
+
+EXAMPLE — history, Cold War:
+  "Which Cold War doctrine would best justify U.S. intervention to prevent a single country from falling to communism for fear neighbouring countries would follow?"
+  Options: "domino theory" ← correct, "Truman Doctrine", "containment", "Monroe Doctrine"
+
+EXAMPLE — literature, identifying a device:
+  "'The wind whispered through the trees' is an example of which figure of speech?"
+  Options: "personification" ← correct, "simile", "hyperbole", "alliteration"
+
+CRITICAL RULES for application questions (apply to all subjects):
+- Use ROUND, MEMORABLE numbers (1.0, 2.0, 5.0, 10 atm; 273 K, 300 K, 600 K; 1.00 L, 22.4 L; 0.500 mol; in calculus: x = 0, 1, 2, 3, 4; in stats: σ = 1, 2, 4). NEVER lift "exotic" data points from a specific worked example or graph in the reading — that's banned (see "TEXTBOOK-SPECIFIC DATA POINTS" below). The numbers must be values you invent that any student could plug in.
+- ALWAYS include any constants the student would need but might forget in the stem itself (e.g. "R = 0.08206 L·atm/mol·K", "g = 9.8 m/s²", "c = 3 × 10⁸ m/s"). The student should never have to re-derive a memorised constant.
+- ALWAYS include the unit in BOTH the stem and every option. All four options share the same unit / shape.
+- Distractors come from REAL student mistakes: forgot to convert (°C → K, ° → rad), used wrong constant, dropped a factor, inverted the ratio, misapplied the chain rule, off-by-one indexing.
+- The explanation MUST name the formula / theorem / framework the question hinges on, and for computed answers, show the rearrangement: "PV = nRT, so V = nRT/P …" or "By the chain rule, d/dx[sin(u)] = cos(u)·u' …".
 
 ═══════════════════════════════════════════════════════════════════
 WHAT TO SKIP
@@ -197,10 +210,10 @@ WHAT TO SKIP
 COVERAGE CONSTRAINTS — SELF-CHECK BEFORE FINALISING
 ═══════════════════════════════════════════════════════════════════
 Before you return the JSON, verify:
-- [ ] Every formula in the Step-0 checklist that's in the reading has at least ONE question. If you have ${targetQ} slots and 8 formulas, you've covered at least 8 distinct formulas before any second question on a single formula.
-- [ ] At least ⌈${targetQ} × 0.4⌉ of the questions are plug-and-chug application questions in the format shown above.
-- [ ] You have NOT written more than 1 question on the same single law/concept (e.g. only one "Boyle's law" question — not three). The exception is when one is a recognition question and another is an application question on the same formula; that's allowed and encouraged.
-- [ ] Pressure-unit / pressure-conversion questions (torr ↔ atm ↔ kPa ↔ mmHg) collectively take at most 1 slot. Pressure conversions are useful but not the centrepiece of the chapter.
+- [ ] Every checklist item from Step 0 that's in the reading has at least ONE question. If you have ${targetQ} slots and 8 checklist items, you've covered at least 8 distinct items before any second question on a single one.
+- [ ] At least ⌈${targetQ} × 0.4⌉ of the questions are plug-and-chug application questions in the format shown above (or the qualitative-application format for non-quantitative chapters).
+- [ ] You have NOT written more than 1 question on the same single law/concept/formula. The exception is when one is a recognition question and another is an application question on the same formula; that's allowed and encouraged.
+- [ ] Any single niche-conversion category (e.g. pressure-unit conversions in chemistry: torr ↔ atm ↔ mmHg ↔ kPa; or unit prefix conversions in physics: kilo / milli / micro; or date-arithmetic in history) collectively takes at most 1 slot. Useful but never the centrepiece of a chapter.
 - [ ] Each question's options share a unit and structural shape. Correct answer position is varied across the quiz.
 
 ═══════════════════════════════════════════════════════════════════

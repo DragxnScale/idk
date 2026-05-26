@@ -528,80 +528,76 @@ export async function POST(request: Request) {
       const baseSystem = `You are writing exactly ${targetCount} quiz-bowl style science questions from the reading, formatted as ${targetPairs} toss-up/bonus pairs for NSB-style play.
 
 ═══════════════════════════════════════════════════════════════════
+SUBJECT-AGNOSTIC: these rules apply to ANY subject
+═══════════════════════════════════════════════════════════════════
+Chemistry, biology, physics, mathematics, computer science, economics, history, literature — same workflow regardless. The chemistry examples below are illustrative because the prompt was tuned against a chemistry "gases" chapter, but the rules are domain-neutral. For any other subject, replace "formula / named equation" with "named theorem / process / event / canonical fact" and "plug-and-chug bonus" with "apply the named tool to a concrete case bonus".
+
+═══════════════════════════════════════════════════════════════════
 STEP 0 — BUILD A COVERAGE CHECKLIST BEFORE WRITING ANY PAIRS
 ═══════════════════════════════════════════════════════════════════
-Before writing a single pair, mentally enumerate every distinct formula and named law in the reading. THIS IS NOT OPTIONAL — it's the only way to avoid the failure mode of writing 5 pairs on Boyle's law and 0 pairs on Charles's law.
+Before writing a single pair, mentally enumerate every distinct formula / named law / core procedure / canonical fact in the reading. THIS IS NOT OPTIONAL — it's the only way to avoid the failure mode of writing 5 pairs on the first concept and 0 on later ones.
 
 Build a list of:
-1. **Every distinct formula / named equation.** For a Zumdahl-style "gases" chapter that's at minimum:
-   - PV = nRT  (ideal gas law)
-   - P₁V₁ = P₂V₂  (Boyle's law)
-   - V₁/T₁ = V₂/T₂  (Charles's law)
-   - V₁/n₁ = V₂/n₂  (Avogadro's law)
-   - (P₁V₁)/(n₁T₁) = (P₂V₂)/(n₂T₂)  (combined gas law)
-   - P_total = Σ P_i  (Dalton's law)
-   - P_i = χ_i · P_total  (mole-fraction form)
-   - μ_rms = √(3RT/M)  (KMT rms speed)
-   - KE_avg = (3/2)RT per mole  (KMT kinetic energy)
-   - rate_A / rate_B = √(M_B / M_A)  (Graham's law)
-   - (P + a(n/V)²)(V − nb) = nRT  (van der Waals)
-   - d = PM/RT  (gas density)
-2. **Every named law, theory, or postulate** in the reading.
-3. **Every core defined term** the chapter introduces (partial pressure, mole fraction, ideal gas, real gas, effusion vs diffusion, root-mean-square speed, STP).
+1. **Every distinct formula / named equation / named result.** Examples below are ILLUSTRATIVE for chemistry; substitute the reading's actual concepts.
+   ILLUSTRATIVE (chemistry, gases): PV = nRT, P₁V₁ = P₂V₂, V₁/T₁ = V₂/T₂, V₁/n₁ = V₂/n₂, combined gas law, P_total = Σ P_i, P_i = χ_i · P_total, μ_rms = √(3RT/M), KE_avg = (3/2)RT, Graham's effusion ratio, van der Waals, d = PM/RT.
+   ILLUSTRATIVE (calculus): power rule, product rule, quotient rule, chain rule, FTC parts I and II, u-substitution, integration by parts.
+   ILLUSTRATIVE (cellular biology): glycolysis, Krebs cycle, electron transport chain, ATP yields per pathway, fermentation, oxidative phosphorylation.
+   ILLUSTRATIVE (history): each named treaty, war, doctrine, conference, named operation, named person.
+2. **Every named law / theory / postulate / theorem / model / doctrine** the reading references.
+3. **Every core defined term / operational vocabulary** the chapter introduces.
 
-ASSIGN ONE PAIR PER CHECKLIST ITEM before any item gets a second pair. With ${targetPairs} pairs and ~10–12 distinct formulas/laws in a typical gases chapter, that's roughly one pair each — no room to repeat. If you do have leftover slots, the order to fill them is: (a) extra application bonus on the most foundational formulas, (b) cause-and-effect / conditions, (c) trivia.
+ASSIGN ONE PAIR PER CHECKLIST ITEM before any item gets a second pair. With ${targetPairs} pairs and ~10–12 distinct items in a typical chapter, that's roughly one pair each — no room to repeat. If you do have leftover slots, the order to fill them is: (a) extra application bonus on the most foundational items, (b) cause-and-effect / conditions, (c) trivia.
 
-Pressure-unit conversions (torr ↔ atm ↔ mmHg ↔ kPa) get AT MOST 1 pair across the entire batch. Memorising those conversions is useful but not what the chapter is about.
+Any single niche-conversion category (e.g. pressure-unit conversions in chemistry: torr ↔ atm ↔ mmHg ↔ kPa; unit-prefix conversions in physics; date arithmetic in history) gets AT MOST 1 pair across the entire batch.
 
 ═══════════════════════════════════════════════════════════════════
 PAIR DESIGN — TOSSUP = RECOGNITION, BONUS = APPLICATION
 ═══════════════════════════════════════════════════════════════════
-The strongest pair format for a formula-heavy chapter is:
-- TOSSUP (recognition, fast): names the formula or asks what a variable means.
-- BONUS (application, ~20s think time): gives numeric inputs and asks for the missing variable.
+The strongest pair format is:
+- TOSSUP (recognition, fast): names the concept, asks what a variable / term means, or asks which named law applies.
+- BONUS (application, ~20s think time): gives concrete inputs and asks for the result of applying the concept.
 
-EXAMPLE pair on PV = nRT:
-- TOSSUP: "Which gas law relates pressure, volume, moles, and temperature in a single equation?" → "ideal gas law" (or "PV = nRT")
+EXAMPLE pair (chemistry, PV = nRT):
+- TOSSUP: "Which gas law relates pressure, volume, moles, and temperature in a single equation?" → "ideal gas law"
 - BONUS: "0.500 mol of an ideal gas at 2.00 atm and 300. K occupies what volume? (R = 0.08206 L·atm/mol·K)" → "6.16 L"
 
-EXAMPLE pair on Boyle's law:
-- TOSSUP: "At constant temperature and moles, pressure and volume are inversely proportional — by which named law?" → "Boyle's law"
-- BONUS: "A 5.0 L gas sample at 1.0 atm is isothermally compressed to 2.5 L. What is the new pressure?" → "2.0 atm"
+EXAMPLE pair (chemistry, Boyle's law):
+- TOSSUP: "At constant T and n, pressure and volume are inversely proportional — by which named law?" → "Boyle's law"
+- BONUS: "A 5.0 L sample at 1.0 atm is isothermally compressed to 2.5 L. What is the new pressure?" → "2.0 atm"
 
-EXAMPLE pair on Charles's law:
-- TOSSUP: "Volume is directly proportional to absolute temperature at constant P and n — which law?" → "Charles's law"
-- BONUS: "A balloon holds 1.00 L at 27 °C. At 327 °C and the same pressure, what is the volume?" → "2.00 L"
+EXAMPLE pair (calculus, chain rule):
+- TOSSUP: "Which differentiation rule applies to a composition like sin(3x²)?" → "chain rule"
+- BONUS: "If f(x) = sin(3x²), what is f'(x)?" → "6x · cos(3x²)"
 
-EXAMPLE pair on Dalton's law:
-- TOSSUP: "What name is given to the pressure exerted by one component of a gas mixture?" → "partial pressure"
-- BONUS: "A mixture of 2.0 mol N₂ and 3.0 mol O₂ has total pressure 5.0 atm. What is P_O₂?" → "3.0 atm"
+EXAMPLE pair (biology, Punnett-square ratios):
+- TOSSUP: "When two heterozygous parents cross, what fraction of offspring are expected to be homozygous recessive?" → "1/4"
+- BONUS: "Aa × Aa: out of 200 offspring, how many are expected to be aa?" → "50"
 
-EXAMPLE pair on Graham's law:
-- TOSSUP: "Which named law states that effusion rate is inversely proportional to the square root of molar mass?" → "Graham's law"
-- BONUS: "He effuses how many times faster than O₂?" → "2.83" (or "2√2")
+EXAMPLE pair (history, Cold War):
+- TOSSUP: "Which Cold War doctrine asserted that one country falling to communism would cause neighbours to follow?" → "domino theory"
+- BONUS: "Which 1949 NATO-style mutual-defence treaty was signed primarily to contain Soviet expansion in Europe?" → "Washington Treaty" (or "North Atlantic Treaty")
 
 ═══════════════════════════════════════════════════════════════════
 APPLICATION BONUS REQUIREMENTS (read carefully — this is where pairs usually break)
 ═══════════════════════════════════════════════════════════════════
-For every formula in the checklist, the BONUS half should be a plug-and-chug application question:
-- Use ROUND, MEMORABLE numbers (1.0, 2.0, 5.0, 10. atm; 273 K, 300 K, 600 K; 1.00 L, 5.00 L, 22.4 L; 0.500 mol, 1.00 mol, 2.00 mol).
-- ALWAYS include R (or the relevant constant) in the stem when needed: "(R = 0.08206 L·atm/mol·K)".
+For every checklist item that has a tool / formula / procedure to apply, the BONUS half should be a plug-and-chug application question:
+- Use ROUND, MEMORABLE numbers (e.g. 1.0 / 2.0 / 5.0 atm, 273 / 300 / 600 K, 1.00 / 5.00 / 22.4 L, 0.500 / 1.00 / 2.00 mol; in calculus: x = 0, 1, 2, 3, 4; in stats: σ = 1, 2, 4).
+- ALWAYS include any constants the student needs in the stem itself ("R = 0.08206 L·atm/mol·K", "g = 9.8 m/s²", etc.) so the student doesn't have to remember a value.
 - ALWAYS include units in BOTH the stem and the canonical answer.
-- The canonical answer is short: a number with unit, 1–4 words. Distractor options (still required by the schema even for SA) are plausible-but-wrong values from real student mistakes (forgot °C→K, dropped a factor of 2, inverted the ratio, used wrong R).
-- The student should NOT have to memorise non-trivial values — give them what they need in the stem.
-- The numbers MUST be invented for the question, not lifted from a specific worked example or graph in the reading. (See "NO TEXTBOOK-SPECIFIC DATA POINTS" further down.)
+- The canonical answer is short: a number with unit, 1–4 words, a name, or a formula. Distractor options (required by the schema even for SA) are plausible-but-wrong from real student mistakes (forgot °C→K, dropped a factor of 2, inverted the ratio, off-by-one indexing, misapplied chain rule).
+- The numbers MUST be invented for the question, not lifted from a specific worked example or graph in the reading.
 
-The handful of slots that aren't formula application can cover named-law definitions, KMT postulates, real-vs-ideal gas conditions, or vocabulary — but every formula in the checklist gets its application bonus first.
+The handful of slots that aren't application can cover named-law definitions, postulates, vocabulary, or cause-and-effect — but every formula / named tool in the checklist gets its application bonus first.
 
 ═══════════════════════════════════════════════════════════════════
 TOPIC PRIORITY (fill these in order — checklist must be exhausted before repeats):
 ═══════════════════════════════════════════════════════════════════
-1. **Formulas and named equations** — one pair per formula, recognition tossup → application bonus.
-2. **Named laws, principles, and theories** — Boyle's, Charles's, Avogadro's, Dalton's, Graham's, Hess's, Le Chatelier's, Pauli, Aufbau, Hund's, KMT, etc. (Many overlap with category 1; that's fine — the formula pair already counts.)
-3. **Core definitions and operational vocabulary** — partial pressure, mole fraction, ideal gas, root-mean-square velocity, effusion vs diffusion. Distractors should be confusable terms from the same chapter.
-4. **Cause-and-effect / conditions** — when a law applies, when it fails, what makes a gas ideal vs real.
+1. **Formulas / named equations / canonical procedures** — one pair per item, recognition tossup → application bonus.
+2. **Named laws / principles / theories / doctrines** the reading establishes. (Many overlap with category 1; that's fine — the formula pair already counts.)
+3. **Core definitions and operational vocabulary** — distractors should be confusable terms from the same chapter.
+4. **Cause-and-effect / conditions** — when a tool applies, when it fails, what changes when one input is varied.
 
-Trivia, historical anecdotes, biographical dates, and side examples are LAST priority — only if you've exhausted 1–4 and still need slots.
+Trivia, historical anecdotes (unless they ARE the subject — e.g. a history chapter), biographical dates, and side examples are LAST priority — only if you've exhausted 1–4 and still need slots.
 
 SOURCE FILTERING (critical — read before anything else):
 - The reading may contain non-content "front matter" or "back matter" pages from a textbook. You MUST NOT write questions from any of these:
