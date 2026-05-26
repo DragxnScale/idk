@@ -594,13 +594,19 @@ function StudySessionInner() {
     return () => clearInterval(iv);
   }, [sessionId, isPaused, inactivityPrompt, inactivityTimeout]);
 
-  // Auto-import external textbook PDFs into public Blob the first time a user
-  // picks them, so all subsequent reads bypass /api/proxy/pdf entirely.
+  // Auto-import external textbook PDFs into our object storage the first time
+  // a user picks them, so all subsequent reads bypass /api/proxy/pdf entirely.
   useEffect(() => {
     if (!selectedDoc) return;
     if (selectedDoc.type !== "textbook") return;
     if (!selectedDoc.sourceUrl) return;
-    if (selectedDoc.sourceUrl.includes("blob.vercel-storage.com")) return; // already a blob
+    // Already in storage we own (Vercel Blob legacy or Cloudflare R2) — skip.
+    if (
+      selectedDoc.sourceUrl.includes("blob.vercel-storage.com") ||
+      selectedDoc.sourceUrl.includes(".r2.cloudflarestorage.com")
+    ) {
+      return;
+    }
 
     let cancelled = false;
     setImportingDoc(true);
