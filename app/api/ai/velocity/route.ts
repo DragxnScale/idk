@@ -523,6 +523,14 @@ export async function POST(request: Request) {
 
       const baseSystem = `You are writing exactly ${targetCount} quiz-bowl style science questions from the reading, formatted as ${targetPairs} toss-up/bonus pairs for NSB-style play.
 
+TOPIC PRIORITY (fill these first — the user's score lives or dies on whether you covered them):
+1. **Formulas and named equations.** Every formula, law, or named equation that appears in the reading gets at least one toss-up/bonus pair before any topic is repeated. The toss-up tests recognition / what each variable means / which law the equation expresses; the bonus tests application (plug values, rearrange, predict the effect of changing one variable). For a chemistry "gases" chapter that means PV = nRT, P₁V₁ = P₂V₂, V₁/T₁ = V₂/T₂, P_total = ΣP_i, μ_rms = √(3RT/M), the van der Waals correction (P + a(n/V)²)(V − nb) = nRT, Graham's effusion ratio, etc.
+2. **Named laws, principles, and theories.** Boyle's, Charles's, Avogadro's, Dalton's, Graham's, Hess's, Le Chatelier's, Pauli, Aufbau, Hund's, the Kinetic Molecular Theory of gases, etc. Each must show up if it appears in the reading.
+3. **Core definitions and operational vocabulary** — the words a student has to own before they can reason about the chapter (partial pressure, mole fraction, ideal gas, root-mean-square velocity, effusion vs diffusion, etc.). Distractors should be nearby/confusable terms from the same chapter.
+4. **Cause-and-effect / conditions** — when a law applies, when it fails, what makes a gas ideal vs real, etc.
+
+Trivia, historical anecdotes, biographical dates, and side examples are LAST priority — only use them if you've already exhausted 1–4 and still need slots.
+
 SOURCE FILTERING (critical — read before anything else):
 - The reading may contain non-content "front matter" or "back matter" pages from a textbook. You MUST NOT write questions from any of these:
   - Title page, half-title, copyright/credits page, ISBN page, publisher info, edition/printing info.

@@ -109,12 +109,29 @@ export async function POST(request: Request) {
   const baseSystem = `You are a study assistant creating an end-of-session quiz.
 
 Generate exactly ${targetQ} multiple-choice questions testing comprehension of the reading material.
-- Prioritise the most essential, examinable concepts: core definitions, key principles, fundamental relationships, and must-know processes. Skip trivia, historical anecdotes, and fun facts unless they are directly tied to a core concept.
-- Each question must have exactly 4 answer options.
-- Vary the correct answer position across questions — do NOT always put the correct answer first.
-- Include one correct answer (correctIndex 0-3) and a brief explanation for each question.
-- Distribute questions evenly across all the major topics in the reading.
-- Questions should test understanding and application, not just surface recall.`;
+
+WHAT TO ASK ABOUT (in priority order — fill the easier categories first, then move on)
+1. **Formulas and named equations.** Every formula, law, or named equation in the reading must be tested at least once before any topic is repeated. For each formula:
+   - Identify it (recognise the equation, name what each variable means, state the law it expresses).
+   - Apply it (plug-and-chug or rearrangement — what happens to the answer when one variable doubles, what units come out, which formula fits a given scenario).
+   For a chemistry "gases" chapter that means PV = nRT, P₁V₁ = P₂V₂, V₁/T₁ = V₂/T₂, P_total = ΣP_i, μ_rms = √(3RT/M), the van der Waals correction (P + a(n/V)²)(V − nb) = nRT, etc.
+2. **Named laws, principles, and theories.** Boyle's, Charles's, Avogadro's, Dalton's, Graham's, Hess's, Le Chatelier's, Hund's, Pauli, Aufbau, the Kinetic Molecular Theory, etc. Each must appear if the reading covers it.
+3. **Core definitions and operational vocabulary.** Terms a student must own before they can think about the topic at all (e.g. partial pressure, mole fraction, ideal gas, root-mean-square velocity, effusion vs diffusion). Use distractors that are nearby/confusable terms from the same chapter.
+4. **Cause-and-effect relationships and conditions.** When does Boyle's law fail? Why do real gases deviate at high pressure? What makes a gas "ideal"?
+
+WHAT TO SKIP unless the reading explicitly emphasises it:
+- Historical anecdotes, biographical trivia, dates, page numbers, chapter titles.
+- Side examples that aren't tied to a core concept.
+- Anything that's "interesting" but not on a typical unit test.
+
+QUESTION QUALITY
+- Each question has exactly 4 answer options. Vary the position of the correct answer across the quiz — do NOT always put it first.
+- Distractors are *plausible* — pull them from related concepts, common misconceptions, off-by-one mistakes, or wrong unit/sign choices. Never use "all of the above" or joke options.
+- Test understanding and application, not surface recall. A question like "What is PV = nRT called?" is weaker than "If you triple the moles of gas in a sealed rigid container at constant temperature, what happens to the pressure?"
+- Each question gets a one-sentence "explanation" that names the formula/law/principle the question hinges on, so the review screen reinforces the concept.
+- Distribute questions across topics so the quiz covers the whole reading, not just one section.
+
+For chapters that have very few formulas, the rules collapse to: one definition per key term, then conceptual application questions.`;
 
   const { object, usage } = await generateObject({
     model: openai(MODEL),
