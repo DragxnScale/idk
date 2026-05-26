@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { aiNoteContentToHtml, stripLatexForAiNotes } from "@/lib/ai-notes-render";
@@ -417,6 +417,18 @@ export default function SessionSummaryPage() {
     { key: "velocity", label: "Velocity", count: velocityQuestions.length > 0 ? velocityQuestions.length : undefined },
   ];
 
+  // Keep the active tab visible when the strip overflows horizontally on
+  // small viewports. Without this, tapping "Velocity" on a 375 px screen
+  // would leave the active marker offscreen until the user swipes.
+  const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
+  useEffect(() => {
+    tabRefs.current[tab]?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [tab]);
+
   const duration =
     sessionInfo?.startedAt && sessionInfo?.endedAt
       ? Math.round(
@@ -444,28 +456,35 @@ export default function SessionSummaryPage() {
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="mx-auto max-w-3xl px-6">
-          <nav className="flex gap-1 -mb-px">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  tab === t.key
-                    ? "border-black text-black dark:border-white dark:text-white"
-                    : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                }`}
-              >
-                {t.label}
-                {t.count != null && t.count > 0 && (
-                  <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs dark:bg-gray-700">
-                    {t.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
+        {/* Tabs — horizontally scrollable on small viewports so all 6 tabs
+            stay reachable on a ~375 px screen. The desktop look is unchanged
+            because the row simply fits inside max-w-3xl with room to spare. */}
+        <div className="mx-auto max-w-3xl">
+          <div className="overflow-x-auto scrollbar-hide scroll-fade-right">
+            <nav className="flex flex-nowrap gap-1 -mb-px px-6">
+              {tabs.map((t) => (
+                <button
+                  key={t.key}
+                  ref={(el) => {
+                    tabRefs.current[t.key] = el;
+                  }}
+                  onClick={() => setTab(t.key)}
+                  className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                    tab === t.key
+                      ? "border-black text-black dark:border-white dark:text-white"
+                      : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  }`}
+                >
+                  {t.label}
+                  {t.count != null && t.count > 0 && (
+                    <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs dark:bg-gray-700">
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
         </div>
       </div>
 

@@ -43,6 +43,36 @@ body {
   .spinner {
     @apply h-5 w-5 rounded-full border-2 border-gray-300 border-t-black animate-spin dark:border-gray-600 dark:border-t-white;
   }
+
+  /* Hide native scrollbars while keeping the element scrollable. Used by
+     the AI tools tab strip on the session summary page so the bar can be
+     swiped horizontally on small viewports without a stray scrollbar. */
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Subtle right-edge fade applied to a horizontally-scrollable strip as a
+     hint that more content exists past the visible edge. When the strip's
+     content fits within the viewport, the fade falls over empty space and
+     is effectively invisible. */
+  .scroll-fade-right {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(100% - 24px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(100% - 24px),
+      transparent 100%
+    );
+  }
 }
 
 /* Themed utility classes */
