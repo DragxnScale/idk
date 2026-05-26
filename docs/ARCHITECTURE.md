@@ -305,7 +305,7 @@ All uploads use `access: "public"` so PDFs are served directly from the Vercel C
 | POST | `/api/blob/stream-upload` | Same idea, JWT-from-cookie auth, longer `maxDuration` for big files. |
 | POST | `/api/blob/multipart` | Vercel-Blob-specific multipart completion. Unused on R2 (presigned PUT covers our file sizes). |
 | POST | `/api/blob/token` | Legacy Vercel-Blob token issuance. |
-| POST | `/api/blob/client-token` | **Backend-aware client upload init.** Returns `{ backend: "vercel-blob", clientToken }` while VB is active, or `{ backend: "r2", uploadUrl, objectUrl, pathname }` for R2 (a presigned PUT URL the browser writes directly to). The browser-side `lib/upload-client.ts` handles both shapes. |
+| POST | `/api/blob/client-token` | **Backend-aware client upload init.** Returns `{ backend: "vercel-blob", clientToken }` while VB is active, or `{ backend: "r2", uploadUrl, objectUrl, pathname }` for R2 (a presigned PUT URL the browser writes directly to). The R2 presigned PUT is minted with a **4-hour TTL** so admin uploads of large textbook PDFs (150–300 MB) over slow connections fit comfortably inside the window — including a full retry pass. The browser-side `lib/upload-client.ts` handles both shapes; for R2 it explicitly sets `xhr.timeout = 0` (no implicit browser timeout) and wraps the PUT in **3-attempt retry-with-backoff** (1 s / 3 s) for transient failures — network errors and 5xx responses retry, 4xx responses fail immediately because they're auth/CORS/expiry-class errors that won't succeed on a retry. **The R2 bucket must have CORS configured for browser PUTs** — run `node scripts/r2-set-cors.mjs --execute` (see §9) whenever a new deployment origin starts uploading; without it the browser silently aborts the PUT mid-flight as a generic "Network error during upload". |
 | GET, HEAD | `/api/blob/serve` | Authenticated PDF read proxy. Dispatches by URL host via `lib/storage-backend.ts` so legacy Vercel Blob URLs and new Cloudflare R2 URLs both work, including `Range` requests. |
 | GET | `/api/blob/health` | Health check (admin-only). |
 
@@ -593,6 +593,7 @@ When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates eac
 | `npm run db:generate` / `db:migrate` | Migrations. |
 | `scripts/migrate-blobs-public.mjs` | Migrates private Blob URLs in `textbook_catalog` to public. |
 | `scripts/migrate-vercel-blob-to-r2.mjs` | Copies every PDF from Vercel Blob into Cloudflare R2 and rewrites `documents.file_url`, `textbook_catalog.cached_blob_url`, `textbook_catalog.source_url`. Defaults to dry-run; pass `--execute` to copy + rewrite, `--delete-source` to also clean up Vercel Blob afterwards. |
+| `scripts/r2-set-cors.mjs` | Applies the browser-upload CORS policy (PUT/GET/HEAD, `ETag` exposed) to the R2 bucket so `lib/upload-client.ts` can PUT directly from the admin upload UI. Defaults to dry-run; pass `--execute` to apply. Restrict origins via `R2_ALLOWED_ORIGINS="https://example.com,https://*.vercel.app"` (defaults to `*`). |
 | `scripts/bump-version.mjs` | Version bump helper (runs automatically on commit via git hook). |
 
 ---
@@ -607,7 +608,7 @@ See **`.env.example`** for the canonical list. Typical production setup:
 - `AI_TOKEN_LIMIT_DEFAULT` — per-user lifetime AI token cap used when `users.ai_token_limit` is null. Default `0` (unlimited; usage is still tracked for admins). Set to any positive number to enforce a blanket cap. Admins can always override per-user from the Users tab regardless of this setting.
 - `STORAGE_BACKEND` — `"vercel-blob"` (default) or `"r2"`. Selects which backend new uploads go to. Reads of existing URLs are dispatched by host so flipping this only affects writes.
 - `BLOB_READ_WRITE_TOKEN` — required while `STORAGE_BACKEND=vercel-blob`, **and** during the migration window so legacy Vercel Blob URLs still serve through `/api/blob/serve`.
-- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` — required when `STORAGE_BACKEND=r2` (and to run `scripts/migrate-vercel-blob-to-r2.mjs`). Optional `R2_PUBLIC_BASE_URL` for a custom-domain public bucket.
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` — required when `STORAGE_BACKEND=r2` (and to run `scripts/migrate-vercel-blob-to-r2.mjs`). Optional `R2_PUBLIC_BASE_URL` for a custom-domain public bucket. Optional `R2_ALLOWED_ORIGINS` (comma-separated) consumed by `scripts/r2-set-cors.mjs` — defaults to `*` if unset.
 - `YOUTUBE_API_KEY` — optional. When set, `/api/ai/videos` resolves AI-generated topics into real YouTube video URLs scoped to the channels we prefer (Organic Chem Tutor, Amoeba Sisters, etc.) via the YouTube Data API v3. Without it, the route degrades to channel-scoped search URLs.
 - Archive keys for admin Archive upload features
 

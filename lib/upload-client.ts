@@ -55,9 +55,62 @@ export async function uploadPdfToStorage(
   const initRes = (await tokenRes.json()) as InitResponse;
 
   if (initRes.backend === "r2") {
-    return uploadSinglePutToR2(file, initRes, onProgress);
+    return uploadSinglePutToR2WithRetry(file, initRes, onProgress);
   }
   return uploadMultipartToVercelBlob(file, pathname, initRes.clientToken, onProgress);
+}
+
+/**
+ * Retry transient R2 PUT failures. Single-shot PUTs of large files are
+ * vulnerable to brief network blips (Wi-Fi roaming, captive-portal
+ * re-auth, etc.) — without retry the whole upload looks like a hard
+ * failure to the user. We re-use the same presigned URL across retries
+ * because it's valid for hours; only the body is re-uploaded.
+ *
+ * Retry policy:
+ *   - Network errors (xhr.error) and 5xx responses are retried.
+ *   - 4xx responses (auth/expired/CORS rejection) are NOT retried —
+ *     they will not succeed on the next attempt and re-uploading
+ *     hundreds of MB is wasteful.
+ *   - Hard cap of 3 attempts (1 initial + 2 retries) with 1s/3s backoff.
+ */
+async function uploadSinglePutToR2WithRetry(
+  file: File,
+  init: InitR2,
+  onProgress: UploadProgress
+): Promise<string> {
+  const MAX_ATTEMPTS = 3;
+  const BACKOFF_MS = [1_000, 3_000];
+  let lastErr: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await uploadSinglePutToR2(file, init, onProgress);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      const retryable = isRetryableUploadError(lastErr);
+      if (!retryable || attempt === MAX_ATTEMPTS) throw lastErr;
+      const wait = BACKOFF_MS[attempt - 1] ?? 5_000;
+      onProgress(
+        0,
+        `Retrying upload (attempt ${attempt + 1}/${MAX_ATTEMPTS} after ${Math.round(wait / 1000)}s)…`
+      );
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr ?? new Error("Upload failed after retries");
+}
+
+function isRetryableUploadError(err: Error): boolean {
+  const msg = err.message;
+  if (msg.includes("Network error")) return true;
+  // "Upload failed (5xx): …" → retry server errors only.
+  const statusMatch = msg.match(/Upload failed \((\d{3})\)/);
+  if (statusMatch) {
+    const status = Number(statusMatch[1]);
+    return status >= 500 && status < 600;
+  }
+  return false;
 }
 
 async function uploadMultipartToVercelBlob(
@@ -102,6 +155,10 @@ function uploadSinglePutToR2(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", init.uploadUrl, true);
     xhr.setRequestHeader("Content-Type", "application/pdf");
+    // Explicitly disable any default request timeout. A 200 MB PDF over a
+    // slow connection can legitimately take >30 minutes; we don't want the
+    // browser to time it out as a "network error" partway through.
+    xhr.timeout = 0;
 
     xhr.upload.addEventListener("progress", (ev) => {
       if (!ev.lengthComputable) return;
@@ -119,6 +176,8 @@ function uploadSinglePutToR2(
     });
     xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
     xhr.addEventListener("abort", () => reject(new Error("Upload aborted")));
+    // Surfaces as a network-style error so the retry wrapper picks it up.
+    xhr.addEventListener("timeout", () => reject(new Error("Network error during upload (timeout)")));
 
     onProgress(2, "Starting upload…");
     xhr.send(file);

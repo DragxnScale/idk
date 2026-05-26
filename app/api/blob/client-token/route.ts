@@ -71,8 +71,11 @@ export async function POST(request: Request) {
     try {
       const { uploadUrl, objectUrl } = await r2PresignedPutUrl(body.pathname, {
         contentType: "application/pdf",
-        // 30 minutes is plenty for a single-shot PUT of a study PDF.
-        expiresInSeconds: 30 * 60,
+        // 4 hours: textbook PDFs can be 150–300 MB and admin uploads from
+        // slow connections (hotel wifi, mobile tether) need plenty of headroom
+        // — at 1 Mbps a 200 MB file takes ~27 min, and we want at least one
+        // full retry to fit inside the window without re-minting the URL.
+        expiresInSeconds: 4 * 60 * 60,
       });
       return NextResponse.json({
         backend: "r2",

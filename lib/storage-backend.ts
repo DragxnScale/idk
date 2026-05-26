@@ -377,7 +377,10 @@ export async function r2PresignedPutUrl(
     ContentType: opts.contentType ?? "application/pdf",
   });
   const uploadUrl = await getSignedUrl(r2(), cmd, {
-    expiresIn: opts.expiresInSeconds ?? 30 * 60,
+    // Default 1 hour — generous enough for any normal browser upload, while
+    // still time-boxing the credential. Callers (e.g. the admin upload route)
+    // pass a longer window explicitly for huge files.
+    expiresIn: opts.expiresInSeconds ?? 60 * 60,
   });
   return { uploadUrl, objectUrl: r2EndpointUrl(key), key };
 }

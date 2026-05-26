@@ -2184,7 +2184,11 @@ function UploadTab() {
             disabled={status === "uploading" || !file || !title}
             className="w-full rounded-lg bg-white text-black py-2.5 text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {status === "uploading" ? `${statusLabel || "Uploading…"} ${progress}%` : "Upload & store"}
+            {/* statusLabel already includes the % (set by uploadPdfToStorage), so
+                do NOT append `${progress}%` again — otherwise the button reads
+                e.g. "Uploading… 14% 14%". Fall back to a synthesized label only
+                when statusLabel is empty. */}
+            {status === "uploading" ? (statusLabel || `Uploading… ${progress}%`) : "Upload & store"}
           </button>
         </div>
       )}
