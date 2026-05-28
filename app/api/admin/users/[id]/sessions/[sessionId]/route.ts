@@ -203,6 +203,10 @@ export async function GET(
       enteredAt: v.enteredAt?.toISOString() ?? null,
       leftAt: v.leftAt?.toISOString() ?? null,
       durationSeconds: v.durationSeconds ?? null,
+      // Subset of duration when the timer was actually running. NULL on
+      // legacy rows that predate per-page focus tracking — the admin
+      // panel renders an empty state in that case.
+      focusedSeconds: v.focusedSeconds ?? null,
     })),
     quiz,
     velocity,

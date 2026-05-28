@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isAdmin, isSuperAdmin } from "@/lib/admin";
-import { getAppUser } from "@/lib/app-user";
+import { getAppUser, isCurrentDeveloper } from "@/lib/app-user";
 
 /** Who the app treats as signed-in (includes admin view-as). */
 export async function GET() {
@@ -27,5 +27,11 @@ export async function GET() {
     adminEmail: impersonating ? session.user.email : null,
     /** JWT identity — used for owner-only diagnostics (not affected by view-as). */
     isSuperOwner: isSuperAdmin(session.user.email),
+    /**
+     * Real account's developer-mode flag (ignores view-as). Gates extra
+     * diagnostic admin surfaces like the "Focused studying per page"
+     * panel under each admin session detail.
+     */
+    isDeveloper: await isCurrentDeveloper(),
   });
 }

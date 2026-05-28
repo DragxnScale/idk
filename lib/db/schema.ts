@@ -38,6 +38,14 @@ export const users = sqliteTable("users", {
    * still works as a safety net.
    */
   isOwner: integer("is_owner", { mode: "boolean" }).default(false),
+  /**
+   * Developer mode — gates extra in-app diagnostic surfaces (currently the
+   * admin "Focused studying per page" panel under each session detail).
+   * Editable from settings only when the row is also flagged `is_admin`
+   * or `is_owner`. Keeps the surface area for risky internal panels off
+   * by default even on staff accounts.
+   */
+  isDeveloper: integer("is_developer", { mode: "boolean" }).default(false),
   blocked: integer("blocked", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
@@ -188,7 +196,22 @@ export const pageVisits = sqliteTable("page_visits", {
   pageNumber: integer("page_number").notNull(),
   enteredAt: integer("entered_at", { mode: "timestamp" }).notNull(),
   leftAt: integer("left_at", { mode: "timestamp" }),
+  /**
+   * Wall-clock duration on this page (`leftAt − enteredAt`). Includes
+   * paused / idle / tab-blurred time, so a single open page that the
+   * user walks away from can read 23h+. Used by the existing per-page
+   * reading-time bar chart.
+   */
   durationSeconds: integer("duration_seconds"),
+  /**
+   * Subset of `durationSeconds` during which the session timer was
+   * actually running (not paused, not in inactivity prompt, not in a
+   * Pomodoro break). Powers the developer-mode "Focused studying per
+   * page" admin panel. NULL = visit predates per-page focus tracking
+   * (the schema column was added later); the panel renders an empty
+   * state for those sessions.
+   */
+  focusedSeconds: integer("focused_seconds"),
 });
 
 // ── Bookmarks & Highlights ───────────────────────────────────────────

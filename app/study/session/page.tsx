@@ -16,6 +16,8 @@ import { fetchPdfCacheEntryCount } from "@/lib/client/pdf-cache-sw";
 import { readPdfCacheEnabled } from "@/lib/client/pdf-cache-prefs";
 import { pdfClientLoadUrl } from "@/lib/pdf-client-url";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
+import { NumberField } from "@/components/forms/NumberField";
+import { validatePositiveInt } from "@/lib/forms/numberField";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -57,7 +59,12 @@ function StudySessionInner() {
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [goalType, setGoalType] = useState<GoalType>("time");
-  const [targetValue, setTargetValue] = useState(25);
+  // String-state input so the field can be cleared while editing without
+  // snapping back to 0 (the previous `Number(e.target.value)` pattern broke
+  // this — see lib/forms/numberField.ts and components/forms/NumberField.tsx).
+  const [targetValueInput, setTargetValueInput] = useState<string>("25");
+  const targetValue = parseInt(targetValueInput, 10) || 0;
+  const [targetValueError, setTargetValueError] = useState<string | null>(null);
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [docReady, setDocReady] = useState(false);
@@ -127,7 +134,9 @@ function StudySessionInner() {
   const [studyGoalPriorMinutes, setStudyGoalPriorMinutes] = useState<number | null>(null);
   const [studyGoalTotalTarget, setStudyGoalTotalTarget] = useState<number | null>(null);
   const [studyGoalsList, setStudyGoalsList] = useState<StudyGoalRow[]>([]);
-  const [multiSessionTotalTarget, setMultiSessionTotalTarget] = useState(120);
+  const [multiSessionTotalTargetInput, setMultiSessionTotalTargetInput] = useState<string>("120");
+  const multiSessionTotalTarget = parseInt(multiSessionTotalTargetInput, 10) || 0;
+  const [multiSessionTotalTargetError, setMultiSessionTotalTargetError] = useState<string | null>(null);
   const [continueStudyGoalId, setContinueStudyGoalId] = useState("");
   const [multiSessionNew, setMultiSessionNew] = useState(false);
   const lastActivityRef = useRef(Date.now());
@@ -186,7 +195,7 @@ function StudySessionInner() {
       .then((data) => {
         if (!data) return;
         if (data.defaultGoalType) setGoalType(data.defaultGoalType as GoalType);
-        if (data.defaultTargetValue) setTargetValue(data.defaultTargetValue);
+        if (data.defaultTargetValue) setTargetValueInput(String(data.defaultTargetValue));
         if (data.pomodoroEnabled) setPomodoroEnabled(true);
         if (data.pomodoroFocusMin) setPomodoroFocus(data.pomodoroFocusMin);
         if (data.pomodoroBreakMin) setPomodoroBreak(data.pomodoroBreakMin);
@@ -286,7 +295,7 @@ function StudySessionInner() {
           // Resume this session
           setSessionId(active.id);
           setGoalType(active.goalType as GoalType);
-          setTargetValue(active.targetValue);
+          setTargetValueInput(String(active.targetValue));
           const mins = active.totalFocusedMinutes ?? 0;
           focusedMinutesRef.current = mins;
           lastSavedRef.current = mins;
@@ -1257,17 +1266,38 @@ function StudySessionInner() {
                 setError("Pick reading material first");
                 return;
               }
+              // Inline-validate the goal duration / chapter count input.
+              // Empty is allowed *while editing*, but blocks submit here.
+              const goalLabel =
+                goalType === "time" ? "Goal duration" : "Chapter count";
+              const goalMax = goalType === "time" ? 240 : (hasChapterData ? selectedDoc.availableChapters!.length : 99);
+              const goalCheck = validatePositiveInt(targetValueInput, {
+                label: goalLabel,
+                min: 1,
+                max: goalMax,
+                unit: goalType === "time" ? "min" : undefined,
+              });
+              if (!goalCheck.ok) {
+                setTargetValueError(goalCheck.error);
+                return;
+              }
+              setTargetValueError(null);
               if (goalType === "chapter" && hasChapterData && selectedChapters.length !== targetValue) {
                 setError(`Select exactly ${targetValue} chapter${targetValue !== 1 ? "s" : ""}`);
                 return;
               }
-              if (
-                goalType === "time" &&
-                multiSessionNew &&
-                (!multiSessionTotalTarget || multiSessionTotalTarget < 1)
-              ) {
-                setError("Enter a total minute target for your cumulative goal (at least 1).");
-                return;
+              if (goalType === "time" && multiSessionNew) {
+                const multiCheck = validatePositiveInt(multiSessionTotalTargetInput, {
+                  label: "Total minutes",
+                  min: 1,
+                  max: 100000,
+                  unit: "min",
+                });
+                if (!multiCheck.ok) {
+                  setMultiSessionTotalTargetError(multiCheck.error);
+                  return;
+                }
+                setMultiSessionTotalTargetError(null);
               }
               try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch {}
               handleStart();
@@ -1283,7 +1313,8 @@ function StudySessionInner() {
                 onChange={(e) => {
                   setGoalType(e.target.value as GoalType);
                   setSelectedChapters([]);
-                  setTargetValue(e.target.value === "time" ? 25 : 1);
+                  setTargetValueInput(e.target.value === "time" ? "25" : "1");
+                  setTargetValueError(null);
                   setMultiSessionNew(false);
                   setContinueStudyGoalId("");
                 }}
@@ -1300,13 +1331,18 @@ function StudySessionInner() {
                   <label className="block text-sm font-medium mb-1.5">
                     <SuiText page="session" k="label.minutes" def="Minutes (this sitting)" as="span" />
                   </label>
-                  <input
-                    type="number"
+                  <NumberField
+                    value={targetValueInput}
+                    onChange={(s) => {
+                      setTargetValueInput(s);
+                      if (targetValueError) setTargetValueError(null);
+                    }}
                     min={1}
                     max={240}
-                    value={targetValue}
-                    onChange={(e) => setTargetValue(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                    unit="min"
+                    placeholder="e.g. 25"
+                    error={targetValueError}
+                    inputClassName="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     Timer target for this session. Use cumulative options below to track a larger goal across multiple sessions.
@@ -1333,21 +1369,20 @@ function StudySessionInner() {
                     </span>
                   </label>
                   {multiSessionNew && (
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
-                        Total minutes to reach (all sessions combined)
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100000}
-                        value={multiSessionTotalTarget}
-                        onChange={(e) =>
-                          setMultiSessionTotalTarget(Number(e.target.value))
-                        }
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                      />
-                    </div>
+                    <NumberField
+                      value={multiSessionTotalTargetInput}
+                      onChange={(s) => {
+                        setMultiSessionTotalTargetInput(s);
+                        if (multiSessionTotalTargetError) setMultiSessionTotalTargetError(null);
+                      }}
+                      min={1}
+                      max={100000}
+                      unit="min"
+                      placeholder="e.g. 600"
+                      label="Total minutes to reach (all sessions combined)"
+                      error={multiSessionTotalTargetError}
+                      inputClassName="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                    />
                   )}
                   {!multiSessionNew && studyGoalsList.length > 0 && (
                     <div>
@@ -1378,17 +1413,19 @@ function StudySessionInner() {
                   <label className="block text-sm font-medium mb-1.5">
                     How many chapters do you want to read?
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={hasChapterData ? selectedDoc!.availableChapters!.length : 99}
-                    value={targetValue}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setTargetValue(v);
+                  <NumberField
+                    value={targetValueInput}
+                    onChange={(s) => {
+                      setTargetValueInput(s);
+                      if (targetValueError) setTargetValueError(null);
+                      const v = parseInt(s, 10) || 0;
                       setSelectedChapters((prev) => prev.slice(0, v));
                     }}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                    min={1}
+                    max={hasChapterData ? selectedDoc!.availableChapters!.length : 99}
+                    placeholder="1"
+                    error={targetValueError}
+                    inputClassName="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
                   />
                 </div>
 
@@ -1689,6 +1726,7 @@ function StudySessionInner() {
                 documentId={selectedDoc?.documentId}
                 sessionId={sessionId ?? undefined}
                 chapterPageRanges={selectedDoc?.chapterPageRanges}
+                isPaused={isPaused || inactivityPrompt || (pomodoroEnabled && pomodoroBreakActive)}
                 onPageChange={handlePageChange}
                 onPageText={handlePageText}
                 onLoad={() => setDocReady(true)}

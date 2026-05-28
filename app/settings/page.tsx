@@ -7,6 +7,8 @@ import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomThe
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 import { LAYOUTS, resolveLayoutStateKey } from "@/lib/types/settings-layout";
 import { SuiText, useUiCopy } from "@/components/ui-copy/UiCopyProvider";
+import { NumberField } from "@/components/forms/NumberField";
+import { validatePositiveInt } from "@/lib/forms/numberField";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -49,6 +51,17 @@ export default function SettingsPage() {
   const [quizMax, setQuizMax] = useState<string>("");
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
+  /**
+   * Per-field validation errors for the daily-goals form. Empty fields
+   * block submit; the error label appears under the failing input.
+   */
+  const [goalsErrors, setGoalsErrors] = useState<{
+    minutesGoal?: string;
+    sessionsGoal?: string;
+    inactivityMin?: string;
+    quizMin?: string;
+    quizMax?: string;
+  }>({});
 
   // ── Account details ────────────────────────────────────────────────
   const [displayName, setDisplayName] = useState("");
@@ -76,6 +89,7 @@ export default function SettingsPage() {
   const [defaultTargetValue, setDefaultTargetValue] = useState<string>("");
   const [sessionDefaultStatus, setSessionDefaultStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [sessionDefaultMessage, setSessionDefaultMessage] = useState<string | null>(null);
+  const [sessionDefaultError, setSessionDefaultError] = useState<string | null>(null);
 
   // ── Pomodoro ───────────────────────────────────────────────────────
   const [pomodoroEnabled, setPomodoroEnabled] = useState(false);
@@ -85,21 +99,76 @@ export default function SettingsPage() {
   const [pomodoroCycles, setPomodoroCycles] = useState("4");
   const [pomodoroStatus, setPomodoroStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [pomodoroMessage, setPomodoroMessage] = useState<string | null>(null);
+  const [pomodoroErrors, setPomodoroErrors] = useState<{
+    focus?: string;
+    short?: string;
+    long?: string;
+    cycles?: string;
+  }>({});
+
+  // ── Developer mode (admin-only toggle) ─────────────────────────────
+  /** Current value of the user's developer-mode flag. */
+  const [isDeveloper, setIsDeveloper] = useState(false);
+  /** Whether the toggle should appear at all. We render only for admins/owners. */
+  const [canEditDeveloper, setCanEditDeveloper] = useState(false);
+  /** Inline status under the toggle. */
+  const [developerStatus, setDeveloperStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
+  async function handleDeveloperToggle(next: boolean) {
+    setIsDeveloper(next);
+    setDeveloperStatus("loading");
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDeveloper: next }),
+      });
+      if (res.ok) setDeveloperStatus("success");
+      else {
+        // Server rejected — roll the toggle back so UI state reflects
+        // reality (e.g. user lost admin between page-load and click).
+        setIsDeveloper(!next);
+        setDeveloperStatus("error");
+      }
+    } catch {
+      setIsDeveloper(!next);
+      setDeveloperStatus("error");
+    }
+  }
 
   async function handlePomodoroSave(e: React.FormEvent) {
     e.preventDefault();
-    setPomodoroStatus("loading");
     setPomodoroMessage(null);
+
+    // Validate every numeric field; surface the first failure under the
+    // matching input. We never silently coerce empty → 0; the user must
+    // either fill in a valid value or turn Pomodoro off entirely.
+    const focusCheck = validatePositiveInt(pomodoroFocus, { label: "Focus minutes", min: 1, max: 90, unit: "min" });
+    const breakCheck = validatePositiveInt(pomodoroBreak, { label: "Short break", min: 1, max: 30, unit: "min" });
+    const longCheck = validatePositiveInt(pomodoroLong, { label: "Long break", min: 1, max: 60, unit: "min" });
+    const cyclesCheck = validatePositiveInt(pomodoroCycles, { label: "Cycles", min: 1, max: 10 });
+    const nextErrors: typeof pomodoroErrors = {};
+    if (!focusCheck.ok) nextErrors.focus = focusCheck.error;
+    if (!breakCheck.ok) nextErrors.short = breakCheck.error;
+    if (!longCheck.ok) nextErrors.long = longCheck.error;
+    if (!cyclesCheck.ok) nextErrors.cycles = cyclesCheck.error;
+    setPomodoroErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setPomodoroStatus("error");
+      return;
+    }
+
+    setPomodoroStatus("loading");
     try {
       const res = await fetch("/api/user/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pomodoroEnabled,
-          pomodoroFocusMin: pomodoroFocus ? Number(pomodoroFocus) : null,
-          pomodoroBreakMin: pomodoroBreak ? Number(pomodoroBreak) : null,
-          pomodoroLongBreakMin: pomodoroLong ? Number(pomodoroLong) : null,
-          pomodoroCycles: pomodoroCycles ? Number(pomodoroCycles) : null,
+          pomodoroFocusMin: focusCheck.ok ? focusCheck.value : null,
+          pomodoroBreakMin: breakCheck.ok ? breakCheck.value : null,
+          pomodoroLongBreakMin: longCheck.ok ? longCheck.value : null,
+          pomodoroCycles: cyclesCheck.ok ? cyclesCheck.value : null,
         }),
       });
       if (res.ok) {
@@ -117,14 +186,31 @@ export default function SettingsPage() {
 
   async function handleSessionDefaultSave(e: React.FormEvent) {
     e.preventDefault();
-    setSessionDefaultStatus("loading");
     setSessionDefaultMessage(null);
+
+    const max =
+      defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500;
+    const label =
+      defaultGoalType === "time"
+        ? "Default duration"
+        : defaultGoalType === "chapter"
+          ? "Default chapter count"
+          : "Default page count";
+    const unit = defaultGoalType === "time" ? "min" : undefined;
+    const check = validatePositiveInt(defaultTargetValue, { label, min: 1, max, unit });
+    if (!check.ok) {
+      setSessionDefaultError(check.error);
+      setSessionDefaultStatus("error");
+      return;
+    }
+    setSessionDefaultError(null);
+
+    setSessionDefaultStatus("loading");
     try {
-      const v = defaultTargetValue ? Number(defaultTargetValue) : null;
       const res = await fetch("/api/user/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ defaultGoalType, defaultTargetValue: v }),
+        body: JSON.stringify({ defaultGoalType, defaultTargetValue: check.value }),
       });
       if (res.ok) { setSessionDefaultStatus("success"); setSessionDefaultMessage("Defaults saved."); }
       else { const d = await res.json(); setSessionDefaultStatus("error"); setSessionDefaultMessage(d.error ?? "Failed to save."); }
@@ -327,23 +413,61 @@ export default function SettingsPage() {
         if (data.pomodoroBreakMin) setPomodoroBreak(String(data.pomodoroBreakMin));
         if (data.pomodoroLongBreakMin) setPomodoroLong(String(data.pomodoroLongBreakMin));
         if (data.pomodoroCycles) setPomodoroCycles(String(data.pomodoroCycles));
+        // Developer-mode toggle is only rendered for admins/owners.
+        const allowed = !!data.isAdmin || !!data.isOwner;
+        setCanEditDeveloper(allowed);
+        setIsDeveloper(!!data.isDeveloper);
       });
   }, []);
 
   async function handleGoalsSave(e: React.FormEvent) {
     e.preventDefault();
-    setGoalsStatus("loading");
     setGoalsMessage(null);
+
+    // Validate every field on submit. Empty inputs surface an inline error
+    // under the failing field instead of being silently coerced to 0 and
+    // saved as "disabled" (which surprises users — they typed nothing
+    // because they were about to type something, not because they wanted
+    // to turn the goal off).
+    const minCheck = validatePositiveInt(minutesGoal, { label: "Daily minutes goal", min: 1, max: 1440, unit: "min" });
+    const sessCheck = validatePositiveInt(sessionsGoal, { label: "Daily sessions goal", min: 1, max: 20, unit: "sessions" });
+    const inactCheck = validatePositiveInt(inactivityMin, { label: "Inactivity timeout", min: 1, max: 30, unit: "min" });
+    const qMinCheck = validatePositiveInt(quizMin, { label: "Quiz minimum", min: 1, max: 25 });
+    const qMaxCheck = validatePositiveInt(quizMax, { label: "Quiz maximum", min: 1, max: 25 });
+
+    const nextErrors: typeof goalsErrors = {};
+    if (!minCheck.ok) nextErrors.minutesGoal = minCheck.error;
+    if (!sessCheck.ok) nextErrors.sessionsGoal = sessCheck.error;
+    if (!inactCheck.ok) nextErrors.inactivityMin = inactCheck.error;
+    if (!qMinCheck.ok) nextErrors.quizMin = qMinCheck.error;
+    if (!qMaxCheck.ok) nextErrors.quizMax = qMaxCheck.error;
+
+    // Cross-field check only when both bounds parsed cleanly.
+    if (qMinCheck.ok && qMaxCheck.ok && qMinCheck.value != null && qMaxCheck.value != null && qMinCheck.value > qMaxCheck.value) {
+      nextErrors.quizMax = "Quiz max must be ≥ quiz min";
+    }
+
+    setGoalsErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setGoalsStatus("error");
+      return;
+    }
+
+    // After the guard above, every check is `{ ok: true }`. Re-narrow
+    // by re-running the validators (cheap) so TypeScript can see `.value`.
+    if (!minCheck.ok || !sessCheck.ok || !inactCheck.ok || !qMinCheck.ok || !qMaxCheck.ok) return;
+
+    setGoalsStatus("loading");
     try {
       const res = await fetch("/api/user/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dailyMinutesGoal: minutesGoal === "" ? 0 : Number(minutesGoal),
-          dailySessionsGoal: sessionsGoal === "" ? 0 : Number(sessionsGoal),
-          inactivityTimeout: inactivityMin === "" ? 0 : Number(inactivityMin),
-          quizMinQuestions: quizMin === "" ? 0 : Number(quizMin),
-          quizMaxQuestions: quizMax === "" ? 0 : Number(quizMax),
+          dailyMinutesGoal: minCheck.value,
+          dailySessionsGoal: sessCheck.value,
+          inactivityTimeout: inactCheck.value,
+          quizMinQuestions: qMinCheck.value,
+          quizMaxQuestions: qMaxCheck.value,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -546,6 +670,53 @@ export default function SettingsPage() {
           Scroll down for session defaults, study breaks, PDF cache, exit password, theme, music, and more.
         </p>
 
+        {/*
+          Developer mode toggle — admin-only. Gates extra diagnostic
+          surfaces in the admin console (currently the "Focused studying
+          per page" panel under each session detail). Saved through
+          PATCH /api/user/settings; the API rejects flips from
+          non-admins.
+        */}
+        {canEditDeveloper && (
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900 mb-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold flex items-center gap-2">
+                  Developer mode
+                  <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Admin</span>
+                </h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Surfaces extra diagnostic panels in the admin console
+                  (currently the &quot;Focused studying per page&quot; chart on each session detail).
+                  Off by default even on admin accounts.
+                </p>
+                {developerStatus === "success" && (
+                  <p className="mt-1 text-xs text-green-600 dark:text-green-400">Saved.</p>
+                )}
+                {developerStatus === "error" && (
+                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">Couldn&apos;t save — try again.</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleDeveloperToggle(!isDeveloper)}
+                disabled={developerStatus === "loading"}
+                role="switch"
+                aria-checked={isDeveloper}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  isDeveloper ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    isDeveloper ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Hardcoded per-state layout: TOP full-width → 2-col LEFT+RIGHT → BOTTOM full-width */}
         <div className="space-y-4">
         {(() => {
@@ -560,68 +731,104 @@ export default function SettingsPage() {
                   <SuiText
                     page="settings"
                     k="daily-goals.desc"
-                    def="Set targets for each day. Your progress towards these will be shown on the dashboard. Leave a field blank to disable that goal."
+                    def="Set targets for each day. Your progress towards these will be shown on the dashboard. Each field must be a positive number — fill them in before saving."
                     as="span"
                   />
                 </p>
                 <form onSubmit={handleGoalsSave} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        <SuiText page="settings" k="daily-goals.label.minutes" def="Minutes per day" as="span" />
-                      </label>
-                      <div className="relative">
-                        <input type="number" min={1} max={1440} value={minutesGoal} onChange={(e) => { setMinutesGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 60" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        <SuiText page="settings" k="daily-goals.label.sessions" def="Sessions per day" as="span" />
-                      </label>
-                      <div className="relative">
-                        <input type="number" min={1} max={20} value={sessionsGoal} onChange={(e) => { setSessionsGoal(e.target.value); setGoalsStatus("idle"); }} placeholder="e.g. 2" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">sessions</span>
-                      </div>
-                    </div>
+                    <NumberField
+                      label={<SuiText page="settings" k="daily-goals.label.minutes" def="Minutes per day" as="span" />}
+                      value={minutesGoal}
+                      onChange={(s) => {
+                        setMinutesGoal(s);
+                        setGoalsStatus("idle");
+                        if (goalsErrors.minutesGoal) setGoalsErrors((p) => ({ ...p, minutesGoal: undefined }));
+                      }}
+                      min={1}
+                      max={1440}
+                      unit="min"
+                      placeholder="e.g. 60"
+                      error={goalsErrors.minutesGoal}
+                    />
+                    <NumberField
+                      label={<SuiText page="settings" k="daily-goals.label.sessions" def="Sessions per day" as="span" />}
+                      value={sessionsGoal}
+                      onChange={(s) => {
+                        setSessionsGoal(s);
+                        setGoalsStatus("idle");
+                        if (goalsErrors.sessionsGoal) setGoalsErrors((p) => ({ ...p, sessionsGoal: undefined }));
+                      }}
+                      min={1}
+                      max={20}
+                      unit="sessions"
+                      placeholder="e.g. 2"
+                      error={goalsErrors.sessionsGoal}
+                    />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      <SuiText page="settings" k="daily-goals.label.inactivity" def="Inactivity timeout" as="span" />
-                    </label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+                  <NumberField
+                    label={<SuiText page="settings" k="daily-goals.label.inactivity" def="Inactivity timeout" as="span" />}
+                    hint={
                       <SuiText
                         page="settings"
                         k="daily-goals.hint.inactivity"
-                        def="Pause timer & ask if you're still reading after this many minutes of no interaction. Leave blank for default (3 min)."
+                        def="Pause timer & ask if you're still reading after this many minutes of no interaction. Default is 3 min."
                         as="span"
                       />
-                    </p>
-                    <div className="relative w-40">
-                      <input type="number" min={1} max={30} value={inactivityMin} onChange={(e) => { setInactivityMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
-                    </div>
-                  </div>
+                    }
+                    value={inactivityMin}
+                    onChange={(s) => {
+                      setInactivityMin(s);
+                      setGoalsStatus("idle");
+                      if (goalsErrors.inactivityMin) setGoalsErrors((p) => ({ ...p, inactivityMin: undefined }));
+                    }}
+                    min={1}
+                    max={30}
+                    unit="min"
+                    placeholder="3"
+                    error={goalsErrors.inactivityMin}
+                    inputWidthClassName="w-40"
+                  />
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                       <SuiText page="settings" k="daily-goals.label.quiz" def="Quiz question count" as="span" />
                     </label>
-                    <div className="mb-2 flex flex-wrap items-center gap-3">
-                      <div className="relative w-28 min-w-[7rem] shrink-0">
-                        <input type="number" min={1} max={25} value={quizMin} onChange={(e) => { setQuizMin(e.target.value); setGoalsStatus("idle"); }} placeholder="3" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">min</span>
-                      </div>
-                      <span className="text-xs text-gray-400 shrink-0">to</span>
-                      <div className="relative w-28 min-w-[7rem] shrink-0">
-                        <input type="number" min={1} max={25} value={quizMax} onChange={(e) => { setQuizMax(e.target.value); setGoalsStatus("idle"); }} placeholder="10" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">max</span>
-                      </div>
+                    <div className="mb-2 flex flex-wrap items-end gap-3">
+                      <NumberField
+                        value={quizMin}
+                        onChange={(s) => {
+                          setQuizMin(s);
+                          setGoalsStatus("idle");
+                          if (goalsErrors.quizMin) setGoalsErrors((p) => ({ ...p, quizMin: undefined }));
+                        }}
+                        min={1}
+                        max={25}
+                        unit="min"
+                        placeholder="3"
+                        error={goalsErrors.quizMin}
+                        className="w-28 min-w-[7rem] shrink-0"
+                      />
+                      <span className="text-xs text-gray-400 shrink-0 pb-2.5">to</span>
+                      <NumberField
+                        value={quizMax}
+                        onChange={(s) => {
+                          setQuizMax(s);
+                          setGoalsStatus("idle");
+                          if (goalsErrors.quizMax) setGoalsErrors((p) => ({ ...p, quizMax: undefined }));
+                        }}
+                        min={1}
+                        max={25}
+                        unit="max"
+                        placeholder="10"
+                        error={goalsErrors.quizMax}
+                        className="w-28 min-w-[7rem] shrink-0"
+                      />
                     </div>
                     <p className="text-xs text-gray-400 dark:text-gray-500">
                       <SuiText
                         page="settings"
                         k="daily-goals.hint.quiz"
-                        def="After each session the quiz scales with pages read. Set your min and max. Leave blank for defaults (min 3, max 10). Max allowed: 25."
+                        def="After each session the quiz scales with pages read. Set your min and max (must be positive; max ≤ 25)."
                         as="span"
                       />
                     </p>
@@ -695,12 +902,26 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   {defaultGoalType !== undefined && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        {defaultGoalType === "time" ? "Default duration (min)" : defaultGoalType === "chapter" ? "Default number of chapters" : "Default page count"}
-                      </label>
-                      <input type="number" min={1} max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500} value={defaultTargetValue} onChange={(e) => { setDefaultTargetValue(e.target.value); setSessionDefaultStatus("idle"); }} placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                    </div>
+                    <NumberField
+                      label={
+                        defaultGoalType === "time"
+                          ? "Default duration (min)"
+                          : defaultGoalType === "chapter"
+                            ? "Default number of chapters"
+                            : "Default page count"
+                      }
+                      value={defaultTargetValue}
+                      onChange={(s) => {
+                        setDefaultTargetValue(s);
+                        setSessionDefaultStatus("idle");
+                        if (sessionDefaultError) setSessionDefaultError(null);
+                      }}
+                      min={1}
+                      max={defaultGoalType === "time" ? 480 : defaultGoalType === "chapter" ? 50 : 500}
+                      unit={defaultGoalType === "time" ? "min" : undefined}
+                      placeholder={defaultGoalType === "time" ? "e.g. 25" : defaultGoalType === "chapter" ? "e.g. 2" : "e.g. 10"}
+                      error={sessionDefaultError}
+                    />
                   )}
                   {sessionDefaultMessage && (
                     <p className={`text-sm ${sessionDefaultStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{sessionDefaultMessage}</p>
@@ -741,22 +962,58 @@ export default function SettingsPage() {
                 {pomodoroEnabled && (
                   <form onSubmit={handlePomodoroSave} className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Focus (min)</label>
-                        <input type="number" min={1} max={90} value={pomodoroFocus} onChange={(e) => { setPomodoroFocus(e.target.value); setPomodoroStatus("idle"); }} placeholder="25" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Short break (min)</label>
-                        <input type="number" min={1} max={30} value={pomodoroBreak} onChange={(e) => { setPomodoroBreak(e.target.value); setPomodoroStatus("idle"); }} placeholder="5" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Long break (min)</label>
-                        <input type="number" min={1} max={60} value={pomodoroLong} onChange={(e) => { setPomodoroLong(e.target.value); setPomodoroStatus("idle"); }} placeholder="15" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cycles before long break</label>
-                        <input type="number" min={1} max={10} value={pomodoroCycles} onChange={(e) => { setPomodoroCycles(e.target.value); setPomodoroStatus("idle"); }} placeholder="4" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
-                      </div>
+                      <NumberField
+                        label="Focus (min)"
+                        value={pomodoroFocus}
+                        onChange={(s) => {
+                          setPomodoroFocus(s);
+                          setPomodoroStatus("idle");
+                          if (pomodoroErrors.focus) setPomodoroErrors((p) => ({ ...p, focus: undefined }));
+                        }}
+                        min={1}
+                        max={90}
+                        placeholder="25"
+                        error={pomodoroErrors.focus}
+                      />
+                      <NumberField
+                        label="Short break (min)"
+                        value={pomodoroBreak}
+                        onChange={(s) => {
+                          setPomodoroBreak(s);
+                          setPomodoroStatus("idle");
+                          if (pomodoroErrors.short) setPomodoroErrors((p) => ({ ...p, short: undefined }));
+                        }}
+                        min={1}
+                        max={30}
+                        placeholder="5"
+                        error={pomodoroErrors.short}
+                      />
+                      <NumberField
+                        label="Long break (min)"
+                        value={pomodoroLong}
+                        onChange={(s) => {
+                          setPomodoroLong(s);
+                          setPomodoroStatus("idle");
+                          if (pomodoroErrors.long) setPomodoroErrors((p) => ({ ...p, long: undefined }));
+                        }}
+                        min={1}
+                        max={60}
+                        placeholder="15"
+                        error={pomodoroErrors.long}
+                      />
+                      <NumberField
+                        label="Cycles before long break"
+                        value={pomodoroCycles}
+                        onChange={(s) => {
+                          setPomodoroCycles(s);
+                          setPomodoroStatus("idle");
+                          if (pomodoroErrors.cycles) setPomodoroErrors((p) => ({ ...p, cycles: undefined }));
+                        }}
+                        min={1}
+                        max={10}
+                        placeholder="4"
+                        error={pomodoroErrors.cycles}
+                      />
                     </div>
                     {pomodoroMessage && (
                       <p className={`text-sm ${pomodoroStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{pomodoroMessage}</p>

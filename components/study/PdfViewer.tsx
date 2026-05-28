@@ -59,12 +59,19 @@ interface PdfViewerProps {
   documentId?: string;
   sessionId?: string;
   chapterPageRanges?: Record<string, [number, number]>;
+  /**
+   * Whether the surrounding study session timer is currently paused
+   * (manual pause, inactivity prompt, Pomodoro break, tab return prompt).
+   * Used to derive `focusedSeconds` on each page-visit row so the admin
+   * "Focused studying per page" panel can chart focused-only time.
+   */
+  isPaused?: boolean;
   onPageChange?: (page: number) => void;
   onPageText?: (page: number, text: string) => void;
   onLoad?: () => void;
 }
 
-export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, chapterPageRanges, onPageChange, onPageText, onLoad }: PdfViewerProps) {
+export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessionId, chapterPageRanges, isPaused = false, onPageChange, onPageText, onLoad }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -233,9 +240,23 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
   const pageNumberRef = useRef(initialPage);
 
   // Page visit tracking
-  const pageVisitRef = useRef<{ pageNumber: number; enteredAt: number } | null>(null);
-  const pendingVisitsRef = useRef<{ sessionId: string; pageNumber: number; enteredAt: string; leftAt: string; durationSeconds: number }[]>([]);
+  // `focusedAccumMs` accumulates the closed (paused-bracketed) intervals
+  // that have already been added to this visit's focus total. `focusStartMs`
+  // is the most recent un-paused start; null when paused. On leave we add
+  // the still-open interval (if any) before serialising.
+  const pageVisitRef = useRef<
+    | {
+        pageNumber: number;
+        enteredAt: number;
+        focusedAccumMs: number;
+        focusStartMs: number | null;
+      }
+    | null
+  >(null);
+  const pendingVisitsRef = useRef<{ sessionId: string; pageNumber: number; enteredAt: string; leftAt: string; durationSeconds: number; focusedSeconds: number }[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPausedRef = useRef(isPaused);
+  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
   const flushPageVisits = useCallback(() => {
     const batch = pendingVisitsRef.current.splice(0);
@@ -257,6 +278,12 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     if (!cur || !sessionId) return;
     const now = Date.now();
     const dur = Math.round((now - cur.enteredAt) / 1000);
+    // Close any currently-open focus interval before serialising.
+    let focusedMs = cur.focusedAccumMs;
+    if (cur.focusStartMs != null) {
+      focusedMs += now - cur.focusStartMs;
+    }
+    const focusedSec = Math.max(0, Math.min(dur, Math.round(focusedMs / 1000)));
     if (dur >= 1) {
       pendingVisitsRef.current.push({
         sessionId,
@@ -264,14 +291,37 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
         enteredAt: new Date(cur.enteredAt).toISOString(),
         leftAt: new Date(now).toISOString(),
         durationSeconds: dur,
+        focusedSeconds: focusedSec,
       });
     }
     pageVisitRef.current = null;
   }, [sessionId]);
 
   const recordPageEnter = useCallback((page: number) => {
-    pageVisitRef.current = { pageNumber: page, enteredAt: Date.now() };
+    const now = Date.now();
+    pageVisitRef.current = {
+      pageNumber: page,
+      enteredAt: now,
+      focusedAccumMs: 0,
+      focusStartMs: isPausedRef.current ? null : now,
+    };
   }, []);
+
+  // Keep the focused-time accumulator in sync with the parent's pause state.
+  // Toggling on -> off restarts the open interval; on -> off closes it.
+  useEffect(() => {
+    const cur = pageVisitRef.current;
+    if (!cur) return;
+    const now = Date.now();
+    if (isPaused) {
+      if (cur.focusStartMs != null) {
+        cur.focusedAccumMs += now - cur.focusStartMs;
+        cur.focusStartMs = null;
+      }
+    } else if (cur.focusStartMs == null) {
+      cur.focusStartMs = now;
+    }
+  }, [isPaused]);
 
   // Start tracking the initial page
   useEffect(() => {

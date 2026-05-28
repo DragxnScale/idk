@@ -133,7 +133,12 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Authentication (NextAuth-compatible)**
 
-- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags, `quiz_min_questions`, `quiz_max_questions`, `storage_bytes` (running upload total), `storage_quota_bytes` (null = 350 MB default), **`ai_tokens_used`** (running lifetime sum of prompt + completion tokens spent across every AI route), **`ai_token_limit`** (per-user cap override; null = use deploy-level `AI_TOKEN_LIMIT_DEFAULT`, which itself defaults to `0` = unlimited — usage is still tracked for the admin UI, it's just not enforced), **`is_owner`** (DB-flagged super-owner; works alongside the hardcoded `SUPER_ADMIN_EMAIL` so you can promote a new owner in Turso without redeploying code, and so you can never be locked out by losing access to the email).
+- `users` — credentials, profile, goals, `exit_password_hash`, admin/mute/blocked flags, `quiz_min_questions`, `quiz_max_questions`, `storage_bytes` (running upload total), `storage_quota_bytes` (null = 350 MB default), **`ai_tokens_used`** (running lifetime sum of prompt + completion tokens spent across every AI route), **`ai_token_limit`** (per-user cap override; null = use deploy-level `AI_TOKEN_LIMIT_DEFAULT`, which itself defaults to `0` = unlimited — usage is still tracked for the admin UI, it's just not enforced), **`is_owner`** (DB-flagged super-owner; works alongside the hardcoded `SUPER_ADMIN_EMAIL` so you can promote a new owner in Turso without redeploying code, and so you can never be locked out by losing access to the email), **`is_developer`** (off by default; admin/owner-only toggle in Settings; gates extra diagnostic surfaces in the admin console — currently the "Focused studying per page" panel under each session detail; checked against the *real* JWT identity in `lib/app-user.ts → isCurrentDeveloper()` so impersonation never hides or fakes the panel).
+
+  Manual Turso migration (project pattern):
+  ```sql
+  ALTER TABLE users ADD COLUMN is_developer INTEGER DEFAULT 0;
+  ```
 - `accounts`, `auth_sessions`, `verification_tokens` — OAuth/session tables if extended.
 - `banned_emails` — signup/signin blocklist.
 
@@ -147,7 +152,12 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **Engagement**
 
-- `page_visits` — time on page per study session.
+- `page_visits` — time on page per study session. `duration_seconds` is the wall-clock interval (`leftAt − enteredAt`, includes paused / idle / tab-blurred time). **`focused_seconds`** is the subset of `duration_seconds` during which the session timer was actually running — derived in `components/study/PdfViewer.tsx` by tracking the parent's `isPaused` prop across `pageEnter`/`pageLeave`. NULL on rows that predate the column; the admin "Focused studying per page" dev panel renders an empty state for those.
+
+  Manual Turso migration (project pattern):
+  ```sql
+  ALTER TABLE page_visits ADD COLUMN focused_seconds INTEGER;
+  ```
 - `bookmarks` — bookmarks and highlights (type, color, tag, optional `session_id`).
 
 **Productivity**
@@ -202,7 +212,7 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | POST | `/api/debug/dev-log` | **Super-owner only:** append `kind: dev` for feature work (`lib/dev-debug.ts` → `reportDevDebug`). |
 | GET | `/api/admin/debug-logs` | **Super-owner only:** `{ userLogs, devLogs }` from `client_error_logs` (joined names). |
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
-| GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, and **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as. |
+| GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as, and **`isDeveloper`** (real JWT account's `users.is_developer` flag) so admin-only diagnostic UI can gate itself the same way regardless of impersonation. |
 | GET | `/api/app/ui-copy` | Public JSON: `{ version: 2, pages }` — global app UI copy/typography overrides per screen (`home`, `dashboard`, `session`, `settings`) stored in `app_settings` (`app_ui_copy_json`). Legacy `{ version: 1, elements }` in `settings_ui_json` is merged into `pages.settings` on read for missing keys. |
 | GET | `/api/admin/ui-copy` | **Admin:** same merged payload as `/api/app/ui-copy`. |
 | PUT | `/api/admin/ui-copy` | **Admin:** replace full `{ version: 2, pages }` for app-wide UI strings/styles. |
@@ -223,9 +233,9 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/page-visits` | Record page enter/leave events. |
-| PATCH | `/api/page-visits` | Update visit (e.g. duration). |
-| POST | `/api/page-visits/batch` | Batch flush from PDF viewer. |
+| POST | `/api/page-visits` | Record page enter/leave events. Accepts optional `focusedSeconds` (clamped to `[0, durationSeconds]`) for the developer-mode focused-per-page chart. |
+| PATCH | `/api/page-visits` | Update visit (e.g. duration / focused seconds). |
+| POST | `/api/page-visits/batch` | Batch flush from PDF viewer. Each visit may carry `focusedSeconds`; the route clamps to the visit's own `durationSeconds` so a clock skew can never report more focused time than wall time. |
 
 ### 5.4 Documents and textbooks
 
@@ -255,8 +265,8 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | POST | `/api/user/drive/link` | Link external URL as document. |
 | GET | `/api/user/storage` | Returns `{ usedBytes, quotaBytes, pct, usedFormatted, quotaFormatted }` for the current user. |
 | GET | `/api/user/ai-usage` | Returns the caller's AI token usage: `{ used, limit, remaining, overBudget, pct, unlimited, breakdown[] }`. `breakdown` is the last-30-days per-route token + call count, used by the dashboard "AI usage" card. |
-| GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`, Pomodoro config). |
-| PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz bounds; Pomodoro fields: focus 1–90 min, break 1–30 min, long break 1–60 min, cycles 1–10). **Password branches** (mutually exclusive with prefs in one request): `{ currentLoginPassword, newLoginPassword, confirmLoginPassword }` — verifies current login password, requires `newLoginPassword === confirmLoginPassword`, min 6 chars, updates `users.password_hash`. `{ currentPassword, newExitPassword }` — verifies `currentPassword` against login password, min 4 chars for `newExitPassword`, updates `users.exit_password_hash`. |
+| GET | `/api/user/settings` | User preferences (includes `quizMinQuestions`, `quizMaxQuestions`, Pomodoro config, plus `isAdmin` / `isOwner` / `isDeveloper` so the settings page can decide whether to render the admin-only **Developer mode** toggle). |
+| PATCH | `/api/user/settings` | Update preferences (validates 1–25 for quiz bounds; Pomodoro fields: focus 1–90 min, break 1–30 min, long break 1–60 min, cycles 1–10). Accepts **`isDeveloper`**: silently ignored for non-admins (so a stale request from a demoted account never errors); admins / owners flip their own `users.is_developer`. **Password branches** (mutually exclusive with prefs in one request): `{ currentLoginPassword, newLoginPassword, confirmLoginPassword }` — verifies current login password, requires `newLoginPassword === confirmLoginPassword`, min 6 chars, updates `users.password_hash`. `{ currentPassword, newExitPassword }` — verifies `currentPassword` against login password, min 4 chars for `newExitPassword`, updates `users.exit_password_hash`. |
 | POST | `/api/user/verify-login-password` | Body `{ password }`. Verifies the password against `users.password_hash` for the signed-in user only (no DB writes). Used by Settings to unlock the combined login-password and exit-password forms. **200** `{ ok: true }`; **401** not signed in or wrong password; **400** invalid JSON, empty password, or account has no login password hash. |
 | GET | `/api/user/textbook-progress` | Returns per-textbook stats: sessions, minutes, **unique** pages visited (union of `visitedPagesList` across sessions), progress %. |
 | GET | `/api/user/heatmap` | Returns `{ days: { date, minutes }[] }` for the past 365 days for the GitHub-style activity heatmap on the dashboard. |
@@ -322,7 +332,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET | `/api/admin/users` | List users. Response now includes **`aiTokensUsed`** (lifetime total), **`aiTokenLimit`** (per-user override, null = default), and **`aiTokenLimitEffective`** (the cap actually enforced — per-user override OR deploy-level default, null = unlimited). Owner account always reports `aiTokenLimitEffective: null` regardless of settings. |
 | PATCH | `/api/admin/users` | Bulk or field updates. |
 | GET, PATCH, DELETE | `/api/admin/users/[id]` | User detail, update, delete. **PATCH** accepts `inactivityTimeout`, `storageQuotaBytes`, **`aiTokenLimit`** (number of tokens, null = reset to default), and **`resetAiTokens: true`** to zero the `ai_tokens_used` counter for a billing-style reset. Response body always includes the current `aiTokensUsed` and `aiTokenLimit`. |
-| GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session — session meta, document info, full `pageVisits[]`, plus **`quiz`** (score / accuracy / questions with highlighted correct option / review) and **`velocity`** (accuracy / reaction stats / per-attempt log with topic, user answer, correct answer, reaction time / growth areas). Admin UI renders dedicated **Quiz Performance** + **Velocity Performance** cards in the session detail view. |
+| GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session — session meta, document info, full `pageVisits[]` (each row carries `durationSeconds` + nullable **`focusedSeconds`**), plus **`quiz`** (score / accuracy / questions with highlighted correct option / review) and **`velocity`** (accuracy / reaction stats / per-attempt log with topic, user answer, correct answer, reaction time / growth areas). Admin UI renders dedicated **Quiz Performance** + **Velocity Performance** cards, and — when the real signed-in admin has `users.is_developer` on — a **Focused studying per page** dev panel built off `focusedSeconds`. |
 | GET | `/api/admin/catalog/cleanup-blobs` | Dry-run preview: reports how many rows/blobs would be deleted and estimated freed bytes. |
 | POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Recalculates `storageBytes` for affected users. |
 | GET, DELETE | `/api/admin/blobs` | List / delete blobs. `GET` lists across **every configured backend** (Vercel Blob and/or Cloudflare R2) via `lib/storage-backend.ts`, tags each row with `backend: "vercel-blob" \| "r2"`, and enriches user-upload rows from `documents.file_url` + `users` so they include `documentTitle`, `documentSourceType`, and uploader `{ id, name, email }`. `DELETE` dispatches by URL host so legacy and new objects are removed from the right backend. |
@@ -554,6 +564,16 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 ### 7.4 Page tracking (unique pages)
 
 When the user navigates a PDF, `visitedPagesRef` (`Set<number>`) accumulates each unique page index. Progress `PATCH` sends `totalFocusedMinutes`, `lastPageIndex`, `visitedPagesList`, etc. **`lastPageIndex` updates on every page turn** (not only when the focused-minute counter advances) and on session end, so resume can reopen the correct page even if the user moved pages before accumulating a full timer minute. The dashboard unfinished-session banner offers **Resume** only (no server-side “end” bypass); ending requires the in-session flow with exit password.
+
+### 7.4b Time-input validation pattern (`lib/forms/numberField.ts`, `components/forms/NumberField.tsx`)
+
+Every time-related input (study-session goal duration / chapters, multi-session cumulative target, daily minutes / sessions / inactivity / quiz min-max, Pomodoro focus + breaks + cycles, session defaults) keeps its controlled state as a **string** so the field can genuinely be cleared while editing — no auto-fill, no zero ghost. The shared `<NumberField>` component renders an `inputMode="numeric"` `type="text"` input (filtering non-digits in `onChange`), an optional unit suffix, and an inline red error label. On submit, the parent runs `validatePositiveInt(raw, { label, min, max, unit })`; an empty field returns `{ ok: false, error: "<label> can't be empty" }` and a non-positive value returns `"<label> must be greater than 0"`. Old `value={someNumber}` + `onChange={(e) => setX(Number(e.target.value) || 0)}` patterns are gone — they were the source of the "field snaps back to 0 when cleared" bug.
+
+### 7.4c Admin "Focused studying per page" dev panel
+
+In `app/admin/page.tsx` → `UsersTab` → session detail, immediately under the existing **Page-by-Page Reading Time** chart, a developer-mode-only panel renders the same per-page bars but uses each visit's `focusedSeconds` (timer-running subset) instead of the wall-clock `durationSeconds`. Bars switch to amber when a page's focused / wall-clock ratio falls below 25 % *and* the wall clock is at least 30 s (short visits don't have a meaningful ratio). Summary text: *"N pages with focus · Xh Ym focused total"* + *"Max focus on a single page"*. Empty state: *"Focused per-page intervals not available — this session predates per-page focus tracking."*
+
+The panel reads `isDeveloper` from `GET /api/user/session-context` (real JWT identity, ignores admin view-as) and only renders when that flag is true. The toggle for `is_developer` lives in `/settings` and is rendered only for users where `isAdmin === true` or `isOwner === true`; the API silently ignores the flip from anyone else.
 
 ### 7.5 Client-only and dynamic imports
 

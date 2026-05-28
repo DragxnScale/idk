@@ -4,6 +4,7 @@ import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { isAdmin, isOwner } from "@/lib/admin";
 
 export async function GET() {
   const authUser = await getAppUser();
@@ -35,6 +36,10 @@ export async function GET() {
     pomodoroBreakMin: row.pomodoroBreakMin ?? null,
     pomodoroLongBreakMin: row.pomodoroLongBreakMin ?? null,
     pomodoroCycles: row.pomodoroCycles ?? null,
+    /** Surfaced to the client so admins can show the toggle in settings. */
+    isAdmin: row.isAdmin ?? false,
+    isOwner: row.isOwner ?? false,
+    isDeveloper: row.isDeveloper ?? false,
   });
 }
 
@@ -65,6 +70,7 @@ export async function PATCH(request: Request) {
     pomodoroBreakMin,
     pomodoroLongBreakMin,
     pomodoroCycles,
+    isDeveloper,
   } = body;
 
   const row = await db.query.users.findFirst({
@@ -123,6 +129,22 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  // ── Developer mode toggle (admin-only) ─────────────────────────────
+  // Only admins / owners can flip their own `is_developer` flag. We
+  // check via email (not the in-memory row) so that DB-promoted owners
+  // who haven't been refetched also pass. The toggle is a no-op for
+  // non-admins — silently ignored, no error so the API stays forgiving
+  // for clients that send a stale isDeveloper alongside other settings.
+  if (isDeveloper !== undefined) {
+    if (await isAdmin(authUser.email) || await isOwner(authUser.email)) {
+      await db
+        .update(users)
+        .set({ isDeveloper: !!isDeveloper })
+        .where(eq(users.id, authUser.id));
+    }
+    // Allow this branch to coexist with other field updates — fall through.
+  }
+
   if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
@@ -178,6 +200,13 @@ export async function PATCH(request: Request) {
     }
 
     await db.update(users).set(update).where(eq(users.id, authUser.id));
+    return NextResponse.json({ ok: true });
+  }
+
+  // If the only field in the body was isDeveloper, the dedicated branch
+  // above already handled the update. Return ok so the settings client
+  // sees a successful save.
+  if (isDeveloper !== undefined) {
     return NextResponse.json({ ok: true });
   }
 

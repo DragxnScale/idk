@@ -25,14 +25,22 @@ export async function POST(req: NextRequest) {
 
   const rows = visits
     .filter((v: { sessionId: string }) => ownedIds.has(v.sessionId))
-    .map((v: { sessionId: string; pageNumber: number; enteredAt: string; leftAt?: string; durationSeconds?: number }) => ({
-      id: randomUUID(),
-      sessionId: v.sessionId,
-      pageNumber: v.pageNumber,
-      enteredAt: new Date(v.enteredAt),
-      leftAt: v.leftAt ? new Date(v.leftAt) : null,
-      durationSeconds: v.durationSeconds ?? null,
-    }));
+    .map((v: { sessionId: string; pageNumber: number; enteredAt: string; leftAt?: string; durationSeconds?: number; focusedSeconds?: number }) => {
+      const dur = v.durationSeconds ?? null;
+      const focused =
+        typeof v.focusedSeconds === "number"
+          ? Math.max(0, Math.min(v.focusedSeconds, dur ?? v.focusedSeconds))
+          : null;
+      return {
+        id: randomUUID(),
+        sessionId: v.sessionId,
+        pageNumber: v.pageNumber,
+        enteredAt: new Date(v.enteredAt),
+        leftAt: v.leftAt ? new Date(v.leftAt) : null,
+        durationSeconds: dur,
+        focusedSeconds: focused,
+      };
+    });
 
   for (const row of rows) {
     await db.insert(pageVisits).values(row);

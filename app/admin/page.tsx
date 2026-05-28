@@ -45,6 +45,8 @@ interface PageVisit {
   enteredAt: string | null;
   leftAt: string | null;
   durationSeconds: number | null;
+  /** Subset of duration when the timer was actually running. NULL on legacy rows that predate per-page focus tracking. */
+  focusedSeconds: number | null;
 }
 
 interface QuizSummary {
@@ -155,16 +157,36 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [ownerTabVisible, setOwnerTabVisible] = useState(false);
+  /**
+   * Whether the *real* signed-in admin has developer-mode on. Drives
+   * extra diagnostic surfaces (currently the "Focused studying per
+   * page" panel on each session detail).
+   *
+   * Read from `/api/user/session-context` because that endpoint
+   * always reports the real JWT identity even while view-as is active —
+   * so impersonating a regular user from a developer admin still shows
+   * the panel, and impersonating any user from a non-developer admin
+   * does not.
+   */
+  const [isDeveloperMode, setIsDeveloperMode] = useState(false);
 
   // auth check on first load; owner tab only for super-owner (see lib/admin.ts)
   useEffect(() => {
-    Promise.all([fetch("/api/admin/users"), fetch("/api/admin/owner-ai")]).then(
-      ([usersRes, ownerRes]) => {
-        if (usersRes.status === 403) setForbidden(true);
-        else setOwnerTabVisible(ownerRes.ok);
-        setLoading(false);
+    Promise.all([
+      fetch("/api/admin/users"),
+      fetch("/api/admin/owner-ai"),
+      fetch("/api/user/session-context"),
+    ]).then(([usersRes, ownerRes, ctxRes]) => {
+      if (usersRes.status === 403) setForbidden(true);
+      else setOwnerTabVisible(ownerRes.ok);
+      if (ctxRes.ok) {
+        ctxRes
+          .json()
+          .then((d) => setIsDeveloperMode(!!d?.isDeveloper))
+          .catch(() => {});
       }
-    );
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -253,7 +275,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {tab === "users" && <UsersTab />}
+        {tab === "users" && <UsersTab isDeveloperMode={isDeveloperMode} />}
         {tab === "appUi" && <AppUiEditorTab />}
         {tab === "upload" && <UploadTab />}
         {tab === "catalog" && <CatalogTab />}
@@ -268,7 +290,7 @@ export default function AdminPage() {
 
 // ── Users Tab ──────────────────────────────────────────────────────────────
 
-function UsersTab() {
+function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [search, setSearch] = useState("");
   const [banning, setBanning] = useState<string | null>(null);
@@ -490,6 +512,28 @@ function UsersTab() {
     const uniquePages = Array.from(new Set(visits.map((v) => v.pageNumber))).sort((a, b) => a - b);
     const totalTrackedSeconds = Array.from(pageTimeMap.values()).reduce((a, b) => a + b, 0);
 
+    // Focused-per-page aggregation (developer-mode panel below). NULL
+    // focusedSeconds means the row predates per-page focus tracking, so
+    // we fall back to the empty state instead of fabricating data.
+    const focusedAvailable = visits.some((v) => v.focusedSeconds != null);
+    const focusedTimeMap = new Map<number, number>();
+    if (focusedAvailable) {
+      for (const v of visits) {
+        if (v.focusedSeconds == null) continue;
+        focusedTimeMap.set(
+          v.pageNumber,
+          (focusedTimeMap.get(v.pageNumber) ?? 0) + v.focusedSeconds
+        );
+      }
+    }
+    const totalFocusedSecondsByPage = Array.from(focusedTimeMap.values()).reduce((a, b) => a + b, 0);
+    const pagesWithFocus = Array.from(focusedTimeMap.entries()).filter(([, sec]) => sec > 0).length;
+    const maxFocusOnAnyPage = focusedTimeMap.size > 0 ? Math.max(...Array.from(focusedTimeMap.values())) : 0;
+    /** Distraction-hint threshold: focused / wall-clock ratio below this is amber. */
+    const DISTRACTED_RATIO = 0.25;
+    /** Skip the warning for very short visits where the ratio is meaningless. */
+    const RATIO_MIN_WALLCLOCK_SEC = 30;
+
     const getChapterForPage = (page: number): string | null => {
       if (!doc.chapterPageRanges) return null;
       for (const [ch, [start, end]] of Object.entries(doc.chapterPageRanges)) {
@@ -571,6 +615,95 @@ function UsersTab() {
             </div>
           )}
         </div>
+
+        {/*
+          Focused studying per page — developer-mode-only diagnostic
+          panel. Mirrors the page-by-page chart above but uses
+          `focusedSeconds` per visit instead of wall-clock duration. We
+          surface "max focus per page" and amber-flag pages with low
+          focus/wallclock ratios so you can spot distraction patterns
+          (e.g. pages where the user kept the tab open in the
+          background for a long time).
+        */}
+        {isDeveloperMode && (
+          <div className="rounded-xl border border-amber-900/40 bg-gray-900 p-4 mb-5">
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <div>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  Focused studying per page
+                  <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Dev</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {focusedAvailable
+                    ? `${pagesWithFocus} pages with focus · ${fmtSeconds(totalFocusedSecondsByPage)} focused total`
+                    : "Per-page focus data not yet recorded for this session."}
+                </p>
+                {focusedAvailable && maxFocusOnAnyPage > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    Max focus on a single page: {fmtSeconds(maxFocusOnAnyPage)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {!focusedAvailable ? (
+              <p className="text-sm text-gray-500 text-center py-6">
+                Focused per-page intervals not available — this session predates
+                per-page focus tracking.
+              </p>
+            ) : pagesWithFocus === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-6">
+                No focused time recorded on any page (every visit was paused or
+                idle).
+              </p>
+            ) : (
+              <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+                {uniquePages.map((pg) => {
+                  const focused = focusedTimeMap.get(pg) ?? 0;
+                  const wall = pageTimeMap.get(pg) ?? 0;
+                  const ch = getChapterForPage(pg);
+                  const maxF = Math.max(maxFocusOnAnyPage, 1);
+                  const barWidth = Math.max(2, (focused / maxF) * 100);
+                  const ratio = wall > 0 ? focused / wall : 0;
+                  const distracted =
+                    wall >= RATIO_MIN_WALLCLOCK_SEC && ratio < DISTRACTED_RATIO;
+                  return (
+                    <div
+                      key={pg}
+                      className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition"
+                    >
+                      <span className="w-14 text-xs text-gray-400 text-right font-mono flex-shrink-0">p. {pg}</span>
+                      {ch && <span className="text-[10px] text-gray-500 w-20 truncate flex-shrink-0" title={ch}>{ch}</span>}
+                      <div className="flex-1 min-w-0">
+                        <div className="h-4 rounded-full overflow-hidden bg-gray-800">
+                          <div
+                            className={`h-full rounded-full transition-all ${distracted ? "bg-amber-500/70" : "bg-emerald-500/70"}`}
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="w-16 text-xs text-gray-400 text-right flex-shrink-0">{fmtSeconds(focused)}</span>
+                      <span
+                        className={`text-[10px] w-12 text-right flex-shrink-0 ${
+                          distracted ? "text-amber-400" : "text-gray-600"
+                        }`}
+                        title={
+                          wall >= RATIO_MIN_WALLCLOCK_SEC
+                            ? `${Math.round(ratio * 100)}% of wall clock (${fmtSeconds(wall)})`
+                            : "wall-clock too short to score"
+                        }
+                      >
+                        {wall >= RATIO_MIN_WALLCLOCK_SEC
+                          ? `${Math.round(ratio * 100)}%`
+                          : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quiz performance */}
         {quiz && (
