@@ -49,6 +49,15 @@ export default function SettingsPage() {
   const [inactivityMin, setInactivityMin] = useState<string>("");
   const [quizMin, setQuizMin] = useState<string>("");
   const [quizMax, setQuizMax] = useState<string>("");
+  // ── Spaced repetition (FSRS pacing caps) ────────────────────────────
+  // Per the SRS plan, both fields are kept as strings so the input can
+  // genuinely be cleared; submit-time validation enforces the integer
+  // bounds (`0–500` and `1–9999`).
+  const [srsNewPerDay, setSrsNewPerDay] = useState<string>("");
+  const [srsReviewsPerDay, setSrsReviewsPerDay] = useState<string>("");
+  const [srsStatus, setSrsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [srsMessage, setSrsMessage] = useState<string | null>(null);
+  const [srsErrors, setSrsErrors] = useState<{ newPerDay?: string; reviewsPerDay?: string }>({});
   const [goalsStatus, setGoalsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [goalsMessage, setGoalsMessage] = useState<string | null>(null);
   /**
@@ -403,6 +412,8 @@ export default function SettingsPage() {
         setInactivityMin(data.inactivityTimeout != null ? String(data.inactivityTimeout) : "");
         setQuizMin(data.quizMinQuestions != null ? String(data.quizMinQuestions) : "");
         setQuizMax(data.quizMaxQuestions != null ? String(data.quizMaxQuestions) : "");
+        setSrsNewPerDay(data.srsNewPerDay != null ? String(data.srsNewPerDay) : "");
+        setSrsReviewsPerDay(data.srsReviewsPerDay != null ? String(data.srsReviewsPerDay) : "");
         if (data.themeId) setThemeId(data.themeId);
         if (data.name) setDisplayName(data.name);
         if (data.email) setAccountEmail(data.email);
@@ -481,6 +492,54 @@ export default function SettingsPage() {
     } catch {
       setGoalsStatus("error");
       setGoalsMessage("Network error. Please try again.");
+    }
+  }
+
+  // ── Spaced repetition save handler ──────────────────────────────────
+  // Saves the per-user FSRS pacing caps. `srsNewPerDay` allows 0
+  // (means "pause new card introduction"), so we set min=0; min stays
+  // at 1 for `srsReviewsPerDay` because "review at most 0 cards/day"
+  // would just lock the user out of the feature without warning.
+  async function handleSrsSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSrsMessage(null);
+
+    const newCheck = validatePositiveInt(srsNewPerDay, { label: "New cards per day", min: 0, max: 500 });
+    const reviewsCheck = validatePositiveInt(srsReviewsPerDay, { label: "Max reviews per day", min: 1, max: 9999 });
+
+    const nextErrors: typeof srsErrors = {};
+    if (!newCheck.ok) nextErrors.newPerDay = newCheck.error;
+    if (!reviewsCheck.ok) nextErrors.reviewsPerDay = reviewsCheck.error;
+
+    setSrsErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setSrsStatus("error");
+      return;
+    }
+
+    if (!newCheck.ok || !reviewsCheck.ok) return;
+
+    setSrsStatus("loading");
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          srsNewPerDay: newCheck.value,
+          srsReviewsPerDay: reviewsCheck.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setSrsStatus("success");
+        setSrsMessage("Review settings saved.");
+      } else {
+        setSrsStatus("error");
+        setSrsMessage(data.error ?? "Something went wrong.");
+      }
+    } catch {
+      setSrsStatus("error");
+      setSrsMessage("Network error. Please try again.");
     }
   }
 
@@ -841,6 +900,64 @@ export default function SettingsPage() {
                       "Saving…"
                     ) : (
                       <SuiText page="settings" k="daily-goals.save" def="Save goals" as="span" />
+                    )}
+                  </button>
+                </form>
+              </section>
+            ),
+
+            "spaced-repetition": (
+              <section key="spaced-repetition" style={{ ...cardGridCol("spaced-repetition"), ...cardStyle("spaced-repetition") }} className={CS}>
+                <h2 className={titleClass("spaced-repetition", "mb-1")}>
+                  <SuiText page="settings" k="spaced-repetition.title" def="Spaced repetition" as="span" />
+                </h2>
+                <p className={descClass("spaced-repetition", "mb-5")}>
+                  <SuiText
+                    page="settings"
+                    k="spaced-repetition.desc"
+                    def="Daily caps for the /review queue. Cards already past their schedule will surface up to these limits — extras roll over to the next day."
+                    as="span"
+                  />
+                </p>
+                <form onSubmit={handleSrsSave} className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <NumberField
+                      label={<SuiText page="settings" k="spaced-repetition.new-per-day" def="New cards per day" as="span" />}
+                      hint={<SuiText page="settings" k="spaced-repetition.new-per-day.hint" def="0–500. 0 pauses new cards." as="span" />}
+                      value={srsNewPerDay}
+                      onChange={(s) => {
+                        setSrsNewPerDay(s);
+                        setSrsStatus("idle");
+                        if (srsErrors.newPerDay) setSrsErrors((p) => ({ ...p, newPerDay: undefined }));
+                      }}
+                      min={0}
+                      max={500}
+                      placeholder="20"
+                      error={srsErrors.newPerDay}
+                    />
+                    <NumberField
+                      label={<SuiText page="settings" k="spaced-repetition.reviews-per-day" def="Max reviews per day" as="span" />}
+                      hint={<SuiText page="settings" k="spaced-repetition.reviews-per-day.hint" def="1–9999. Soft ceiling for review-only days." as="span" />}
+                      value={srsReviewsPerDay}
+                      onChange={(s) => {
+                        setSrsReviewsPerDay(s);
+                        setSrsStatus("idle");
+                        if (srsErrors.reviewsPerDay) setSrsErrors((p) => ({ ...p, reviewsPerDay: undefined }));
+                      }}
+                      min={1}
+                      max={9999}
+                      placeholder="200"
+                      error={srsErrors.reviewsPerDay}
+                    />
+                  </div>
+                  {srsMessage && (
+                    <p className={`text-sm ${srsStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>{srsMessage}</p>
+                  )}
+                  <button type="submit" disabled={srsStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">
+                    {srsStatus === "loading" ? (
+                      "Saving…"
+                    ) : (
+                      <SuiText page="settings" k="spaced-repetition.save" def="Save review settings" as="span" />
                     )}
                   </button>
                 </form>

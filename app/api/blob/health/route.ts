@@ -10,7 +10,11 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN ? "set" : "MISSING",
+    R2_ENDPOINT: process.env.R2_ENDPOINT ? "set" : "MISSING",
+    R2_BUCKET: process.env.R2_BUCKET ? "set" : "MISSING",
+    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID ? "set" : "MISSING",
+    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ? "set" : "MISSING",
+    R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL ? "set" : "missing (byte-proxy fallback active)",
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET ? "set" : "MISSING",
     DATABASE_URL: process.env.DATABASE_URL ? "set" : "MISSING",
   });

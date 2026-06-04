@@ -136,6 +136,26 @@ export default function DashboardPage() {
       .catch(() => {});
   }, []);
 
+  // Spaced-repetition stats — drives the "Due today" card next to the
+  // streak. Hidden when there's nothing due AND no new cards available.
+  const [srsStats, setSrsStats] = useState<{
+    dueNow: number;
+    dueToday: number;
+    newToday: number;
+    newAvailable: number;
+    newRemainingToday: number;
+    matureCount: number;
+    learningCount: number;
+    totalCards: number;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/review/stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setSrsStats)
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     async function fetchStats(retries = 3): Promise<StatsData | null> {
       for (let i = 0; i < retries; i++) {
@@ -289,6 +309,17 @@ export default function DashboardPage() {
               <SuiText page="dashboard" k="btn.settings" def="Settings" as="span" />
             </Link>
             <Link
+              href="/review"
+              className="relative rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+            >
+              <SuiText page="dashboard" k="btn.review" def="Review" as="span" />
+              {srsStats && srsStats.dueNow > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                  {srsStats.dueNow > 99 ? "99+" : srsStats.dueNow}
+                </span>
+              )}
+            </Link>
+            <Link
               href="/study/session"
               className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium"
             >
@@ -401,6 +432,51 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Spaced-repetition "Due today" card. Hidden entirely when
+            there are no cards to review AND no untouched new cards
+            sitting in the user's collection — surfaces the feature
+            once the user has flashcards but doesn't add visual
+            clutter for users who haven't tried it yet. */}
+        {srsStats &&
+          (srsStats.dueNow > 0 ||
+            srsStats.newAvailable > 0 ||
+            srsStats.learningCount > 0) && (
+          <Link
+            href="/review"
+            className="mb-8 flex items-center gap-4 rounded-xl border border-indigo-200 bg-indigo-50 p-5 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30"
+          >
+            <span className="select-none text-4xl" aria-hidden>
+              🧠
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-2xl font-bold leading-none text-indigo-700 dark:text-indigo-300">
+                {srsStats.dueNow > 0
+                  ? `${srsStats.dueNow} card${srsStats.dueNow === 1 ? "" : "s"} due`
+                  : srsStats.newAvailable > 0
+                  ? `${Math.min(srsStats.newAvailable, srsStats.newRemainingToday)} new card${Math.min(srsStats.newAvailable, srsStats.newRemainingToday) === 1 ? "" : "s"}`
+                  : "Caught up"}
+              </p>
+              <p className="mt-0.5 text-sm text-indigo-600 dark:text-indigo-400">
+                {srsStats.dueNow > 0
+                  ? srsStats.newRemainingToday > 0 && srsStats.newAvailable > 0
+                    ? `+ ${Math.min(srsStats.newAvailable, srsStats.newRemainingToday)} new ready · ${srsStats.matureCount} mature`
+                    : `${srsStats.matureCount} mature in your deck`
+                  : srsStats.newAvailable > 0
+                  ? "Tap to introduce them"
+                  : "All your cards are scheduled"}
+              </p>
+            </div>
+            <div className="flex-shrink-0 text-right">
+              <p className="text-xs text-indigo-500 dark:text-indigo-300">
+                Review
+              </p>
+              <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-200">
+                →
+              </p>
+            </div>
+          </Link>
+        )}
 
         {/* Daily goal progress */}
         {(stats.dailyMinutesGoal || stats.dailySessionsGoal) && (

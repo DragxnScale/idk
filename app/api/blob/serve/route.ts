@@ -1,14 +1,26 @@
 /**
- * Authenticated PDF read proxy.
+ * Authenticated PDF read gate.
  *
- * Browser-side PDF viewers (react-pdf, iframe `<embed>`) can't speak to
- * private Vercel Blob URLs (they need a bearer token) or to R2 (auth-
- * required SigV4). This route adds the right authentication for the
- * URL's host and streams the bytes back same-origin so the cookie-based
- * session is the gating factor.
+ * Originally streamed bytes back through this Vercel Function so private
+ * Vercel Blob URLs (bearer-token-required) and R2 URLs (SigV4-required)
+ * could be loaded by browser PDF viewers using only the same-origin
+ * cookie. That worked but counted every byte of every page-flip toward
+ * Vercel's Fast Origin Transfer billable metric.
  *
- * Backend dispatch lives in `lib/storage-backend.ts` — adding a new
- * blob host means editing that file, not this one.
+ * Now we 302-redirect to a URL the browser can fetch directly:
+ *   - R2 + key starts with `public/` AND `R2_PUBLIC_BASE_URL` is set →
+ *     redirect to the public URL (custom domain or r2.dev). Bytes flow
+ *     R2 edge → browser. No Vercel egress.
+ *   - R2 + private key (`<userId>/...`) → redirect to a 1 h presigned
+ *     GET URL. Same direct R2 → browser path; the cookie auth check
+ *     still happens server-side here.
+ *   - Vercel Blob legacy URL → keep the byte-proxy fallback so any URL
+ *     that hasn't been migrated yet still serves correctly. After the
+ *     migration script reports zero VB URLs in the DB this branch is
+ *     dead code and can be removed.
+ *   - R2 with a public key but no `R2_PUBLIC_BASE_URL` configured →
+ *     fall back to the byte-proxy. Lets the deployment ship before the
+ *     Cloudflare-dashboard r2.dev toggle is flipped.
  */
 import { NextResponse } from "next/server";
 import { decode } from "next-auth/jwt";
@@ -17,6 +29,9 @@ import {
   headPdf,
   isR2Url,
   isVercelBlobUrl,
+  publicR2UrlFor,
+  r2KeyFromUrl,
+  r2PresignedGetUrl,
 } from "@/lib/storage-backend";
 
 const SESSION_COOKIE = "sf.session-token";
@@ -54,6 +69,35 @@ function isAllowedHost(url: string): boolean {
   return isVercelBlobUrl(url) || isR2Url(url);
 }
 
+/**
+ * Decide what to do with an R2 URL: 302-redirect to a public URL, 302
+ * to a presigned URL, or null to signal "fall back to streaming bytes".
+ */
+function r2RedirectTarget(url: string): {
+  target: string;
+  cacheControl: string;
+} | null {
+  const key = r2KeyFromUrl(url);
+  if (!key) return null;
+
+  // public/<slug>/... is intentionally world-readable. Send the browser
+  // straight to the public R2 URL when one is configured.
+  if (key.startsWith("public/")) {
+    const publicUrl = publicR2UrlFor(key);
+    if (publicUrl) {
+      return {
+        target: publicUrl,
+        cacheControl: "public, max-age=300",
+      };
+    }
+    // Fall through: caller will stream bytes (graceful pre-cf-prep mode).
+    return null;
+  }
+
+  // Anything else is private user content — caller should presign.
+  return null;
+}
+
 export async function HEAD(request: Request) {
   const userId = await getUserId(request);
   if (!userId) {
@@ -65,6 +109,30 @@ export async function HEAD(request: Request) {
     return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
   }
 
+  // 302 dispatch (matching GET) — see GET() for rationale.
+  if (isR2Url(url)) {
+    const redirect = r2RedirectTarget(url);
+    if (redirect) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: redirect.target, "Cache-Control": redirect.cacheControl },
+      });
+    }
+    const key = r2KeyFromUrl(url);
+    if (key && !key.startsWith("public/")) {
+      try {
+        const signed = await r2PresignedGetUrl(key);
+        return new Response(null, {
+          status: 302,
+          headers: { Location: signed, "Cache-Control": "private, no-store" },
+        });
+      } catch (e) {
+        console.error("[blob/serve HEAD] presign failed:", e);
+      }
+    }
+  }
+
+  // Fallback: actually probe and stream the headers back.
   try {
     const probe = await headPdf(url);
     if (probe.status >= 400) {
@@ -95,6 +163,50 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
   }
 
+  // R2: redirect to a URL the browser can fetch directly. Bytes never
+  // flow through this Function once a redirect path is taken.
+  if (isR2Url(url)) {
+    const redirect = r2RedirectTarget(url);
+    if (redirect) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: redirect.target,
+          "Cache-Control": redirect.cacheControl,
+        },
+      });
+    }
+
+    // Private key path — presign a GET URL and 302 the browser to it.
+    const key = r2KeyFromUrl(url);
+    if (key && !key.startsWith("public/")) {
+      try {
+        const signed = await r2PresignedGetUrl(key);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: signed,
+            "Cache-Control": "private, no-store",
+          },
+        });
+      } catch (e) {
+        console.error("[blob/serve] presign failed:", e);
+        return NextResponse.json(
+          { error: "Failed to sign R2 URL" },
+          { status: 500 }
+        );
+      }
+    }
+
+    // R2 public key but R2_PUBLIC_BASE_URL is unset — fall through to
+    // the byte-proxy below. Once the dashboard toggle is flipped and
+    // the env var is set, the redirect path above takes over with no
+    // code change required.
+  }
+
+  // Vercel Blob (legacy) OR R2 with public key + no public base URL:
+  // proxy bytes the old way. After migration this branch handles only
+  // the leftover VB URLs (which should be zero post-migration).
   try {
     const range = request.headers.get("range");
     const result = await fetchPdf(url, range);

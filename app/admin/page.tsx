@@ -2973,7 +2973,7 @@ interface BlobItem {
   size: number;
   uploadedAt: string;
   /** Which backend currently hosts this blob (filled in by the API). */
-  backend?: "vercel-blob" | "r2";
+  backend?: "r2";
   documentId: string | null;
   documentTitle: string | null;
   documentSourceType: string | null;

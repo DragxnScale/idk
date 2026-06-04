@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { del } from "@vercel/blob";
 import { requireAdmin } from "@/lib/admin";
+import { deletePdf } from "@/lib/storage-backend";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -60,8 +60,8 @@ export async function POST(request: Request) {
     duplex: "half",
   });
 
-  // Clean up the temporary blob regardless of outcome
-  await del(blobUrl).catch(() => {});
+  // Clean up the temporary R2 object regardless of outcome.
+  await deletePdf(blobUrl).catch(() => {});
 
   if (!archiveRes.ok) {
     const text = await archiveRes.text().catch(() => "");

@@ -3,24 +3,19 @@
 /**
  * Browser-side PDF upload helper.
  *
- * Handles three upload shapes:
+ * Handles two upload shapes against Cloudflare R2:
  *
- *   - Vercel Blob: server hands back a `clientToken`; we use the
- *     `@vercel/blob/client` multipart uploader to talk to the CDN.
- *   - Cloudflare R2, small file (≤ R2_MULTIPART_THRESHOLD): server
- *     hands back a presigned PUT URL; we PUT the entire body in one
- *     XHR request with retry-with-backoff for transient blips.
- *   - Cloudflare R2, large file (> R2_MULTIPART_THRESHOLD): server
- *     tells us to use S3 multipart; we split the file into 8 MB
- *     parts, sign each part on demand, and upload chunks
- *     independently — a stalled or failed part only retries that
- *     8 MB instead of the whole 200 MB file.
+ *   - Small file (≤ R2_MULTIPART_THRESHOLD): server hands back a
+ *     presigned PUT URL; we PUT the entire body in one XHR request
+ *     with retry-with-backoff for transient blips.
+ *   - Large file (> R2_MULTIPART_THRESHOLD): server tells us to use S3
+ *     multipart; we split the file into 8 MB parts, sign each part on
+ *     demand, and upload chunks independently — a stalled or failed
+ *     part only retries that 8 MB instead of the whole 200 MB file.
  *
- * Callers don't need to know which backend (or which mode) is
- * active; they just call `uploadPdfToStorage()` and get back the
- * final URL to register.
+ * Callers don't need to know which mode is active; they just call
+ * `uploadPdfToStorage()` and get back the final URL to register.
  */
-import { createMultipartUploader } from "@vercel/blob/client";
 
 const PART_SIZE = 8 * 1024 * 1024; // 8 MB — above R2/S3 multipart minimum (5 MB)
 const R2_MULTIPART_THRESHOLD_BYTES = 50 * 1024 * 1024; // mirrors the server-side threshold in /api/blob/client-token
@@ -47,10 +42,6 @@ export type UploadProgress = (
   bytes?: { loaded: number; total: number }
 ) => void;
 
-interface InitVB {
-  backend: "vercel-blob";
-  clientToken: string;
-}
 interface InitR2Single {
   backend: "r2";
   mode?: "single";
@@ -64,11 +55,11 @@ interface InitR2Multipart {
   pathname: string;
   objectUrl: string;
 }
-type InitResponse = InitVB | InitR2Single | InitR2Multipart;
+type InitResponse = InitR2Single | InitR2Multipart;
 
 /**
- * Upload `file` to the active storage backend at the requested
- * `pathname` and return the final URL to store on the document row.
+ * Upload `file` to R2 at the requested `pathname` and return the final
+ * URL to store on the document row.
  */
 export async function uploadPdfToStorage(
   file: File,
@@ -92,13 +83,10 @@ export async function uploadPdfToStorage(
   }
   const initRes = (await tokenRes.json()) as InitResponse;
 
-  if (initRes.backend === "r2") {
-    if (initRes.mode === "multipart") {
-      return uploadMultipartToR2(file, initRes, onProgress);
-    }
-    return uploadSinglePutToR2WithRetry(file, initRes, onProgress);
+  if (initRes.mode === "multipart") {
+    return uploadMultipartToR2(file, initRes, onProgress);
   }
-  return uploadMultipartToVercelBlob(file, pathname, initRes.clientToken, onProgress);
+  return uploadSinglePutToR2WithRetry(file, initRes, onProgress);
 }
 
 // ── Single-PUT R2 (small files) ──────────────────────────────────────
@@ -624,41 +612,6 @@ function createStallWatchdog(opts: StallWatchdogOpts): StallWatchdog {
       warned = false;
     },
   };
-}
-
-// ── Vercel Blob multipart (unchanged) ────────────────────────────────
-
-async function uploadMultipartToVercelBlob(
-  file: File,
-  pathname: string,
-  clientToken: string,
-  onProgress: UploadProgress
-): Promise<string> {
-  onProgress(2, "Starting upload…");
-  const uploader = await createMultipartUploader(pathname, {
-    access: "private",
-    token: clientToken,
-    contentType: "application/pdf",
-  });
-
-  const totalParts = Math.ceil(file.size / PART_SIZE);
-  const parts: { etag: string; partNumber: number }[] = [];
-
-  for (let i = 0; i < totalParts; i++) {
-    const start = i * PART_SIZE;
-    const end = Math.min(start + PART_SIZE, file.size);
-    const chunk = file.slice(start, end);
-    const partNumber = i + 1;
-    const pct = Math.round(((i + 0.5) / totalParts) * 88) + 2;
-    onProgress(pct, `Uploading… ${pct}% (part ${partNumber}/${totalParts})`);
-
-    const part = await uploader.uploadPart(partNumber, chunk);
-    parts.push(part);
-  }
-
-  onProgress(92, "Finishing upload…");
-  const blob = await uploader.complete(parts);
-  return blob.url;
 }
 
 // ── Formatting helpers ───────────────────────────────────────────────

@@ -36,6 +36,9 @@ export async function GET() {
     pomodoroBreakMin: row.pomodoroBreakMin ?? null,
     pomodoroLongBreakMin: row.pomodoroLongBreakMin ?? null,
     pomodoroCycles: row.pomodoroCycles ?? null,
+    /** Spaced-repetition pacing caps (Anki-style). null = use defaults. */
+    srsNewPerDay: row.srsNewPerDay ?? null,
+    srsReviewsPerDay: row.srsReviewsPerDay ?? null,
     /** Surfaced to the client so admins can show the toggle in settings. */
     isAdmin: row.isAdmin ?? false,
     isOwner: row.isOwner ?? false,
@@ -70,6 +73,8 @@ export async function PATCH(request: Request) {
     pomodoroBreakMin,
     pomodoroLongBreakMin,
     pomodoroCycles,
+    srsNewPerDay,
+    srsReviewsPerDay,
     isDeveloper,
   } = body;
 
@@ -145,7 +150,7 @@ export async function PATCH(request: Request) {
     // Allow this branch to coexist with other field updates — fall through.
   }
 
-  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined) {
+  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined || srsNewPerDay !== undefined || srsReviewsPerDay !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
     if (name !== undefined) {
@@ -197,6 +202,19 @@ export async function PATCH(request: Request) {
     if (pomodoroCycles !== undefined) {
       const v = Math.round(Number(pomodoroCycles));
       update.pomodoroCycles = v >= 1 && v <= 10 ? v : null;
+    }
+    if (srsNewPerDay !== undefined) {
+      // Range 0–500. 0 = pause new card introduction (study existing
+      // schedule only). >500 is the soft sanity ceiling — anyone
+      // actually wanting more than 500 new cards a day should be
+      // running their own Anki and we'll consider raising the cap
+      // when someone asks.
+      const v = Math.round(Number(srsNewPerDay));
+      update.srsNewPerDay = Number.isFinite(v) && v >= 0 && v <= 500 ? v : null;
+    }
+    if (srsReviewsPerDay !== undefined) {
+      const v = Math.round(Number(srsReviewsPerDay));
+      update.srsReviewsPerDay = Number.isFinite(v) && v >= 1 && v <= 9999 ? v : null;
     }
 
     await db.update(users).set(update).where(eq(users.id, authUser.id));

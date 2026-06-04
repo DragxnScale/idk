@@ -1,18 +1,13 @@
 /**
- * Pluggable PDF storage backend.
+ * PDF storage backend — Cloudflare R2 only.
  *
- * Today we support two backends:
- *   - "vercel-blob"  → @vercel/blob (status quo)
- *   - "r2"           → Cloudflare R2 (S3-compatible)
- *
- * Selection at boot via STORAGE_BACKEND. Defaults to "vercel-blob" so
- * existing production keeps working until cutover.
- *
- * Reads (deletes too) are dispatched by URL host, **not** by the active
- * backend, so during the migration window mixed URLs (some on VB, some
- * on R2) all work.
+ * The previous Vercel Blob branch was removed after
+ * `scripts/migrate-vercel-blob-to-r2.mjs` reported zero leftover
+ * `blob.vercel-storage.com` URLs in the DB. The defensive
+ * `isVercelBlobUrl()` stub is kept (always returns false) so any caller
+ * that hasn't been updated yet still type-checks; it has no runtime
+ * effect because no URLs in the system match.
  */
-import { del as vbDel, list as vbList, put as vbPut } from "@vercel/blob";
 import {
   S3Client,
   AbortMultipartUploadCommand,
@@ -28,10 +23,9 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-export type BackendName = "vercel-blob" | "r2";
+export type BackendName = "r2";
 
-export const ACTIVE_BACKEND: BackendName =
-  process.env.STORAGE_BACKEND === "r2" ? "r2" : "vercel-blob";
+export const ACTIVE_BACKEND: BackendName = "r2";
 
 // ── R2 client (lazy) ─────────────────────────────────────────────────
 
@@ -66,8 +60,15 @@ function r2Bucket(): string {
 
 // ── URL classification ───────────────────────────────────────────────
 
-export function isVercelBlobUrl(url: string): boolean {
-  return url.includes("blob.vercel-storage.com");
+/**
+ * Defensive stub kept to avoid breaking any caller that hasn't been
+ * updated since the Vercel Blob rip-out. There are no
+ * `blob.vercel-storage.com` URLs left in the DB, so this is always
+ * false in practice. Safe to delete this function once every caller is
+ * known to be VB-free.
+ */
+export function isVercelBlobUrl(_url: string): boolean {
+  return false;
 }
 
 export function isR2Url(url: string): boolean {
@@ -109,6 +110,19 @@ export function r2EndpointUrl(key: string): string {
   return `${endpoint.replace(/\/+$/, "")}/${r2Bucket()}/${key}`;
 }
 
+/**
+ * Public-bucket URL for a given key when `R2_PUBLIC_BASE_URL` is set
+ * (custom domain or r2.dev). Returns null when the env var is missing,
+ * which signals the caller to fall back to the byte-proxy or to a
+ * presigned GET URL. Only safe for keys that are intentionally
+ * world-readable — i.e. `public/<slug>/...` admin textbooks.
+ */
+export function publicR2UrlFor(key: string): string | null {
+  const base = process.env.R2_PUBLIC_BASE_URL;
+  if (!base) return null;
+  return `${base.replace(/\/+$/, "")}/${key.replace(/^\/+/, "")}`;
+}
+
 // ── putPdf ───────────────────────────────────────────────────────────
 
 export interface PutResult {
@@ -117,7 +131,7 @@ export interface PutResult {
 }
 
 /**
- * Upload a PDF to the active backend. `pathname` is the object key
+ * Upload a PDF to R2. `pathname` is the object key
  * (`<userId>/<id>.pdf`, `public/<slug>/<file>.pdf`, etc.).
  */
 export async function putPdf(
@@ -126,63 +140,35 @@ export async function putPdf(
   opts?: { contentType?: string }
 ): Promise<PutResult> {
   const contentType = opts?.contentType ?? "application/pdf";
-
-  if (ACTIVE_BACKEND === "r2") {
-    const upload = new Upload({
-      client: r2(),
-      params: {
-        Bucket: r2Bucket(),
-        Key: pathname,
-        Body: body as never,
-        ContentType: contentType,
-      },
-      // R2 multipart minimum part size is 5 MB.
-      partSize: 8 * 1024 * 1024,
-      queueSize: 4,
-    });
-    await upload.done();
-    return { url: r2EndpointUrl(pathname), pathname };
-  }
-
-  // Vercel Blob — keep streaming + multipart for big files.
-  // The VB SDK accepts Buffer/ReadableStream/Blob/File but not raw
-  // Uint8Array, so coerce.
-  const vbBody =
-    body instanceof Uint8Array && !Buffer.isBuffer(body) ? Buffer.from(body) : body;
-  const blob = await vbPut(pathname, vbBody, {
-    access: "public",
-    contentType,
-    multipart: true,
+  const upload = new Upload({
+    client: r2(),
+    params: {
+      Bucket: r2Bucket(),
+      Key: pathname,
+      Body: body as never,
+      ContentType: contentType,
+    },
+    // R2 multipart minimum part size is 5 MB.
+    partSize: 8 * 1024 * 1024,
+    queueSize: 4,
   });
-  return { url: blob.url, pathname: blob.pathname };
+  await upload.done();
+  return { url: r2EndpointUrl(pathname), pathname };
 }
 
 // ── deletePdf ────────────────────────────────────────────────────────
 
 /**
- * Delete a PDF by URL. Dispatches by URL host so both legacy
- * Vercel-Blob URLs and new R2 URLs are handled correctly during and
- * after the migration window.
+ * Delete a PDF by URL. Only R2 is supported; non-R2 URLs (external
+ * sources the user pasted, etc.) are silently no-ops.
  */
 export async function deletePdf(url: string): Promise<void> {
-  if (isVercelBlobUrl(url)) {
-    await vbDel(url).catch(() => {});
-    return;
-  }
-  if (isR2Url(url)) {
-    const key = r2KeyFromUrl(url);
-    if (!key) return;
-    await r2()
-      .send(
-        new DeleteObjectCommand({
-          Bucket: r2Bucket(),
-          Key: key,
-        })
-      )
-      .catch(() => {});
-    return;
-  }
-  // Unknown URL — no-op (could be an external link the user pasted).
+  if (!isR2Url(url)) return;
+  const key = r2KeyFromUrl(url);
+  if (!key) return;
+  await r2()
+    .send(new DeleteObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    .catch(() => {});
 }
 
 // ── listPdfs (admin Storage tab) ─────────────────────────────────────
@@ -196,10 +182,7 @@ export interface ListedObject {
 }
 
 /**
- * List every PDF the app owns across configured backends. The admin
- * Storage tab uses this to render its blob list. We list both backends
- * if both are configured, so the admin can see leftover Vercel Blob
- * objects after switching `STORAGE_BACKEND` to r2.
+ * List every PDF in the R2 bucket. Used by the admin Storage tab.
  */
 export async function listPdfs(): Promise<{
   objects: ListedObject[];
@@ -207,53 +190,27 @@ export async function listPdfs(): Promise<{
 }> {
   const objects: ListedObject[] = [];
 
-  // Vercel Blob — always list if its token is available.
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    let cursor: string | undefined;
-    do {
-      const res = await vbList({ cursor, limit: 100 });
-      for (const b of res.blobs) {
-        objects.push({
-          url: b.url,
-          pathname: b.pathname,
-          size: b.size,
-          uploadedAt: b.uploadedAt.toISOString(),
-          backend: "vercel-blob",
-        });
-      }
-      cursor = res.hasMore ? res.cursor : undefined;
-    } while (cursor);
-  }
-
-  // R2 — list if its env vars are configured.
-  if (
-    process.env.R2_ENDPOINT &&
-    process.env.R2_ACCESS_KEY_ID &&
-    process.env.R2_SECRET_ACCESS_KEY &&
-    process.env.R2_BUCKET
-  ) {
-    let token: string | undefined;
-    do {
-      const res = await r2().send(
-        new ListObjectsV2Command({
-          Bucket: r2Bucket(),
-          ContinuationToken: token,
-          MaxKeys: 1000,
-        })
-      );
-      for (const obj of res.Contents ?? []) {
-        if (!obj.Key) continue;
-        objects.push({
-          url: r2EndpointUrl(obj.Key),
-          pathname: obj.Key,
-          size: obj.Size ?? 0,
-          uploadedAt: obj.LastModified?.toISOString() ?? "",
-          backend: "r2",
-        });
-      }
-      token = res.IsTruncated ? res.NextContinuationToken : undefined;
-    } while (token);
-  }
+  let token: string | undefined;
+  do {
+    const res = await r2().send(
+      new ListObjectsV2Command({
+        Bucket: r2Bucket(),
+        ContinuationToken: token,
+        MaxKeys: 1000,
+      })
+    );
+    for (const obj of res.Contents ?? []) {
+      if (!obj.Key) continue;
+      objects.push({
+        url: r2EndpointUrl(obj.Key),
+        pathname: obj.Key,
+        size: obj.Size ?? 0,
+        uploadedAt: obj.LastModified?.toISOString() ?? "",
+        backend: "r2",
+      });
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
 
   const totalSize = objects.reduce((s, o) => s + o.size, 0);
   return { objects, totalSize };
@@ -270,64 +227,50 @@ export interface FetchPdfResult {
 }
 
 /**
- * Fetch a PDF (with optional Range) from whichever backend hosts it.
- * Used by `/api/blob/serve` to stream bytes back to the client.
+ * Fetch a PDF (with optional Range) from R2. The hot read path is now
+ * `/api/blob/serve` issuing a 302 redirect to a public or presigned URL
+ * — this byte-proxy fallback is only used when `R2_PUBLIC_BASE_URL` is
+ * missing for a public key, which should be rare.
  */
 export async function fetchPdf(
   url: string,
   range: string | null
 ): Promise<FetchPdfResult> {
-  if (isVercelBlobUrl(url)) {
-    const headers: Record<string, string> = {};
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (range) headers.Range = range;
-    const res = await fetch(url, { headers });
+  if (!isR2Url(url)) {
     return {
-      status: res.status,
-      body: res.body,
+      status: 400,
+      body: null,
       contentType: "application/pdf",
-      contentLength: res.headers.get("Content-Length"),
-      contentRange: res.headers.get("Content-Range"),
+      contentLength: null,
+      contentRange: null,
     };
   }
 
-  if (isR2Url(url)) {
-    const key = r2KeyFromUrl(url);
-    if (!key) {
-      return {
-        status: 404,
-        body: null,
-        contentType: "application/pdf",
-        contentLength: null,
-        contentRange: null,
-      };
-    }
-    const cmd = new GetObjectCommand({
-      Bucket: r2Bucket(),
-      Key: key,
-      Range: range ?? undefined,
-    });
-    const res = await r2().send(cmd);
-    const body =
-      (res.Body as { transformToWebStream?: () => ReadableStream } | undefined)
-        ?.transformToWebStream?.() ?? null;
+  const key = r2KeyFromUrl(url);
+  if (!key) {
     return {
-      status: range ? 206 : 200,
-      body,
-      contentType: res.ContentType ?? "application/pdf",
-      contentLength: res.ContentLength != null ? String(res.ContentLength) : null,
-      contentRange: res.ContentRange ?? null,
+      status: 404,
+      body: null,
+      contentType: "application/pdf",
+      contentLength: null,
+      contentRange: null,
     };
   }
-
-  // Unknown host — refuse.
+  const cmd = new GetObjectCommand({
+    Bucket: r2Bucket(),
+    Key: key,
+    Range: range ?? undefined,
+  });
+  const res = await r2().send(cmd);
+  const body =
+    (res.Body as { transformToWebStream?: () => ReadableStream } | undefined)
+      ?.transformToWebStream?.() ?? null;
   return {
-    status: 400,
-    body: null,
-    contentType: "application/pdf",
-    contentLength: null,
-    contentRange: null,
+    status: range ? 206 : 200,
+    body,
+    contentType: res.ContentType ?? "application/pdf",
+    contentLength: res.ContentLength != null ? String(res.ContentLength) : null,
+    contentRange: res.ContentRange ?? null,
   };
 }
 
@@ -336,45 +279,31 @@ export async function fetchPdf(
 export async function headPdf(
   url: string
 ): Promise<{ status: number; size: string | null }> {
-  if (isVercelBlobUrl(url)) {
-    const headers: Record<string, string> = {};
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(url, { method: "HEAD", headers });
-    return { status: res.status, size: res.headers.get("Content-Length") };
+  if (!isR2Url(url)) return { status: 400, size: null };
+  const key = r2KeyFromUrl(url);
+  if (!key) return { status: 404, size: null };
+  try {
+    const res = await r2().send(
+      new HeadObjectCommand({ Bucket: r2Bucket(), Key: key })
+    );
+    return {
+      status: 200,
+      size: res.ContentLength != null ? String(res.ContentLength) : null,
+    };
+  } catch {
+    return { status: 404, size: null };
   }
-  if (isR2Url(url)) {
-    const key = r2KeyFromUrl(url);
-    if (!key) return { status: 404, size: null };
-    try {
-      const res = await r2().send(
-        new HeadObjectCommand({ Bucket: r2Bucket(), Key: key })
-      );
-      return {
-        status: 200,
-        size: res.ContentLength != null ? String(res.ContentLength) : null,
-      };
-    } catch {
-      return { status: 404, size: null };
-    }
-  }
-  return { status: 400, size: null };
 }
 
 // ── Presigned PUT (R2 client uploads) ────────────────────────────────
 
 /**
- * Presigned URL the **browser** PUTs the raw file body to. Only used
- * when `STORAGE_BACKEND=r2`. For Vercel Blob we keep the existing
- * `@vercel/blob/client` flow.
+ * Presigned URL the **browser** PUTs the raw file body to.
  */
 export async function r2PresignedPutUrl(
   key: string,
   opts: { contentType?: string; expiresInSeconds?: number } = {}
 ): Promise<{ uploadUrl: string; objectUrl: string; key: string }> {
-  if (ACTIVE_BACKEND !== "r2") {
-    throw new Error("r2PresignedPutUrl called while backend is not r2");
-  }
   const cmd = new PutObjectCommand({
     Bucket: r2Bucket(),
     Key: key,
@@ -387,6 +316,24 @@ export async function r2PresignedPutUrl(
     expiresIn: opts.expiresInSeconds ?? 60 * 60,
   });
   return { uploadUrl, objectUrl: r2EndpointUrl(key), key };
+}
+
+/**
+ * Presigned GET URL for browser-direct downloads. The auth route
+ * (`/api/blob/serve`) issues these as a 302 target so the bytes flow
+ * R2 → browser without ever touching the Vercel Function — eliminating
+ * Fast Origin Transfer charges. Default TTL is 1 h; callers may shorten
+ * it for highly sensitive content. The redirect itself MUST be served
+ * with `Cache-Control: no-store` so the redirect can't outlive the URL.
+ */
+export async function r2PresignedGetUrl(
+  key: string,
+  opts: { expiresInSeconds?: number } = {}
+): Promise<string> {
+  const cmd = new GetObjectCommand({ Bucket: r2Bucket(), Key: key });
+  return getSignedUrl(r2(), cmd, {
+    expiresIn: opts.expiresInSeconds ?? 60 * 60,
+  });
 }
 
 // ── R2 multipart upload (browser-driven) ─────────────────────────────
@@ -407,17 +354,10 @@ export async function r2PresignedPutUrl(
 //     don't leak orphan multipart uploads in R2; R2 bills storage
 //     for incomplete uploads until they're aborted or auto-expired).
 
-/**
- * Start a multipart upload against R2 and return the upload id +
- * object key the browser will then use to sign + upload parts.
- */
 export async function r2StartMultipartUpload(
   key: string,
   opts: { contentType?: string } = {}
 ): Promise<{ uploadId: string; key: string }> {
-  if (ACTIVE_BACKEND !== "r2") {
-    throw new Error("r2StartMultipartUpload called while backend is not r2");
-  }
   const res = await r2().send(
     new CreateMultipartUploadCommand({
       Bucket: r2Bucket(),
@@ -431,19 +371,12 @@ export async function r2StartMultipartUpload(
   return { uploadId: res.UploadId, key };
 }
 
-/**
- * Sign a single part PUT URL for a multipart upload. Each part gets
- * its own URL so failures retry independently.
- */
 export async function r2PresignedUploadPartUrl(
   key: string,
   uploadId: string,
   partNumber: number,
   opts: { expiresInSeconds?: number } = {}
 ): Promise<{ uploadUrl: string }> {
-  if (ACTIVE_BACKEND !== "r2") {
-    throw new Error("r2PresignedUploadPartUrl called while backend is not r2");
-  }
   if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10_000) {
     throw new Error(`Invalid partNumber ${partNumber} (must be 1..10000)`);
   }
@@ -459,20 +392,11 @@ export async function r2PresignedUploadPartUrl(
   return { uploadUrl };
 }
 
-/**
- * Finalise a multipart upload. Parts must be sorted by partNumber
- * ascending — S3/R2 reject CompleteMultipartUpload with
- * `InvalidPartOrder` if they aren't. The browser passes them in any
- * order (whichever finishes first) so we re-sort here.
- */
 export async function r2CompleteMultipartUpload(
   key: string,
   uploadId: string,
   parts: Array<{ partNumber: number; etag: string }>
 ): Promise<{ url: string; key: string }> {
-  if (ACTIVE_BACKEND !== "r2") {
-    throw new Error("r2CompleteMultipartUpload called while backend is not r2");
-  }
   const sorted = [...parts].sort((a, b) => a.partNumber - b.partNumber);
   await r2().send(
     new CompleteMultipartUploadCommand({
@@ -487,19 +411,10 @@ export async function r2CompleteMultipartUpload(
   return { url: r2EndpointUrl(key), key };
 }
 
-/**
- * Abort an in-flight multipart upload. Safe to call on a UploadId
- * that no longer exists — we swallow NoSuchUpload because callers
- * (cancel / hard-error paths) shouldn't double-fail because cleanup
- * already happened.
- */
 export async function r2AbortMultipartUpload(
   key: string,
   uploadId: string
 ): Promise<void> {
-  if (ACTIVE_BACKEND !== "r2") {
-    throw new Error("r2AbortMultipartUpload called while backend is not r2");
-  }
   await r2()
     .send(
       new AbortMultipartUploadCommand({

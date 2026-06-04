@@ -609,11 +609,8 @@ function StudySessionInner() {
     if (!selectedDoc) return;
     if (selectedDoc.type !== "textbook") return;
     if (!selectedDoc.sourceUrl) return;
-    // Already in storage we own (Vercel Blob legacy or Cloudflare R2) — skip.
-    if (
-      selectedDoc.sourceUrl.includes("blob.vercel-storage.com") ||
-      selectedDoc.sourceUrl.includes(".r2.cloudflarestorage.com")
-    ) {
+    // Already in storage we own (Cloudflare R2) — skip.
+    if (selectedDoc.sourceUrl.includes(".r2.cloudflarestorage.com")) {
       return;
     }
 
@@ -999,8 +996,6 @@ function StudySessionInner() {
 
     if (selectedDoc.type === "upload") {
       if (selectedDoc.sourceUrl) {
-        const isBlob = selectedDoc.sourceUrl.includes("blob.vercel-storage.com");
-        if (isBlob) return pdfClientLoadUrl(selectedDoc.sourceUrl);
         const isExternal = !selectedDoc.sourceUrl.startsWith("/");
         if (isExternal) return pdfClientLoadUrl(selectedDoc.sourceUrl);
         return selectedDoc.sourceUrl;

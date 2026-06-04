@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, primaryKey } from "drizzle-orm/sqlite-core";
 
 // ── Auth tables (NextAuth v4 compatible) ─────────────────────────────
 
@@ -47,6 +47,14 @@ export const users = sqliteTable("users", {
    */
   isDeveloper: integer("is_developer", { mode: "boolean" }).default(false),
   blocked: integer("blocked", { mode: "boolean" }).default(false),
+  /**
+   * Spaced-repetition pacing caps. Mirror Anki's defaults so users
+   * coming from there don't get surprised. Both are SOFT caps applied
+   * at queue-build time in `/api/review/queue` — the underlying card
+   * schedule is unaffected. `null` falls back to defaults.
+   */
+  srsNewPerDay: integer("srs_new_per_day").default(20),
+  srsReviewsPerDay: integer("srs_reviews_per_day").default(200),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
@@ -340,6 +348,36 @@ export const flashcards = sqliteTable("flashcards", {
   back: text("back").notNull(),      // definition or answer
   pageNumber: integer("page_number"),
   createdAt: integer("created_at", { mode: "timestamp" }),
+
+  // ── SRS scheduling state (FSRS-4.5) ─────────────────────────────────
+  // 0 = New (never reviewed), 1 = Learning (sub-day intervals while ramping
+  // up), 2 = Review (mature, day+ intervals), 3 = Relearning (was mature,
+  // user pressed Again, now back to sub-day intervals until stable again).
+  // Default 0 means every existing flashcard row pre-SRS becomes a "new"
+  // card on first /review visit — no migration script required.
+  srsState: integer("srs_state").notNull().default(0),
+  // FSRS internal: days the memory will hold at 90% retrievability.
+  // Real number because the algorithm produces non-integer days.
+  stability: real("stability").notNull().default(0),
+  // FSRS internal card difficulty in [1, 10]. 0 here means "uninitialized"
+  // — the scheduler bumps it on first grade.
+  difficulty: real("difficulty").notNull().default(0),
+  // When this card next becomes due. NULL on truly new cards (never
+  // graded). Indexed via a separate index below — this is the hot read
+  // path for the `/api/review/queue` endpoint.
+  dueAt: integer("due_at", { mode: "timestamp" }),
+  lastReviewedAt: integer("last_reviewed_at", { mode: "timestamp" }),
+  // Number of times the user pressed Again on this card. Used by FSRS
+  // and surfaced in admin/dev panels to find "leech" cards.
+  lapses: integer("lapses").notNull().default(0),
+  // Total grade events on this card (any rating). `reps = 1` distinguishes
+  // "introduced today" from "reviewed today" for the new-card cap.
+  reps: integer("reps").notNull().default(0),
+  // FSRS internal: which sub-day step the card is currently on while
+  // in Learning or Relearning state. Critical for graduation: without
+  // this, a card stuck in Learning state never advances to Review
+  // because every Good looks like "first step" to the scheduler.
+  learningSteps: integer("learning_steps").notNull().default(0),
 });
 
 // ── Velocity reaction-speed minigame ─────────────────────────────────────

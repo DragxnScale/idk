@@ -26,7 +26,7 @@ export interface LayoutSpec {
 
 // ── Hardcoded layouts ────────────────────────────────────────────────────────
 
-const COMMON_TOP    = ["daily-goals"];
+const COMMON_TOP    = ["daily-goals", "spaced-repetition"];
 const COMMON_BOTTOM = ["focus-music", "theme", "keyboard-shortcuts"];
 
 export const LAYOUTS: Record<LayoutStateKey, LayoutSpec> = {
