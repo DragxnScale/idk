@@ -5,6 +5,7 @@ import { uploadPdfToStorage } from "@/lib/upload-client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
 import { AppUiEditorTab } from "@/components/admin/AppUiEditorTab";
+import { AdminStudyCalendar } from "@/components/admin/AdminStudyCalendar";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -170,12 +171,12 @@ const STUDY_CHART_BAR_MAX_PX = 104;
 const STUDY_CHART_MIN_BAR_PX = 8;
 
 /** Per-day focused minutes from completed sessions (UTC date keys, matches dashboard heatmap). */
-function buildStudyChartDays(sessions: UserSession[], range: StudyChartRange): StudyChartDay[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
+function buildMinutesByDay(sessions: UserSession[]): {
+  minutesByDay: Record<string, { minutes: number; sessions: number }>;
+  earliestDate: string | null;
+} {
   const minutesByDay: Record<string, { minutes: number; sessions: number }> = {};
-  let earliestStr: string | null = null;
+  let earliestDate: string | null = null;
 
   for (const s of sessions) {
     if (!s.endedAt || !s.startedAt) continue;
@@ -185,8 +186,51 @@ function buildStudyChartDays(sessions: UserSession[], range: StudyChartRange): S
     }
     minutesByDay[dayStr].minutes += s.totalFocusedMinutes ?? 0;
     minutesByDay[dayStr].sessions += 1;
-    if (!earliestStr || dayStr < earliestStr) earliestStr = dayStr;
+    if (!earliestDate || dayStr < earliestDate) earliestDate = dayStr;
   }
+
+  return { minutesByDay, earliestDate };
+}
+
+function getStudyCalendarBounds(
+  range: StudyChartRange,
+  earliestDate: string | null
+): { minYear: number; minMonth: number; maxYear: number; maxMonth: number } {
+  const now = new Date();
+  const maxYear = now.getUTCFullYear();
+  const maxMonth = now.getUTCMonth() + 1;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let minDate: Date;
+  if (range === "30") {
+    minDate = new Date(today);
+    minDate.setDate(minDate.getDate() - 29);
+  } else if (range === "365") {
+    minDate = new Date(today);
+    minDate.setDate(minDate.getDate() - 364);
+  } else if (earliestDate) {
+    minDate = new Date(earliestDate + "T12:00:00");
+    minDate.setHours(0, 0, 0, 0);
+  } else {
+    minDate = new Date(today);
+    minDate.setDate(minDate.getDate() - 29);
+  }
+
+  return {
+    minYear: minDate.getUTCFullYear(),
+    minMonth: minDate.getUTCMonth() + 1,
+    maxYear,
+    maxMonth,
+  };
+}
+
+function buildStudyChartDays(sessions: UserSession[], range: StudyChartRange): StudyChartDay[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const { minutesByDay, earliestDate: earliestStr } = buildMinutesByDay(sessions);
 
   let start: Date;
   if (range === "7") {
@@ -431,6 +475,8 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [readingTimeView, setReadingTimeView] = useState<"path" | "summary">("path");
   const [studyChartRange, setStudyChartRange] = useState<StudyChartRange>("7");
+  const [studyCalendarYear, setStudyCalendarYear] = useState(() => new Date().getUTCFullYear());
+  const [studyCalendarMonth, setStudyCalendarMonth] = useState(() => new Date().getUTCMonth() + 1);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState<string | null>(null);
@@ -441,7 +487,16 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
 
   useEffect(() => {
     setStudyChartRange("7");
+    const t = new Date();
+    setStudyCalendarYear(t.getUTCFullYear());
+    setStudyCalendarMonth(t.getUTCMonth() + 1);
   }, [selectedUser?.id]);
+
+  useEffect(() => {
+    const t = new Date();
+    setStudyCalendarYear(t.getUTCFullYear());
+    setStudyCalendarMonth(t.getUTCMonth() + 1);
+  }, [studyChartRange]);
 
   async function viewAsUser(user: UserRow) {
     setViewAsLoading(user.id);
@@ -1196,7 +1251,11 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
     const chartSessionCount = chartDays.reduce((s, d) => s + d.sessions, 0);
     const maxChartMinutes = Math.max(...chartDays.map((d) => d.minutes), 1);
     const chartTodayStr = new Date().toISOString().slice(0, 10);
-    const useLongChartDateLabels = studyChartRange !== "7";
+    const studyMinutesData = userSessions ? buildMinutesByDay(userSessions) : null;
+    const calendarBounds =
+      studyMinutesData && studyChartRange !== "7"
+        ? getStudyCalendarBounds(studyChartRange, studyMinutesData.earliestDate)
+        : null;
     const activeInProgress = (userSessions ?? []).filter((s) => !s.endedAt);
     const activeFocusedMinutes = activeInProgress.reduce(
       (sum, s) => sum + (s.totalFocusedMinutes ?? 0),
@@ -1270,64 +1329,77 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                 {fmtHmsFromMinutes(chartTotalMinutes)} total · {chartSessionCount} session
                 {chartSessionCount !== 1 ? "s" : ""} in range
               </p>
-              <div className="overflow-x-auto pb-1">
-                <div
-                  className="flex items-end gap-1"
-                  style={{ minWidth: `${Math.max(chartDays.length * 44, 280)}px` }}
-                >
-                  {chartDays.map((day) => {
-                    const barPx =
-                      day.minutes > 0
-                        ? Math.max(
-                            (day.minutes / maxChartMinutes) * STUDY_CHART_BAR_MAX_PX,
-                            STUDY_CHART_MIN_BAR_PX
-                          )
-                        : 0;
-                    const isToday = day.date === chartTodayStr;
-                    const dayLabel = useLongChartDateLabels
-                      ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : new Date(day.date + "T12:00:00").toLocaleDateString(undefined, {
-                          weekday: "short",
-                        });
-                    return (
-                      <div
-                        key={day.date}
-                        className="flex flex-col items-center gap-1 flex-1 min-w-[2.5rem]"
-                      >
-                        <span className="text-[10px] font-mono text-gray-500 min-h-[0.875rem] whitespace-nowrap">
-                          {day.minutes > 0 ? fmtHmsFromMinutes(day.minutes) : ""}
-                        </span>
+              {studyChartRange === "7" ? (
+                <div className="overflow-x-auto pb-1">
+                  <div
+                    className="flex items-end gap-1"
+                    style={{ minWidth: `${Math.max(chartDays.length * 44, 280)}px` }}
+                  >
+                    {chartDays.map((day) => {
+                      const barPx =
+                        day.minutes > 0
+                          ? Math.max(
+                              (day.minutes / maxChartMinutes) * STUDY_CHART_BAR_MAX_PX,
+                              STUDY_CHART_MIN_BAR_PX
+                            )
+                          : 0;
+                      const isToday = day.date === chartTodayStr;
+                      const dayLabel = new Date(day.date + "T12:00:00").toLocaleDateString(
+                        undefined,
+                        { weekday: "short" }
+                      );
+                      return (
                         <div
-                          className="w-full flex justify-center items-end"
-                          style={{ height: STUDY_CHART_BAR_MAX_PX }}
+                          key={day.date}
+                          className="flex flex-col items-center gap-1 flex-1 min-w-[2.5rem]"
                         >
+                          <span className="text-[10px] font-mono text-gray-500 min-h-[0.875rem] whitespace-nowrap">
+                            {day.minutes > 0 ? fmtHmsFromMinutes(day.minutes) : ""}
+                          </span>
                           <div
-                            className={`w-full max-w-[2rem] rounded-t-md transition-all ${
-                              isToday ? "bg-blue-500" : "bg-gray-700"
+                            className="w-full flex justify-center items-end"
+                            style={{ height: STUDY_CHART_BAR_MAX_PX }}
+                          >
+                            <div
+                              className={`w-full max-w-[2rem] rounded-t-md transition-all ${
+                                isToday ? "bg-blue-500" : "bg-gray-700"
+                              }`}
+                              style={{ height: barPx }}
+                              title={
+                                day.minutes > 0
+                                  ? `${fmtHmsFromMinutes(day.minutes)} · ${day.sessions} session${day.sessions !== 1 ? "s" : ""}`
+                                  : undefined
+                              }
+                            />
+                          </div>
+                          <span
+                            className={`text-[10px] whitespace-nowrap ${
+                              isToday ? "font-bold text-white" : "text-gray-500"
                             }`}
-                            style={{ height: barPx }}
-                            title={
-                              day.minutes > 0
-                                ? `${fmtHmsFromMinutes(day.minutes)} · ${day.sessions} session${day.sessions !== 1 ? "s" : ""}`
-                                : undefined
-                            }
-                          />
+                          >
+                            {dayLabel}
+                          </span>
                         </div>
-                        <span
-                          className={`text-[10px] whitespace-nowrap ${
-                            isToday ? "font-bold text-white" : "text-gray-500"
-                          }`}
-                        >
-                          {dayLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : studyMinutesData && calendarBounds ? (
+                <AdminStudyCalendar
+                  minutesByDay={studyMinutesData.minutesByDay}
+                  year={studyCalendarYear}
+                  month={studyCalendarMonth}
+                  onMonthChange={(y, m) => {
+                    setStudyCalendarYear(y);
+                    setStudyCalendarMonth(m);
+                  }}
+                  minYear={calendarBounds.minYear}
+                  minMonth={calendarBounds.minMonth}
+                  maxYear={calendarBounds.maxYear}
+                  maxMonth={calendarBounds.maxMonth}
+                  fmtHms={fmtHmsFromMinutes}
+                />
+              ) : null}
             </>
           )}
           {activeInProgress.length > 0 && (
