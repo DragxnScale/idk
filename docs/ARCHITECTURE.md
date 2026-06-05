@@ -117,6 +117,7 @@ High-level map (only meaningful directories and notable files).
 ├── scripts/
 │   ├── r2-set-cors.mjs           # One-shot: apply PUT/GET/HEAD CORS policy to the R2 bucket
 │   ├── apply-srs-schema.mjs      # Idempotent: add FSRS columns to flashcards + srs_* user prefs (§4)
+│   ├── apply-ai-usage-text-columns.mjs  # Idempotent: add input_text/output_text to ai_usage_logs
 │   ├── _test-srs.ts              # Smoke test for lib/srs.ts (no test runner installed; run with `npx tsx`)
 │   └── bump-version.mjs
 ├── docs/
@@ -670,6 +671,7 @@ The panel reads `isDeveloper` from `GET /api/user/session-context` (real JWT ide
 | `npm run db:generate` / `db:migrate` | Migrations. |
 | `scripts/r2-set-cors.mjs` | Applies the browser-upload CORS policy (PUT/GET/HEAD, `ETag` exposed) to the R2 bucket so `lib/upload-client.ts` can PUT directly from the admin upload UI. Defaults to dry-run; pass `--execute` to apply. Restrict origins via `R2_ALLOWED_ORIGINS="https://example.com,https://*.vercel.app"` (defaults to `*`). |
 | `scripts/apply-srs-schema.mjs` | Idempotent — adds the seven FSRS columns + `flashcards_due_at_idx` index to `flashcards`, and `srs_new_per_day` / `srs_reviews_per_day` to `users`. Wraps every ALTER in a `try/catch` that swallows `duplicate column name` so re-running is safe. Reads `.env.local` automatically; just run `node scripts/apply-srs-schema.mjs` after pulling code that bumps the SRS schema. |
+| `scripts/apply-ai-usage-text-columns.mjs` | Idempotent — adds `input_text` / `output_text` to `ai_usage_logs` for admin AI usage audit. Run `node scripts/apply-ai-usage-text-columns.mjs` after pulling the AI usage log feature. |
 | `scripts/_test-srs.ts` | Self-contained smoke test for `lib/srs.ts` (this codebase has no test runner installed). Exits non-zero on assertion failure. Run via `npx tsx scripts/_test-srs.ts` whenever editing scheduling logic. |
 | `scripts/bump-version.mjs` | Version bump helper (runs automatically on commit via git hook). |
 
