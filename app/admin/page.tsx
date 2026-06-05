@@ -150,6 +150,127 @@ function fmtSeconds(sec: number) {
   return `${sec}s`;
 }
 
+function fmtHmsFromMinutes(minutes: number): string {
+  const totalSec = Math.max(0, Math.round(minutes * 60));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+type StudyChartRange = "7" | "30" | "365" | "all";
+
+interface StudyChartDay {
+  date: string;
+  minutes: number;
+  sessions: number;
+}
+
+const STUDY_CHART_BAR_MAX_PX = 104;
+const STUDY_CHART_MIN_BAR_PX = 8;
+
+/** Per-day focused minutes from completed sessions (UTC date keys, matches dashboard heatmap). */
+function buildStudyChartDays(sessions: UserSession[], range: StudyChartRange): StudyChartDay[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const minutesByDay: Record<string, { minutes: number; sessions: number }> = {};
+  let earliestStr: string | null = null;
+
+  for (const s of sessions) {
+    if (!s.endedAt || !s.startedAt) continue;
+    const dayStr = new Date(s.startedAt).toISOString().slice(0, 10);
+    if (!minutesByDay[dayStr]) {
+      minutesByDay[dayStr] = { minutes: 0, sessions: 0 };
+    }
+    minutesByDay[dayStr].minutes += s.totalFocusedMinutes ?? 0;
+    minutesByDay[dayStr].sessions += 1;
+    if (!earliestStr || dayStr < earliestStr) earliestStr = dayStr;
+  }
+
+  let start: Date;
+  if (range === "7") {
+    start = new Date(today);
+    start.setDate(start.getDate() - 6);
+  } else if (range === "30") {
+    start = new Date(today);
+    start.setDate(start.getDate() - 29);
+  } else if (range === "365") {
+    start = new Date(today);
+    start.setDate(start.getDate() - 364);
+  } else if (earliestStr) {
+    start = new Date(earliestStr + "T12:00:00");
+    start.setHours(0, 0, 0, 0);
+  } else {
+    start = new Date(today);
+    start.setDate(start.getDate() - 6);
+  }
+
+  const days: StudyChartDay[] = [];
+  const cur = new Date(start);
+  cur.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+
+  while (cur <= end) {
+    const dayStr = cur.toISOString().slice(0, 10);
+    const bucket = minutesByDay[dayStr];
+    days.push({
+      date: dayStr,
+      minutes: bucket?.minutes ?? 0,
+      sessions: bucket?.sessions ?? 0,
+    });
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return days;
+}
+
+/** One step in the reading path after merging consecutive same-page rows (30s flush artifacts). */
+interface MergedPageVisit {
+  id: string;
+  pageNumber: number;
+  enteredAt: string | null;
+  durationSeconds: number;
+  focusedSeconds: number | null;
+}
+
+/**
+ * Collapse consecutive visits to the same page into one step so periodic
+ * PdfViewer flushes don't split a single long stay into repeated rows.
+ * True revisits (e.g. 3 → 4 → 3) stay separate because they aren't adjacent.
+ */
+function mergeConsecutivePageVisits(visits: PageVisit[]): MergedPageVisit[] {
+  if (visits.length === 0) return [];
+  const merged: MergedPageVisit[] = [];
+  let current: MergedPageVisit = {
+    id: visits[0].id,
+    pageNumber: visits[0].pageNumber,
+    enteredAt: visits[0].enteredAt,
+    durationSeconds: visits[0].durationSeconds ?? 0,
+    focusedSeconds: visits[0].focusedSeconds,
+  };
+  for (let i = 1; i < visits.length; i++) {
+    const v = visits[i];
+    if (v.pageNumber === current.pageNumber) {
+      current.durationSeconds += v.durationSeconds ?? 0;
+      if (v.focusedSeconds != null) {
+        current.focusedSeconds = (current.focusedSeconds ?? 0) + v.focusedSeconds;
+      }
+    } else {
+      merged.push(current);
+      current = {
+        id: v.id,
+        pageNumber: v.pageNumber,
+        enteredAt: v.enteredAt,
+        durationSeconds: v.durationSeconds ?? 0,
+        focusedSeconds: v.focusedSeconds,
+      };
+    }
+  }
+  merged.push(current);
+  return merged;
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -308,9 +429,19 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   const [resettingAiTokens, setResettingAiTokens] = useState(false);
   const [savingInactivity, setSavingInactivity] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const [readingTimeView, setReadingTimeView] = useState<"path" | "summary">("path");
+  const [studyChartRange, setStudyChartRange] = useState<StudyChartRange>("7");
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReadingTimeView("path");
+  }, [sessionDetail?.session.id]);
+
+  useEffect(() => {
+    setStudyChartRange("7");
+  }, [selectedUser?.id]);
 
   async function viewAsUser(user: UserRow) {
     setViewAsLoading(user.id);
@@ -501,16 +632,18 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   if (selectedUser && sessionDetail) {
     const { session: sd, document: doc, pageVisits: visits, quiz, velocity } = sessionDetail;
 
-    // Aggregate time per page
+    const pathSteps = mergeConsecutivePageVisits(visits);
+
+    // Aggregate time per page (summary tab)
     const pageTimeMap = new Map<number, number>();
-    const pageVisitCount = new Map<number, number>();
     for (const v of visits) {
       const dur = v.durationSeconds ?? 0;
       pageTimeMap.set(v.pageNumber, (pageTimeMap.get(v.pageNumber) ?? 0) + dur);
-      pageVisitCount.set(v.pageNumber, (pageVisitCount.get(v.pageNumber) ?? 0) + 1);
     }
     const uniquePages = Array.from(new Set(visits.map((v) => v.pageNumber))).sort((a, b) => a - b);
     const totalTrackedSeconds = Array.from(pageTimeMap.values()).reduce((a, b) => a + b, 0);
+    const maxPathStepSeconds =
+      pathSteps.length > 0 ? Math.max(...pathSteps.map((s) => s.durationSeconds), 1) : 1;
 
     // Focused-per-page aggregation (developer-mode panel below). NULL
     // focusedSeconds means the row predates per-page focus tracking, so
@@ -529,6 +662,11 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
     const totalFocusedSecondsByPage = Array.from(focusedTimeMap.values()).reduce((a, b) => a + b, 0);
     const pagesWithFocus = Array.from(focusedTimeMap.entries()).filter(([, sec]) => sec > 0).length;
     const maxFocusOnAnyPage = focusedTimeMap.size > 0 ? Math.max(...Array.from(focusedTimeMap.values())) : 0;
+    const maxFocusOnAnyPathStep =
+      pathSteps.length > 0 ? Math.max(...pathSteps.map((s) => s.focusedSeconds ?? 0)) : 0;
+    const maxPathFocusForBars = Math.max(maxFocusOnAnyPathStep, 1);
+    const pathStepsWithFocus = pathSteps.filter((s) => (s.focusedSeconds ?? 0) > 0).length;
+    const totalFocusedOnPath = pathSteps.reduce((sum, s) => sum + (s.focusedSeconds ?? 0), 0);
     /** Distraction-hint threshold: focused / wall-clock ratio below this is amber. */
     const DISTRACTED_RATIO = 0.25;
     /** Skip the warning for very short visits where the ratio is meaningless. */
@@ -581,20 +719,92 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
           </div>
         )}
 
-        {/* Page-by-page breakdown */}
+        {/* Reading path / summary by page */}
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
-          <h3 className="text-sm font-semibold mb-1">Page-by-Page Reading Time</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold">Page Reading Time</h3>
+            <div className="flex rounded-lg border border-gray-700 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setReadingTimeView("path")}
+                className={`rounded-md px-3 py-1 transition ${
+                  readingTimeView === "path"
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Reading path
+              </button>
+              <button
+                type="button"
+                onClick={() => setReadingTimeView("summary")}
+                className={`rounded-md px-3 py-1 transition ${
+                  readingTimeView === "summary"
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Summary by page
+              </button>
+            </div>
+          </div>
           <p className="text-xs text-gray-500 mb-3">
-            {uniquePages.length} unique pages &middot; {fmtSeconds(totalTrackedSeconds)} total tracked time
+            {readingTimeView === "path"
+              ? `${pathSteps.length} step${pathSteps.length !== 1 ? "s" : ""} · ${fmtSeconds(totalTrackedSeconds)} total tracked time`
+              : `${uniquePages.length} unique pages · ${fmtSeconds(totalTrackedSeconds)} total tracked time`}
           </p>
 
           {visits.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">No page visit data recorded for this session.</p>
+          ) : readingTimeView === "path" ? (
+            <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+              {pathSteps.map((step, idx) => {
+                const ch = getChapterForPage(step.pageNumber);
+                const barWidth = Math.max(2, (step.durationSeconds / maxPathStepSeconds) * 100);
+                const enteredLabel = step.enteredAt
+                  ? new Date(step.enteredAt).toLocaleTimeString(undefined, {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : null;
+                return (
+                  <div
+                    key={step.id}
+                    className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition group"
+                  >
+                    <span className="w-8 text-[10px] text-gray-600 text-right font-mono flex-shrink-0">
+                      #{idx + 1}
+                    </span>
+                    <span className="w-14 text-xs text-gray-400 text-right font-mono flex-shrink-0">
+                      p. {step.pageNumber}
+                    </span>
+                    {ch && (
+                      <span className="text-[10px] text-gray-500 w-20 truncate flex-shrink-0" title={ch}>
+                        {ch}
+                      </span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="h-4 rounded-full overflow-hidden bg-gray-800">
+                        <div
+                          className="h-full rounded-full bg-blue-500/70 transition-all"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="w-16 text-xs text-gray-400 text-right flex-shrink-0">
+                      {fmtSeconds(step.durationSeconds)}
+                    </span>
+                    {enteredLabel && (
+                      <span className="text-[10px] text-gray-600 w-14 text-right flex-shrink-0">{enteredLabel}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
               {uniquePages.map((pg) => {
                 const dur = pageTimeMap.get(pg) ?? 0;
-                const count = pageVisitCount.get(pg) ?? 0;
                 const ch = getChapterForPage(pg);
                 const maxDur = Math.max(...Array.from(pageTimeMap.values()), 1);
                 const barWidth = Math.max(2, (dur / maxDur) * 100);
@@ -608,7 +818,6 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                       </div>
                     </div>
                     <span className="w-16 text-xs text-gray-400 text-right flex-shrink-0">{fmtSeconds(dur)}</span>
-                    {count > 1 && <span className="text-[10px] text-gray-600 flex-shrink-0">×{count}</span>}
                   </div>
                 );
               })}
@@ -618,12 +827,9 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
 
         {/*
           Focused studying per page — developer-mode-only diagnostic
-          panel. Mirrors the page-by-page chart above but uses
-          `focusedSeconds` per visit instead of wall-clock duration. We
-          surface "max focus per page" and amber-flag pages with low
-          focus/wallclock ratios so you can spot distraction patterns
-          (e.g. pages where the user kept the tab open in the
-          background for a long time).
+          panel. Mirrors the reading-path / summary tabs above but uses
+          `focusedSeconds` instead of wall-clock duration. Amber flags
+          steps with low focus/wall-clock ratios (distraction patterns).
         */}
         {isDeveloperMode && (
           <div className="rounded-xl border border-amber-900/40 bg-gray-900 p-4 mb-5">
@@ -635,12 +841,15 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {focusedAvailable
-                    ? `${pagesWithFocus} pages with focus · ${fmtSeconds(totalFocusedSecondsByPage)} focused total`
+                    ? readingTimeView === "path"
+                      ? `${pathStepsWithFocus} steps with focus · ${fmtSeconds(totalFocusedOnPath)} focused total`
+                      : `${pagesWithFocus} pages with focus · ${fmtSeconds(totalFocusedSecondsByPage)} focused total`
                     : "Per-page focus data not yet recorded for this session."}
                 </p>
-                {focusedAvailable && maxFocusOnAnyPage > 0 && (
+                {focusedAvailable && (readingTimeView === "path" ? maxFocusOnAnyPathStep : maxFocusOnAnyPage) > 0 && (
                   <p className="text-[10px] text-gray-500 mt-0.5">
-                    Max focus on a single page: {fmtSeconds(maxFocusOnAnyPage)}
+                    Max focus on a single {readingTimeView === "path" ? "step" : "page"}:{" "}
+                    {fmtSeconds(readingTimeView === "path" ? maxFocusOnAnyPathStep : maxFocusOnAnyPage)}
                   </p>
                 )}
               </div>
@@ -651,10 +860,66 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                 Focused per-page intervals not available — this session predates
                 per-page focus tracking.
               </p>
+            ) : readingTimeView === "path" ? (
+              pathStepsWithFocus === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-6">
+                  No focused time recorded on any step (every visit was paused or idle).
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+                  {pathSteps.map((step, idx) => {
+                    const focused = step.focusedSeconds ?? 0;
+                    const wall = step.durationSeconds;
+                    const ch = getChapterForPage(step.pageNumber);
+                    const barWidth = Math.max(2, (focused / maxPathFocusForBars) * 100);
+                    const ratio = wall > 0 ? focused / wall : 0;
+                    const distracted =
+                      wall >= RATIO_MIN_WALLCLOCK_SEC && ratio < DISTRACTED_RATIO;
+                    return (
+                      <div
+                        key={step.id}
+                        className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-800/50 transition"
+                      >
+                        <span className="w-8 text-[10px] text-gray-600 text-right font-mono flex-shrink-0">
+                          #{idx + 1}
+                        </span>
+                        <span className="w-14 text-xs text-gray-400 text-right font-mono flex-shrink-0">
+                          p. {step.pageNumber}
+                        </span>
+                        {ch && (
+                          <span className="text-[10px] text-gray-500 w-20 truncate flex-shrink-0" title={ch}>
+                            {ch}
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="h-4 rounded-full overflow-hidden bg-gray-800">
+                            <div
+                              className={`h-full rounded-full transition-all ${distracted ? "bg-amber-500/70" : "bg-emerald-500/70"}`}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                        </div>
+                        <span className="w-16 text-xs text-gray-400 text-right flex-shrink-0">{fmtSeconds(focused)}</span>
+                        <span
+                          className={`text-[10px] w-12 text-right flex-shrink-0 ${
+                            distracted ? "text-amber-400" : "text-gray-600"
+                          }`}
+                          title={
+                            wall >= RATIO_MIN_WALLCLOCK_SEC
+                              ? `${Math.round(ratio * 100)}% of wall clock (${fmtSeconds(wall)})`
+                              : "wall-clock too short to score"
+                          }
+                        >
+                          {wall >= RATIO_MIN_WALLCLOCK_SEC ? `${Math.round(ratio * 100)}%` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             ) : pagesWithFocus === 0 ? (
               <p className="text-sm text-gray-500 text-center py-6">
-                No focused time recorded on any page (every visit was paused or
-                idle).
+                No focused time recorded on any page (every visit was paused or idle).
               </p>
             ) : (
               <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
@@ -693,9 +958,7 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                             : "wall-clock too short to score"
                         }
                       >
-                        {wall >= RATIO_MIN_WALLCLOCK_SEC
-                          ? `${Math.round(ratio * 100)}%`
-                          : "—"}
+                        {wall >= RATIO_MIN_WALLCLOCK_SEC ? `${Math.round(ratio * 100)}%` : "—"}
                       </span>
                     </div>
                   );
@@ -928,6 +1191,18 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
 
   // User detail view
   if (selectedUser) {
+    const chartDays = userSessions ? buildStudyChartDays(userSessions, studyChartRange) : [];
+    const chartTotalMinutes = chartDays.reduce((s, d) => s + d.minutes, 0);
+    const chartSessionCount = chartDays.reduce((s, d) => s + d.sessions, 0);
+    const maxChartMinutes = Math.max(...chartDays.map((d) => d.minutes), 1);
+    const chartTodayStr = new Date().toISOString().slice(0, 10);
+    const useLongChartDateLabels = studyChartRange !== "7";
+    const activeInProgress = (userSessions ?? []).filter((s) => !s.endedAt);
+    const activeFocusedMinutes = activeInProgress.reduce(
+      (sum, s) => sum + (s.totalFocusedMinutes ?? 0),
+      0
+    );
+
     return (
       <>
         <button onClick={() => { setSelectedUser(null); setUserSessions(null); setSessionDetail(null); }} className="text-sm underline underline-offset-4 text-gray-400 hover:text-white mb-4">
@@ -955,6 +1230,112 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Study time by day */}
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold">Study time by day</h3>
+            <div className="flex rounded-lg border border-gray-700 p-0.5 text-xs">
+              {(
+                [
+                  ["7", "7 days"],
+                  ["30", "Month"],
+                  ["365", "Year"],
+                  ["all", "All time"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setStudyChartRange(value)}
+                  className={`rounded-md px-2.5 py-1 transition whitespace-nowrap ${
+                    studyChartRange === value
+                      ? "bg-gray-700 text-white"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {!userSessions ? (
+            <p className="text-sm text-gray-500 animate-pulse py-6 text-center">Loading chart…</p>
+          ) : chartSessionCount === 0 && chartTotalMinutes === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-6">No completed study sessions in this period.</p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mb-3">
+                {fmtHmsFromMinutes(chartTotalMinutes)} total · {chartSessionCount} session
+                {chartSessionCount !== 1 ? "s" : ""} in range
+              </p>
+              <div className="overflow-x-auto pb-1">
+                <div
+                  className="flex items-end gap-1"
+                  style={{ minWidth: `${Math.max(chartDays.length * 44, 280)}px` }}
+                >
+                  {chartDays.map((day) => {
+                    const barPx =
+                      day.minutes > 0
+                        ? Math.max(
+                            (day.minutes / maxChartMinutes) * STUDY_CHART_BAR_MAX_PX,
+                            STUDY_CHART_MIN_BAR_PX
+                          )
+                        : 0;
+                    const isToday = day.date === chartTodayStr;
+                    const dayLabel = useLongChartDateLabels
+                      ? new Date(day.date + "T12:00:00").toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : new Date(day.date + "T12:00:00").toLocaleDateString(undefined, {
+                          weekday: "short",
+                        });
+                    return (
+                      <div
+                        key={day.date}
+                        className="flex flex-col items-center gap-1 flex-1 min-w-[2.5rem]"
+                      >
+                        <span className="text-[10px] font-mono text-gray-500 min-h-[0.875rem] whitespace-nowrap">
+                          {day.minutes > 0 ? fmtHmsFromMinutes(day.minutes) : ""}
+                        </span>
+                        <div
+                          className="w-full flex justify-center items-end"
+                          style={{ height: STUDY_CHART_BAR_MAX_PX }}
+                        >
+                          <div
+                            className={`w-full max-w-[2rem] rounded-t-md transition-all ${
+                              isToday ? "bg-blue-500" : "bg-gray-700"
+                            }`}
+                            style={{ height: barPx }}
+                            title={
+                              day.minutes > 0
+                                ? `${fmtHmsFromMinutes(day.minutes)} · ${day.sessions} session${day.sessions !== 1 ? "s" : ""}`
+                                : undefined
+                            }
+                          />
+                        </div>
+                        <span
+                          className={`text-[10px] whitespace-nowrap ${
+                            isToday ? "font-bold text-white" : "text-gray-500"
+                          }`}
+                        >
+                          {dayLabel}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+          {activeInProgress.length > 0 && (
+            <p className="text-[10px] text-amber-500/90 mt-3">
+              Active now — {fmtHmsFromMinutes(activeFocusedMinutes)} focused (not in chart until
+              completed)
+            </p>
+          )}
         </div>
 
         {/* Inactivity timeout override */}
