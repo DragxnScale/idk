@@ -160,7 +160,7 @@ function fmtHmsFromMinutes(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-type StudyChartRange = "7" | "30" | "365" | "all";
+type StudyChartRange = "7" | "30";
 
 interface StudyChartDay {
   date: string;
@@ -193,31 +193,20 @@ function buildMinutesByDay(sessions: UserSession[]): {
   return { minutesByDay, earliestDate };
 }
 
-function getStudyCalendarBounds(
-  range: StudyChartRange,
-  earliestDate: string | null
-): { minYear: number; minMonth: number; maxYear: number; maxMonth: number } {
+function getStudyCalendarBounds(): {
+  minYear: number;
+  minMonth: number;
+  maxYear: number;
+  maxMonth: number;
+} {
   const now = new Date();
   const maxYear = now.getUTCFullYear();
   const maxMonth = now.getUTCMonth() + 1;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  let minDate: Date;
-  if (range === "30") {
-    minDate = new Date(today);
-    minDate.setDate(minDate.getDate() - 29);
-  } else if (range === "365") {
-    minDate = new Date(today);
-    minDate.setDate(minDate.getDate() - 364);
-  } else if (earliestDate) {
-    minDate = new Date(earliestDate + "T12:00:00");
-    minDate.setHours(0, 0, 0, 0);
-  } else {
-    minDate = new Date(today);
-    minDate.setDate(minDate.getDate() - 29);
-  }
+  const minDate = new Date(today);
+  minDate.setDate(minDate.getDate() - 29);
 
   return {
     minYear: minDate.getUTCFullYear(),
@@ -231,21 +220,12 @@ function buildStudyChartDays(sessions: UserSession[], range: StudyChartRange): S
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const { minutesByDay, earliestDate: earliestStr } = buildMinutesByDay(sessions);
+  const { minutesByDay } = buildMinutesByDay(sessions);
 
   let start: Date;
-  if (range === "7") {
-    start = new Date(today);
-    start.setDate(start.getDate() - 6);
-  } else if (range === "30") {
+  if (range === "30") {
     start = new Date(today);
     start.setDate(start.getDate() - 29);
-  } else if (range === "365") {
-    start = new Date(today);
-    start.setDate(start.getDate() - 364);
-  } else if (earliestStr) {
-    start = new Date(earliestStr + "T12:00:00");
-    start.setHours(0, 0, 0, 0);
   } else {
     start = new Date(today);
     start.setDate(start.getDate() - 6);
@@ -1257,7 +1237,7 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
     const studyMinutesData = userSessions ? buildMinutesByDay(userSessions) : null;
     const calendarBounds =
       studyMinutesData && studyChartRange !== "7"
-        ? getStudyCalendarBounds(studyChartRange, studyMinutesData.earliestDate)
+        ? getStudyCalendarBounds()
         : null;
     const activeInProgress = (userSessions ?? []).filter((s) => !s.endedAt);
     const activeFocusedMinutes = activeInProgress.reduce(
@@ -1338,8 +1318,6 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
                 [
                   ["7", "7 days"],
                   ["30", "Month"],
-                  ["365", "Year"],
-                  ["all", "All time"],
                 ] as const
               ).map(([value, label]) => (
                 <button
