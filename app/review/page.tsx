@@ -1,23 +1,42 @@
 /**
  * Spaced-repetition review page.
  *
- * Fullscreen, distraction-free review across every textbook the user
- * has flashcards in. Pulls due cards from `/api/review/queue` and
- * grades them through `/api/review/grade`. See
- * `components/review/ReviewSession.tsx` for the lifecycle and
- * keyboard shortcut details.
+ * Two-screen flow:
  *
- * Auth: this is gated through `getAppUser()` inside each API route,
- * so the page itself is rendered for everyone — unauthenticated
- * users will see a network error from the queue fetch and bounce
- * back to dashboard via the "Exit" link. We deliberately don't
- * server-side-redirect here; the auth UX (sign-in modal vs full
- * page) lives in `lib/auth.ts` and is consistent app-wide.
+ *   1. **Home screen** (`<ReviewHome>`) — picks the deck / mode / age /
+ *      limit. Default is "what's due now" so the very first session
+ *      after creating cards still works without futzing with filters.
+ *   2. **Session** (`<ReviewSession>`) — the fullscreen review with the
+ *      home screen's selections passed through as a config object.
+ *
+ * The mode toggle lives in client state (no router push) so the
+ * browser back button drops the user from the session back to the
+ * home screen with their selections intact, rather than escaping the
+ * /review page entirely. "Exit" from the session also returns to
+ * home so the user can quickly tweak filters and try again.
+ *
+ * Auth: gated inside each `/api/review/*` route via `getAppUser()`.
+ * The page itself renders for everyone; unauthenticated users see a
+ * network error from the decks fetch and bounce back to dashboard
+ * via the "← Dashboard" link.
  */
+"use client";
+
+import { useState } from "react";
+import { ReviewHome, type ReviewConfig } from "@/components/review/ReviewHome";
 import { ReviewSession } from "@/components/review/ReviewSession";
 
-export const dynamic = "force-dynamic";
-
 export default function ReviewPage() {
-  return <ReviewSession />;
+  const [config, setConfig] = useState<ReviewConfig | null>(null);
+
+  if (config) {
+    return (
+      <ReviewSession
+        config={config}
+        onExit={() => setConfig(null)}
+      />
+    );
+  }
+
+  return <ReviewHome onStart={setConfig} />;
 }

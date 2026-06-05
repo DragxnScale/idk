@@ -67,17 +67,37 @@ export async function POST(request: Request) {
 
 These flashcards are NOT a quiz — they are a reference tool for understanding and applying material.
 
-For each key term, formula, law, or concept in the notes, create one flashcard:
-- front: the term, formula name, or concept label (short — one phrase, e.g. "Newton's Second Law", "Osmosis", "Pythagorean theorem")
-- back: a clear, plain-language definition or explanation of what it IS and how it is APPLIED. Include the formula or equation written in plain text if applicable (e.g. "F = m × a"). 2-4 sentences max.
+CARD FORMAT — for each key term, formula, law, or concept in the notes, create one flashcard:
+- front: the term, formula name, or concept label (short — one phrase, e.g. "Newton's Second Law", "Osmosis", "Pythagorean theorem", "Ideal Gas Law")
+- back: a clear, plain-language definition or explanation of what it IS and how it is APPLIED. 2-5 sentences max.
 - pageNumber: the page number from the notes tag, or null if unclear
 
-Rules:
+FORMULA COVERAGE (highest priority — do not skip any):
+- Every named formula, equation, law, or quantitative relationship that appears in the notes MUST get its OWN dedicated flashcard. Do not bundle two formulas onto one card. Do not skip a formula because it "looks similar" to another one.
+- Examples of what counts as a formula: Ideal Gas Law, Boyle's Law, Combined Gas Law, F = ma, kinetic energy formula, half-life equation, quadratic formula, Pythagorean theorem, exponential decay, dilution equation (M1V1 = M2V2), etc.
+- For a formula card, the back MUST contain BOTH:
+  1. The equation written in plain text on its own line (e.g. "PV = nRT" or "F = m × a"), AND
+  2. A definition of EVERY variable in the equation, one per line, with units when applicable.
+  Example for Ideal Gas Law:
+    "PV = nRT
+    P = pressure (atm or Pa)
+    V = volume (L or m³)
+    n = number of moles (mol)
+    R = ideal gas constant (0.0821 L·atm/(mol·K) or 8.314 J/(mol·K))
+    T = temperature (Kelvin)
+    Used to relate the pressure, volume, temperature, and amount of an ideal gas."
+- ALWAYS prioritize formula cards: if you have to pick which cards to keep under a budget, formula cards beat vocabulary cards beat trivia.
+- For constants that appear inside formulas (e.g. R, c, h, g, π), define them on the formula's card; do NOT make a separate card for the constant unless the notes explicitly devote a section to that constant.
+
+VOCABULARY / CONCEPT CARDS (secondary):
+- After every formula has its own card, cover the remaining important terms, definitions, units, processes, and principles from the notes.
+
+RULES:
 - NEVER write a question on the front. The front is always a term, name, or concept label.
 - NEVER write "What is X?" — just write "X".
-- Focus on vocabulary, definitions, formulas, units, processes, and principles.
 - Skip trivial details, dates, or proper nouns that don't need explaining.
-- Target ~3 cards per page of notes.`;
+- No upper limit on count when notes contain many formulas — better to ship one card per formula than to drop coverage to hit a target.
+- Soft target: ~3-5 cards per page of notes for normal pages, more on pages dense with formulas.`;
 
   const { object, usage } = await generateObject({
     model: openai(MODEL),

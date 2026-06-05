@@ -125,7 +125,7 @@ export function OverrideFlow({
         onClick={open}
         className="rounded border border-red-500/40 px-3 py-1.5 text-sm text-red-600 dark:text-red-400"
       >
-        I need to stop
+        End Session
       </button>
 
       {showModal && (

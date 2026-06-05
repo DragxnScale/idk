@@ -69,6 +69,13 @@ interface QueueResponse {
   capReached?: boolean;
 }
 
+export interface ReviewSessionConfig {
+  mode: "due" | "all" | "new" | "review" | "leeches";
+  deckKeys: string[];
+  maxAgeDays: number;
+  limit: number;
+}
+
 const QUEUE_LIMIT = 50;
 
 const GRADE_LABELS: Record<GradeValue, string> = {
@@ -94,7 +101,16 @@ const GRADE_COLORS: Record<GradeValue, string> = {
   [Grade.Easy]: "bg-blue-500 hover:bg-blue-600 text-white",
 };
 
-export function ReviewSession() {
+export function ReviewSession({
+  config,
+  onExit,
+}: {
+  config?: ReviewSessionConfig;
+  /** Called when the user taps the "← Exit" link instead of using
+   *  the browser's back button. Lets the parent route swap back to
+   *  the home screen without a full navigation. */
+  onExit?: () => void;
+} = {}) {
   const [queue, setQueue] = useState<QueueCard[]>([]);
   const [stats, setStats] = useState<{
     queueSize: number;
@@ -111,11 +127,29 @@ export function ReviewSession() {
   const sessionStartRef = useRef<number>(Date.now());
   const sessionPostedRef = useRef(false);
 
+  const queueUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (config?.mode) params.set("mode", config.mode);
+    // limit=0 means "no limit" client-side, which we encode as `limit=0`
+    // — the server interprets that as the hard ceiling. Otherwise pass
+    // through the user's explicit number, defaulting to QUEUE_LIMIT for
+    // legacy callers (dashboard quick-start).
+    const lim = config ? config.limit : QUEUE_LIMIT;
+    params.set("limit", String(lim));
+    if (config?.deckKeys && config.deckKeys.length > 0) {
+      params.set("decks", config.deckKeys.join(","));
+    }
+    if (config?.maxAgeDays && config.maxAgeDays > 0) {
+      params.set("maxAgeDays", String(config.maxAgeDays));
+    }
+    return `/api/review/queue?${params.toString()}`;
+  }, [config]);
+
   const loadQueue = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/review/queue?limit=${QUEUE_LIMIT}`, {
+      const res = await fetch(queueUrl, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`queue fetch failed: ${res.status}`);
@@ -132,7 +166,7 @@ export function ReviewSession() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [queueUrl]);
 
   useEffect(() => {
     loadQueue();
@@ -310,20 +344,30 @@ export function ReviewSession() {
       <div className="mx-auto max-w-md p-8 text-center">
         <h1 className="text-2xl font-semibold mb-3">
           {reviewedCount === 0
-            ? "Nothing due right now"
+            ? "Nothing matches that filter"
             : `Reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"} — nice work`}
         </h1>
         <p className="text-sm text-gray-500 mb-6">
           {reviewedCount === 0
-            ? "Come back tomorrow — your schedule is clear."
+            ? "Try a different filter or come back tomorrow."
             : "Your next cards will surface as they come due."}
         </p>
-        <Link
-          href="/dashboard"
-          className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
-        >
-          Back to dashboard
-        </Link>
+        <div className="flex justify-center gap-3">
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-400 dark:border-gray-600 dark:text-gray-200"
+            >
+              Change filters
+            </button>
+          )}
+          <Link
+            href="/dashboard"
+            className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
+          >
+            Dashboard
+          </Link>
+        </div>
       </div>
     );
   }
@@ -337,12 +381,21 @@ export function ReviewSession() {
     <div className="flex min-h-screen flex-col bg-gray-50 dark:bg-gray-900">
       <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <Link
-            href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            ← Exit
-          </Link>
+          {onExit ? (
+            <button
+              onClick={onExit}
+              className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              ← Exit
+            </button>
+          ) : (
+            <Link
+              href="/dashboard"
+              className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              ← Exit
+            </Link>
+          )}
           <p className="text-xs text-gray-500">
             {reviewedCount} reviewed · {queue.length} remaining
           </p>
@@ -364,33 +417,89 @@ export function ReviewSession() {
             {current.pageNumber != null && ` · p. ${current.pageNumber}`}
           </p>
 
+          {/* 3D flip container.
+              `perspective` on the outer div gives the rotate-Y on the
+              inner div a real depth axis. The inner div is the only
+              element that rotates; both faces are absolutely positioned
+              children with `backface-visibility: hidden` so only the
+              face pointed at the camera renders. The cubic-bezier curve
+              matches Tailwind's `ease-out` but stretched to 600ms — a
+              300ms flip felt jittery; 600ms is long enough to feel
+              like a physical card and short enough that fast graders
+              don't have to wait between cards.
+
+              The `key` on the inner element forces React to unmount /
+              remount when the card id changes. That re-resets the
+              transform to 0deg without animating through the entire
+              flip backwards (which would be visually distracting). */}
           <div
-            className="cursor-pointer rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-12"
-            style={{ minHeight: "300px" }}
+            className="cursor-pointer"
+            style={{ perspective: "1200px" }}
             onClick={() => setRevealed((r) => !r)}
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              {revealed ? "Answer" : "Front"}
-            </p>
-            <p className="mt-4 text-xl font-semibold leading-snug">
-              {current.front}
-            </p>
-            {revealed && (
-              <>
+            <div
+              key={current.id}
+              className="relative w-full"
+              style={{
+                transformStyle: "preserve-3d",
+                transition: "transform 600ms cubic-bezier(0.22, 1, 0.36, 1)",
+                transform: revealed ? "rotateY(180deg)" : "rotateY(0deg)",
+                minHeight: "320px",
+              }}
+            >
+              {/* Front face */}
+              <div
+                className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-12"
+                style={{
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  minHeight: "320px",
+                }}
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  Front
+                </p>
+                <p className="mt-4 text-xl font-semibold leading-snug">
+                  {current.front}
+                </p>
+                <p className="mt-8 text-center text-xs text-gray-400">
+                  Tap or press{" "}
+                  <kbd className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] dark:bg-gray-700">
+                    Space
+                  </kbd>{" "}
+                  to reveal
+                </p>
+              </div>
+
+              {/* Back face */}
+              <div
+                className="absolute inset-0 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-12"
+                style={{
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  transform: "rotateY(180deg)",
+                  minHeight: "320px",
+                  // Allow long answers (formulas with multiple variable
+                  // definitions) to scroll within the back face rather
+                  // than stretching the card off-screen.
+                  overflowY: "auto",
+                }}
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  Front
+                </p>
+                <p className="mt-2 text-base font-medium leading-snug text-gray-700 dark:text-gray-300">
+                  {current.front}
+                </p>
                 <hr className="my-6 border-gray-200 dark:border-gray-700" />
                 <p className="text-xs font-medium uppercase tracking-wide text-accent">
                   Back
                 </p>
-                <p className="mt-3 text-base leading-relaxed">
+                <p className="mt-3 whitespace-pre-line text-base leading-relaxed">
                   {current.back}
                 </p>
-              </>
-            )}
-            {!revealed && (
-              <p className="mt-8 text-center text-xs text-gray-400">
-                Tap or press <kbd className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] dark:bg-gray-700">Space</kbd> to reveal
-              </p>
-            )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

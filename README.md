@@ -24,7 +24,7 @@ Use the Credentials provider: any email + password `dev` (e.g. `you@example.com`
 - **Timer**: countdown for time goals, count-up for chapter goals
 - **Visibility guard**: detects tab switches, pauses timer, shows overlay
 - **Fullscreen mode**: toggle fullscreen for distraction-free reading
-- **Override flow**: "I need to stop" button with confirmation bar
+- **Override flow**: "End Session" button with confirmation bar
 - **Session persistence**: progress saved to SQLite via API
 - **History**: view past study sessions
 

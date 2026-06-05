@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 export interface Flashcard {
   id: string;
@@ -43,6 +43,36 @@ export function FlashcardView({ cards: initialCards }: FlashcardViewProps) {
     });
   }, []);
 
+  // Keyboard shortcuts: Space flips, ← / → navigate. Match the same
+  // contract as the /review page so muscle memory carries between the
+  // two surfaces. We bail when focus is in an input/textarea so typing
+  // a session note can't accidentally flip the card.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (target instanceof HTMLInputElement) return;
+      if (target instanceof HTMLTextAreaElement) return;
+      if ((target as HTMLElement | null)?.isContentEditable) return;
+      if (e.key === " ") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        go(1);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        go(-1);
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go]);
+
   if (!current) return null;
 
   return (
@@ -58,16 +88,23 @@ export function FlashcardView({ cards: initialCards }: FlashcardViewProps) {
         </button>
       </div>
 
-      {/* Flip card */}
+      {/* Flip card.
+          The flip uses a custom cubic-bezier curve (matches the
+          /review session) instead of Tailwind's default ease so the
+          motion settles smoothly without the sharp deceleration of
+          ease-in-out. 600ms is the same beat as the review page —
+          long enough to feel physical, short enough to not slow
+          down a quick study session. */}
       <div
         className="relative cursor-pointer select-none"
         style={{ perspective: "1200px", minHeight: "200px" }}
         onClick={() => setFlipped((f) => !f)}
       >
         <div
-          className="relative w-full transition-transform duration-500"
+          className="relative w-full"
           style={{
             transformStyle: "preserve-3d",
+            transition: "transform 600ms cubic-bezier(0.22, 1, 0.36, 1)",
             transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
             minHeight: "200px",
           }}
@@ -75,7 +112,10 @@ export function FlashcardView({ cards: initialCards }: FlashcardViewProps) {
           {/* Front */}
           <div
             className="absolute inset-0 rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 flex flex-col items-center justify-center p-8 text-center"
-            style={{ backfaceVisibility: "hidden" }}
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+            }}
           >
             {current.pageNumber != null && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-3 absolute top-4 left-4">
@@ -84,17 +124,21 @@ export function FlashcardView({ cards: initialCards }: FlashcardViewProps) {
             )}
             <p className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-3 uppercase tracking-wide">Term</p>
             <p className="text-lg font-semibold leading-snug">{current.front}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Tap to reveal</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Tap or press Space to reveal</p>
           </div>
 
           {/* Back */}
           <div
             className="absolute inset-0 rounded-2xl border border-accent bg-accent/5 dark:bg-accent/10 flex flex-col items-center justify-center p-8 text-center"
-            style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+              transform: "rotateY(180deg)",
+            }}
           >
             <p className="text-xs font-medium text-accent mb-3 uppercase tracking-wide">Explanation</p>
-            <p className="text-sm leading-relaxed">{current.back}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Tap to flip back</p>
+            <p className="text-sm leading-relaxed whitespace-pre-line">{current.back}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Tap or press Space to flip back · ← → to navigate</p>
           </div>
         </div>
       </div>
