@@ -228,7 +228,7 @@ function renderItem(section: AiStoredContentSectionId, item: Record<string, unkn
             <span className="text-xs text-gray-400">{String(item.topic ?? item.type)}</span>
             {Number(item.reportCount) > 0 && (
               <span className="text-[10px] text-amber-500">
-                {item.reportCount} report{Number(item.reportCount) !== 1 ? "s" : ""}
+                {Number(item.reportCount)} report{Number(item.reportCount) !== 1 ? "s" : ""}
               </span>
             )}
           </>

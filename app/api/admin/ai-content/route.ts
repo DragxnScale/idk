@@ -1,3 +1,4 @@
+import type { ResultSet } from "@libsql/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
@@ -66,14 +67,14 @@ async function fetchCounts(): Promise<Record<AiStoredContentSectionId, number>> 
       db.$client.execute("SELECT count(*) AS n FROM velocity_question_bank"),
     ]);
 
-  const n = (res: { rows: { n: unknown }[] }) => Number(res.rows[0]?.n ?? 0);
+  const countRows = (res: ResultSet) => Number(res.rows[0]?.n ?? 0);
 
   return {
-    notes: n(notesSession) + n(notesPublic),
-    quiz: n(quiz),
-    flashcards: n(flashcards),
-    "velocity-games": n(velGames),
-    "velocity-bank": n(velBank),
+    notes: countRows(notesSession) + countRows(notesPublic),
+    quiz: countRows(quiz),
+    flashcards: countRows(flashcards),
+    "velocity-games": countRows(velGames),
+    "velocity-bank": countRows(velBank),
   };
 }
 
@@ -176,13 +177,9 @@ async function fetchNotes(
   }
 
   // all — UNION sorted by timestamp
-  const countRes = await db.$client.execute({
-    sql: `
-      SELECT
-        (SELECT count(*) FROM ai_notes) +
-        (SELECT count(*) FROM public_notes) AS n
-    `,
-  });
+  const countRes = await db.$client.execute(
+    "SELECT (SELECT count(*) FROM ai_notes) + (SELECT count(*) FROM public_notes) AS n"
+  );
   const total = Number(countRes.rows[0]?.n ?? 0);
   const res = await db.$client.execute({
     sql: `
