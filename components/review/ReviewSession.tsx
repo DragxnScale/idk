@@ -140,6 +140,16 @@ export function ReviewSession({
 
   const sessionStartRef = useRef<number>(Date.now());
   const sessionPostedRef = useRef(false);
+  // Cards already graded this session — used to prevent the queue
+  // refetch from yielding the same card twice. In `mode=due` a
+  // relearning card legitimately re-surfaces via the 10-minute
+  // lookahead, but at that point it's already at the back of the
+  // local queue (we push it there in `onGrade`), so excluding it
+  // from a refetch is the correct behavior. In explicit modes
+  // (mode=all/new/review/leeches) the entire selection is already
+  // in our initial fetch, so any refetch of cards we've graded is
+  // pure duplication.
+  const reviewedIdsRef = useRef<Set<string>>(new Set());
 
   const queueUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -168,13 +178,20 @@ export function ReviewSession({
       });
       if (!res.ok) throw new Error(`queue fetch failed: ${res.status}`);
       const data: QueueResponse = await res.json();
-      setQueue(data.cards);
+      // Drop any card we already graded this session. The server
+      // doesn't know about session-local state, so cards that just
+      // moved out of Learning into Review can still match the same
+      // filter on a refetch (e.g. mode=all returns every card the
+      // user owns) — which would loop them back as duplicates.
+      const seen = reviewedIdsRef.current;
+      const fresh = data.cards.filter((c) => !seen.has(c.id));
+      setQueue(fresh);
       setStats({
         queueSize: data.queueSize,
         newRemainingToday: data.newRemainingToday,
         reviewsRemainingToday: data.reviewsRemainingToday,
       });
-      if (data.cards.length === 0) setDone(true);
+      if (fresh.length === 0) setDone(true);
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
     } finally {
@@ -267,14 +284,23 @@ export function ReviewSession({
         const data = await res.json();
         setReviewedCount((n) => n + 1);
         setRevealed(false);
+        // Record the grade so a future refetch (mode=due relearning
+        // refill, or just stale mode-all refetches) can't surface
+        // this same card again as a "fresh" entry. The push-back
+        // path below handles in-session relearning visibility on
+        // its own — the local queue keeps the card around without
+        // needing to re-pull it.
+        reviewedIdsRef.current.add(current.id);
         setQueue((prev) => {
           const [, ...rest] = prev;
           // Relearning cards (Again / Hard on Learning) come due in a
           // few minutes — push them back to the end of the local queue
           // so the user works through everything else first, but still
-          // sees them again in the same session. The server schedule
-          // is the source of truth — the next refetch may also return
-          // them based on the lookahead window.
+          // sees them again in the same session. We don't rely on a
+          // refetch to bring them back: refetch now excludes anything
+          // in `reviewedIdsRef`, which would (correctly) reject this
+          // card. The local push-back is the single source of truth
+          // for "show me this card again before the session ends".
           if (
             data.card.srsState === SrsState.Learning ||
             data.card.srsState === SrsState.Relearning
@@ -295,13 +321,25 @@ export function ReviewSession({
     [current, grading, revealed]
   );
 
-  // Refill the queue when local queue is empty but server reported more.
+  // Refill the queue when the local queue empties.
+  //
+  // Only auto-refetch in `mode=due` — that's the mode where the
+  // server can hand us cards we haven't seen yet (new cards under
+  // the daily cap, or older review cards that became due during
+  // the session). In every explicit mode (`all`, `new`, `review`,
+  // `leeches`) the initial fetch already returned every card the
+  // user picked, so refetching just yields the same set and loops
+  // each card a second time. End the session instead.
   useEffect(() => {
     if (queue.length === 0 && !loading && !done && reviewedCount > 0) {
-      // Could be the relearning cards finishing — try one refetch.
-      loadQueue();
+      const mode = config?.mode ?? "due";
+      if (mode === "due") {
+        loadQueue();
+      } else {
+        setDone(true);
+      }
     }
-  }, [queue.length, loading, done, reviewedCount, loadQueue]);
+  }, [queue.length, loading, done, reviewedCount, loadQueue, config?.mode]);
 
   // Keyboard shortcuts
   useEffect(() => {
