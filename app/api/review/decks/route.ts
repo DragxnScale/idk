@@ -27,6 +27,7 @@
 import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
+import { resolveDeckTitle } from "@/lib/review-deck-title";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,13 @@ export async function GET() {
   // lets the home screen treat both kinds uniformly. Sessions with
   // no `session_content` row collapse to `untitled` so they still
   // surface in the picker.
+  // `dbTitle` is the coalesced catalog/document title — may be NULL
+  // (e.g. an `untitled` row, or a document whose own title was never
+  // filled in). `fallbackDocumentJson` is a representative session's
+  // `document_json` we use to recover a sensible title in app code via
+  // `resolveDeckTitle()`. MIN over TEXT is just a deterministic picker
+  // — when multiple sessions group into one deck, any of them is fine
+  // because they all describe the same reading.
   const sql = `
     SELECT
       COALESCE(
@@ -55,7 +63,8 @@ export async function GET() {
         CASE WHEN d.id IS NOT NULL THEN 'd:' || d.id END,
         'untitled'
       ) AS deckKey,
-      COALESCE(tc.title, d.title, 'Untitled deck') AS deckTitle,
+      COALESCE(tc.title, d.title) AS dbTitle,
+      MIN(ss.document_json) AS fallbackDocumentJson,
       COUNT(DISTINCT f.id) AS cardCount,
       SUM(CASE
         WHEN (f.srs_state IN (1,3) AND f.due_at IS NOT NULL AND f.due_at <= ?)
@@ -69,7 +78,7 @@ export async function GET() {
     LEFT JOIN documents d ON d.id = sc.document_id
     LEFT JOIN textbook_catalog tc ON tc.id = d.textbook_catalog_id
     WHERE ss.user_id = ?
-    GROUP BY deckKey, deckTitle
+    GROUP BY deckKey, dbTitle
     ORDER BY cardCount DESC
   `;
   const res = await db.$client.execute({
@@ -79,7 +88,10 @@ export async function GET() {
 
   const decks = res.rows.map((r) => ({
     deckKey: String(r.deckKey),
-    deckTitle: String(r.deckTitle),
+    deckTitle: resolveDeckTitle(
+      r.dbTitle == null ? null : String(r.dbTitle),
+      r.fallbackDocumentJson == null ? null : String(r.fallbackDocumentJson),
+    ),
     cardCount: Number(r.cardCount ?? 0),
     dueCount: Number(r.dueCount ?? 0),
     newCount: Number(r.newCount ?? 0),

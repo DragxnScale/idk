@@ -78,10 +78,24 @@ export interface ReviewSessionConfig {
 
 const QUEUE_LIMIT = 50;
 
+// Grade labels surfaced in the UI. The underlying `Grade` enum values
+// stay 1..4 to match the FSRS algorithm — only the labels change.
+//
+// Mapping rationale:
+//   - Again → "Very Hard"  (you blew it; surface this card again soon)
+//   - Hard  → "Hard"       (got it but barely; tighter schedule)
+//   - Good  → "Medium"     (standard pass; default interval)
+//   - Easy  → "Easy"       (trivial recall; longer interval)
+//
+// We rename rather than swap colors / keyboard shortcuts / intervals so
+// muscle memory from prior sessions still works. The varying "next due
+// in Nd" you see on each button is correct algorithm behavior — each
+// card has its own stability/difficulty/lapses state, so pressing the
+// same button on two different cards yields different intervals.
 const GRADE_LABELS: Record<GradeValue, string> = {
-  [Grade.Again]: "Again",
+  [Grade.Again]: "Very Hard",
   [Grade.Hard]: "Hard",
-  [Grade.Good]: "Good",
+  [Grade.Good]: "Medium",
   [Grade.Easy]: "Easy",
 };
 

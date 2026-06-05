@@ -44,6 +44,7 @@
 import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
+import { resolveDeckTitle } from "@/lib/review-deck-title";
 
 export const runtime = "nodejs";
 
@@ -360,24 +361,38 @@ export async function GET(request: Request) {
   }
 
   // ── Resolve deck titles for the response ─────────────────────────
+  // Pulls from study_sessions directly (not session_content) so that
+  // sessions without a session_content row still surface a title via
+  // their `document_json` fallback — without this, those decks ALWAYS
+  // render as "Untitled deck" even when the session itself carries
+  // the chapter-range title in its embedded JSON.
   const sessionIds = Array.from(new Set(rows.map((r) => String(r.sessionId))));
   const deckTitleBySession = new Map<string, string>();
   if (sessionIds.length > 0) {
     const placeholders = sessionIds.map(() => "?").join(",");
     const deckRes = await db.$client.execute({
       sql: `
-        SELECT sc.session_id AS sessionId, COALESCE(tc.title, d.title) AS deckTitle
-        FROM session_content sc
+        SELECT ss.id AS sessionId,
+               COALESCE(tc.title, d.title) AS dbTitle,
+               ss.document_json AS documentJson
+        FROM study_sessions ss
+        LEFT JOIN session_content sc ON sc.session_id = ss.id
         LEFT JOIN documents d ON d.id = sc.document_id
         LEFT JOIN textbook_catalog tc ON tc.id = d.textbook_catalog_id
-        WHERE sc.session_id IN (${placeholders})
+        WHERE ss.id IN (${placeholders})
       `,
       args: sessionIds,
     });
     for (const row of deckRes.rows) {
       const sid = String(row.sessionId);
       if (!deckTitleBySession.has(sid)) {
-        deckTitleBySession.set(sid, String(row.deckTitle ?? "Untitled deck"));
+        deckTitleBySession.set(
+          sid,
+          resolveDeckTitle(
+            row.dbTitle == null ? null : String(row.dbTitle),
+            row.documentJson == null ? null : String(row.documentJson),
+          ),
+        );
       }
     }
   }

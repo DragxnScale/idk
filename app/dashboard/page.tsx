@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import dynamic from "next/dynamic";
 import { HeatmapCalendar } from "@/components/dashboard/HeatmapCalendar";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
@@ -91,6 +92,23 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  /** Disables the Log Out button while NextAuth tears down the session. */
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      // `callbackUrl: "/"` is what bounces the user back to the landing
+      // page after the session cookie clears. NextAuth handles the
+      // redirect itself; we don't need to push.
+      await signOut({ callbackUrl: "/" });
+    } catch {
+      // signOut() rarely fails, but if it does (e.g. offline) we don't
+      // want to leave the button stuck in the disabled state.
+      setSigningOut(false);
+    }
+  }
   const [savedItems, setSavedItems] = useState<BookmarkItem[]>([]);
   const [viewingItem, setViewingItem] = useState<BookmarkItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -325,6 +343,15 @@ export default function DashboardPage() {
             >
               <SuiText page="dashboard" k="btn.newSession" def="New session" as="span" />
             </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+              title="Sign out of Bowl Beacon"
+            >
+              {signingOut ? "Signing out…" : "Log out"}
+            </button>
           </div>
         </div>
 
@@ -975,9 +1002,6 @@ export default function DashboardPage() {
 
         {/* Bottom nav */}
         <div className="mt-8 flex flex-wrap items-center gap-4 text-sm">
-          <Link href="/" className="underline underline-offset-4">
-            Home
-          </Link>
           <Link href="/study/session" className="underline underline-offset-4">
             New session
           </Link>

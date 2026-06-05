@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { getPdfZoom, setPdfZoom } from "@/lib/prefs";
 import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomTheme, applyThemeCssVars, clearThemeCssVars } from "@/lib/themes";
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
@@ -41,6 +42,25 @@ export default function SettingsPage() {
     setZoomState(value);
     setPdfZoom(value);
     window.dispatchEvent(new StorageEvent("storage", { key: "bowlbeacon-pdf-zoom" }));
+  }
+
+  // ── Sign out ────────────────────────────────────────────────────────
+  /** Disables the Log Out button while NextAuth tears down the session. */
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      // `callbackUrl: "/"` sends the user to the marketing landing
+      // after the session cookie clears. NextAuth performs the
+      // redirect itself.
+      await signOut({ callbackUrl: "/" });
+    } catch {
+      // signOut() rarely fails, but if it does (e.g. offline) we don't
+      // want to leave the button stuck in the disabled state.
+      setSigningOut(false);
+    }
   }
 
   // ── Daily goals ─────────────────────────────────────────────────────
@@ -114,36 +134,6 @@ export default function SettingsPage() {
     long?: string;
     cycles?: string;
   }>({});
-
-  // ── Developer mode (admin-only toggle) ─────────────────────────────
-  /** Current value of the user's developer-mode flag. */
-  const [isDeveloper, setIsDeveloper] = useState(false);
-  /** Whether the toggle should appear at all. We render only for admins/owners. */
-  const [canEditDeveloper, setCanEditDeveloper] = useState(false);
-  /** Inline status under the toggle. */
-  const [developerStatus, setDeveloperStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-
-  async function handleDeveloperToggle(next: boolean) {
-    setIsDeveloper(next);
-    setDeveloperStatus("loading");
-    try {
-      const res = await fetch("/api/user/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isDeveloper: next }),
-      });
-      if (res.ok) setDeveloperStatus("success");
-      else {
-        // Server rejected — roll the toggle back so UI state reflects
-        // reality (e.g. user lost admin between page-load and click).
-        setIsDeveloper(!next);
-        setDeveloperStatus("error");
-      }
-    } catch {
-      setIsDeveloper(!next);
-      setDeveloperStatus("error");
-    }
-  }
 
   async function handlePomodoroSave(e: React.FormEvent) {
     e.preventDefault();
@@ -424,10 +414,6 @@ export default function SettingsPage() {
         if (data.pomodoroBreakMin) setPomodoroBreak(String(data.pomodoroBreakMin));
         if (data.pomodoroLongBreakMin) setPomodoroLong(String(data.pomodoroLongBreakMin));
         if (data.pomodoroCycles) setPomodoroCycles(String(data.pomodoroCycles));
-        // Developer-mode toggle is only rendered for admins/owners.
-        const allowed = !!data.isAdmin || !!data.isOwner;
-        setCanEditDeveloper(allowed);
-        setIsDeveloper(!!data.isDeveloper);
       });
   }, []);
 
@@ -728,53 +714,6 @@ export default function SettingsPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">
           Scroll down for session defaults, study breaks, PDF cache, exit password, theme, music, and more.
         </p>
-
-        {/*
-          Developer mode toggle — admin-only. Gates extra diagnostic
-          surfaces in the admin console (currently the "Focused studying
-          per page" panel under each session detail). Saved through
-          PATCH /api/user/settings; the API rejects flips from
-          non-admins.
-        */}
-        {canEditDeveloper && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900 mb-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-base font-semibold flex items-center gap-2">
-                  Developer mode
-                  <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Admin</span>
-                </h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Surfaces extra diagnostic panels in the admin console
-                  (currently the &quot;Focused studying per page&quot; chart on each session detail).
-                  Off by default even on admin accounts.
-                </p>
-                {developerStatus === "success" && (
-                  <p className="mt-1 text-xs text-green-600 dark:text-green-400">Saved.</p>
-                )}
-                {developerStatus === "error" && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">Couldn&apos;t save — try again.</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleDeveloperToggle(!isDeveloper)}
-                disabled={developerStatus === "loading"}
-                role="switch"
-                aria-checked={isDeveloper}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  isDeveloper ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
-                } disabled:opacity-50`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    isDeveloper ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-          </section>
-        )}
 
         {/* Hardcoded per-state layout: TOP full-width → 2-col LEFT+RIGHT → BOTTOM full-width */}
         <div className="space-y-4">
@@ -1668,6 +1607,24 @@ export default function SettingsPage() {
           );
         })()}
       </div>
+
+        {/*
+          Sign-out at the bottom of the settings page (matches the top-
+          nav button on the dashboard, just placed where users
+          intuitively look for an account action — bottom of settings).
+          Styled as a subtle bordered button so it doesn't compete with
+          the in-card primary CTAs above.
+        */}
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            {signingOut ? "Signing out…" : "Log out"}
+          </button>
+        </div>
         </div>{/* end outer container */}
     </main>
     </>

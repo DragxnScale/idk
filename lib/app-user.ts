@@ -29,20 +29,22 @@ export async function getAppUser(): Promise<{ id: string; email: string; name: s
 
 /**
  * Returns true when the **real signed-in account** (ignoring view-as
- * impersonation) has the developer-mode flag set. Used to gate
- * diagnostic admin surfaces — we always check the real account so that
- * impersonating a non-developer admin doesn't show the panels, and
- * impersonating any normal user from a developer account still does.
+ * impersonation) should see the developer-mode admin surfaces. Used to
+ * gate diagnostic admin surfaces — we always check the real account so
+ * that impersonating a regular user from an admin still shows the
+ * panels, and a non-admin viewer never does.
  *
- * Returns false (not throws) when there is no session or the row is
- * missing, so callers can use it as a simple boolean gate.
+ * As of 2026-06, this is equivalent to "is admin": the user-facing
+ * Developer-mode toggle was removed because all admin pages already
+ * gate themselves behind admin auth, so there's no reason to require
+ * a second opt-in. The `users.is_developer` column is retained for
+ * backwards compat but is no longer read here.
+ *
+ * Returns false (not throws) when there is no session, so callers can
+ * use it as a simple boolean gate.
  */
 export async function isCurrentDeveloper(): Promise<boolean> {
   const session = await auth();
-  if (!session?.user?.id) return false;
-  const row = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
-    columns: { isDeveloper: true },
-  });
-  return row?.isDeveloper === true;
+  if (!session?.user?.email) return false;
+  return isAdmin(session.user.email);
 }

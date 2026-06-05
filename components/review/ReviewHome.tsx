@@ -49,6 +49,16 @@ interface DecksResponse {
   oldestCardAt: number | null;
 }
 
+/**
+ * `d:*` decks back onto a per-user `documents` row that the user owns —
+ * those can be renamed in place. Catalog (`tc:*`) decks are shared
+ * across all users and the server rejects rename attempts. The
+ * synthetic `untitled` bucket has no backing row.
+ */
+function isRenamableDeckKey(deckKey: string): boolean {
+  return deckKey.startsWith("d:");
+}
+
 interface ReviewHomeProps {
   onStart: (config: ReviewConfig) => void;
 }
@@ -106,28 +116,92 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
   const [limitMode, setLimitMode] = useState<"none" | "custom">("none");
   const [limitValue, setLimitValue] = useState<string>("50");
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/review/decks", { cache: "no-store" })
+  // ── Inline deck rename ──────────────────────────────────────────────
+  // When a `d:<documentId>` deck is being renamed we track:
+  //   - `renamingDeckKey` — which deck row is in edit mode
+  //   - `renameDraft`     — the in-progress title text
+  //   - `renameSaving`    — disables the form while the PATCH is in flight
+  //   - `renameError`     — surfaced inline; non-fatal
+  // Catalog (`tc:*`) and synthetic (`untitled`) decks never enter this
+  // state because the deck row doesn't render an edit button for them.
+  const [renamingDeckKey, setRenamingDeckKey] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  const loadDecks = (signal?: AbortSignal): Promise<void> =>
+    fetch("/api/review/decks", { cache: "no-store", signal })
       .then(async (r) => {
         if (!r.ok) throw new Error(`decks: ${r.status}`);
         return r.json() as Promise<DecksResponse>;
       })
       .then((d) => {
-        if (cancelled) return;
         setData(d);
-      })
+      });
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    loadDecks(ctrl.signal)
       .catch((e) => {
-        if (cancelled) return;
+        if (ctrl.signal.aborted) return;
         setError(String(e?.message ?? e));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!ctrl.signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => ctrl.abort();
   }, []);
+
+  const startRename = (deckKey: string, currentTitle: string) => {
+    setRenamingDeckKey(deckKey);
+    setRenameDraft(currentTitle);
+    setRenameError(null);
+  };
+
+  const cancelRename = () => {
+    setRenamingDeckKey(null);
+    setRenameDraft("");
+    setRenameError(null);
+  };
+
+  /**
+   * PATCH the deck's underlying row via `/api/review/deck/[deckKey]`.
+   * The server is the single owner of the catalog / untitled / owned-
+   * document rules — the client just submits the deck key and the new
+   * title, then surfaces any 4xx error inline. On success we refetch
+   * the decks list so the renamed title is consistent everywhere
+   * (selection state stays valid because the deck key doesn't change).
+   */
+  const submitRename = async (deckKey: string) => {
+    const trimmed = renameDraft.trim();
+    if (!trimmed) {
+      setRenameError("Name can't be empty.");
+      return;
+    }
+    if (trimmed.length > 200) {
+      setRenameError("Name must be 200 characters or less.");
+      return;
+    }
+    setRenameSaving(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(`/api/review/deck/${encodeURIComponent(deckKey)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Rename failed (${res.status})`);
+      }
+      await loadDecks();
+      cancelRename();
+    } catch (e) {
+      setRenameError(String((e as Error)?.message ?? e));
+    } finally {
+      setRenameSaving(false);
+    }
+  };
 
   const allDeckKeys = useMemo(
     () => (data ? data.decks.map((d) => d.deckKey) : []),
@@ -318,10 +392,23 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
             {data.decks.map((deck) => {
               const checked =
                 isAllSelected || (selectedDecks?.has(deck.deckKey) ?? false);
+              const isRenamable = isRenamableDeckKey(deck.deckKey);
+              const isCatalog = deck.deckKey.startsWith("tc:");
+              const editing = renamingDeckKey === deck.deckKey;
               return (
-                <label
+                <div
                   key={deck.deckKey}
-                  className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${
+                  onClick={(e) => {
+                    if (editing) return;
+                    // Don't toggle when the user actually meant to
+                    // interact with a child control (rename pencil,
+                    // rename text field, etc.). The checkbox itself
+                    // is handled by its own onChange below.
+                    const target = e.target as HTMLElement;
+                    if (target.closest("button, input, textarea, a")) return;
+                    toggleDeck(deck.deckKey);
+                  }}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
                     checked
                       ? "border-accent bg-accent/5"
                       : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
@@ -331,18 +418,103 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleDeck(deck.deckKey)}
+                    aria-label={`Toggle ${deck.deckTitle}`}
+                    className="mt-1"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {deck.deckTitle}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}
-                      {deck.dueCount > 0 && ` · ${deck.dueCount} due`}
-                      {deck.newCount > 0 && ` · ${deck.newCount} new`}
-                    </p>
+                    {editing ? (
+                      // ── Inline rename form ──────────────────────────
+                      // Stays inside the deck row so the user keeps
+                      // their visual context. Enter saves, Esc cancels.
+                      <div>
+                        <input
+                          type="text"
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void submitRename(deck.deckKey);
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              cancelRename();
+                            }
+                          }}
+                          autoFocus
+                          maxLength={200}
+                          disabled={renameSaving}
+                          className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 disabled:opacity-50"
+                          placeholder="Deck name"
+                        />
+                        {renameError && (
+                          <p className="mt-1 text-xs text-red-500">{renameError}</p>
+                        )}
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void submitRename(deck.deckKey)}
+                            disabled={renameSaving}
+                            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                          >
+                            {renameSaving ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelRename}
+                            disabled={renameSaving}
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-600 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium" title={deck.deckTitle}>
+                            {deck.deckTitle}
+                          </p>
+                          {isRenamable ? (
+                            <button
+                              type="button"
+                              onClick={() => startRename(deck.deckKey, deck.deckTitle)}
+                              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                              title="Rename deck"
+                              aria-label={`Rename ${deck.deckTitle}`}
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                                className="h-3.5 w-3.5"
+                                aria-hidden
+                              >
+                                <path d="M2.695 14.763l-1.262 3.155a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.886L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                              </svg>
+                            </button>
+                          ) : isCatalog ? (
+                            // Catalog titles are shared across users —
+                            // surfacing the lock icon makes the
+                            // read-only state discoverable without a
+                            // separate "this can't be edited" toast.
+                            <span
+                              className="shrink-0 text-[10px] text-gray-400"
+                              title="Catalog titles are shared across users and can't be renamed from here."
+                              aria-hidden
+                            >
+                              🔒
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}
+                          {deck.dueCount > 0 && ` · ${deck.dueCount} due`}
+                          {deck.newCount > 0 && ` · ${deck.newCount} new`}
+                        </p>
+                      </>
+                    )}
                   </div>
-                </label>
+                </div>
               );
             })}
           </div>
