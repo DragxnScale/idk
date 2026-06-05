@@ -729,22 +729,26 @@ SA:
 SCHEMA — every field is REQUIRED on EVERY question:
 - roundType, pairId, type, question, options (4 strings), correctIndex (0–3), answer, acceptedAnswers (array of strings, may be empty), topic (2–5 words labelling the concept), explanation (one short sentence), pageIndex (integer from the reading, 0 if unknown).`;
 
+      const velocityPrompt = `Reading material (non-content / front-matter pages have already been removed where possible). Pages in the reading: ${
+        readingPages.length > 0 ? readingPages.join(", ") : "unknown"
+      }. When tagging "pageIndex", use one of those numbers (or 0 if the concept cannot be tied to a specific page).\n\n${wrapUntrusted(
+        "reading material",
+        stripNonContentPages(accumulatedText).slice(0, 30000)
+      )}${
+        notesContext
+          ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
+          : ""
+      }`;
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: payloadSchema,
         system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-        prompt: `Reading material (non-content / front-matter pages have already been removed where possible). Pages in the reading: ${
-          readingPages.length > 0 ? readingPages.join(", ") : "unknown"
-        }. When tagging "pageIndex", use one of those numbers (or 0 if the concept cannot be tied to a specific page).\n\n${wrapUntrusted(
-          "reading material",
-          stripNonContentPages(accumulatedText).slice(0, 30000)
-        )}${
-          notesContext
-            ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
-            : ""
-        }`,
+        prompt: velocityPrompt,
       });
-      await recordAiUsage(user.id, "/api/ai/velocity", usage);
+      await recordAiUsage(user.id, "/api/ai/velocity", usage, {
+        inputText: velocityPrompt,
+        outputText: JSON.stringify(object, null, 2),
+      });
 
       const readingPagesSet = new Set(readingPages);
       // Final server-side safety net: drop any stem that still references
@@ -808,7 +812,14 @@ SCHEMA — every field is REQUIRED on EVERY question:
         ownerExtra
       );
       if (vUsage) {
-        await recordAiUsage(user.id, "/api/ai/velocity/factcheck", vUsage);
+        await recordAiUsage(user.id, "/api/ai/velocity/factcheck", vUsage, {
+          inputText: verifierSource,
+          outputText: JSON.stringify(
+            { dropped: vDropped, fixed: vFixed, questions: verifiedFlat },
+            null,
+            2
+          ),
+        });
       }
       if (vDropped > 0 || vFixed > 0) {
         console.log(

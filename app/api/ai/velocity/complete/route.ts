@@ -195,19 +195,23 @@ Produce:
   - videoSuggestions: up to 4 YouTube search queries that would help shore up the growth areas. Each has a punchy title, a searchQuery, and a one-line reason. If the learner got everything right, suggest videos that extend or deepen the strongest topics.
 Keep everything short and actionable. No filler.`;
 
+    const completePrompt = `Accuracy: ${accuracy}% (${correctCount}/${total}). Avg reaction: ${
+      avgReactionMs ?? "n/a"
+    } ms.\n\n${wrapUntrusted(
+      "attempts log",
+      summary
+    )}\n\nWrong answers: ${wrong.length}.`;
     try {
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: reviewSchema,
         system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-        prompt: `Accuracy: ${accuracy}% (${correctCount}/${total}). Avg reaction: ${
-          avgReactionMs ?? "n/a"
-        } ms.\n\n${wrapUntrusted(
-          "attempts log",
-          summary
-        )}\n\nWrong answers: ${wrong.length}.`,
+        prompt: completePrompt,
       });
-      await recordAiUsage(user.id, "/api/ai/velocity/complete", usage);
+      await recordAiUsage(user.id, "/api/ai/velocity/complete", usage, {
+        inputText: completePrompt,
+        outputText: JSON.stringify(object, null, 2),
+      });
       review = object;
     } catch (err) {
       await logServerFailure(user.id, user.email ?? null, err, {

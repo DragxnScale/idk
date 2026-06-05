@@ -99,16 +99,20 @@ RULES:
 - No upper limit on count when notes contain many formulas — better to ship one card per formula than to drop coverage to hit a target.
 - Soft target: ~3-5 cards per page of notes for normal pages, more on pages dense with formulas.`;
 
+  const flashcardsPrompt = `Generate flashcards from the study notes below.\n\n${wrapUntrusted(
+    "study notes",
+    notesSummary.slice(0, 12000)
+  )}`;
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: flashcardSchema,
     system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-    prompt: `Generate flashcards from the study notes below.\n\n${wrapUntrusted(
-      "study notes",
-      notesSummary.slice(0, 12000)
-    )}`,
+    prompt: flashcardsPrompt,
   });
-  await recordAiUsage(user.id, "/api/ai/flashcards", usage);
+  await recordAiUsage(user.id, "/api/ai/flashcards", usage, {
+    inputText: flashcardsPrompt,
+    outputText: JSON.stringify(object, null, 2),
+  });
 
   // Persist
   const now = new Date();

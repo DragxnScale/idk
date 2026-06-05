@@ -455,6 +455,10 @@ export const aiUsageLogs = sqliteTable("ai_usage_logs", {
   promptTokens: integer("prompt_tokens").notNull().default(0),
   completionTokens: integer("completion_tokens").notNull().default(0),
   totalTokens: integer("total_tokens").notNull().default(0),
+  /** Full prompt sent to the model (admin audit; NULL on legacy rows). */
+  inputText: text("input_text"),
+  /** Full model response text or JSON (admin audit; NULL on legacy rows). */
+  outputText: text("output_text"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

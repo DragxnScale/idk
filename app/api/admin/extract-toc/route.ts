@@ -292,16 +292,20 @@ export async function POST(request: Request) {
   // ── Call the model ─────────────────────────────────────────────────
   const ownerExtra = await getAiOwnerStyleExtra();
   let parsed: z.infer<typeof tocSchema>;
+  const tocPrompt = `Extract the table of contents from the front matter below. There are ${pagesRead} pages of extracted text (PDF pages 1–${pagesRead}), demarcated by "[Page N]" markers.
+
+${wrapUntrusted("pdf front matter", pageText.slice(0, TOC_TEXT_CHAR_LIMIT))}`;
   try {
     const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: tocSchema,
       system: appendOwnerStyleToSystem(SYSTEM_PROMPT, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-      prompt: `Extract the table of contents from the front matter below. There are ${pagesRead} pages of extracted text (PDF pages 1–${pagesRead}), demarcated by "[Page N]" markers.
-
-${wrapUntrusted("pdf front matter", pageText.slice(0, TOC_TEXT_CHAR_LIMIT))}`,
+      prompt: tocPrompt,
     });
-    await recordAiUsage(user.id, "/api/admin/extract-toc", usage);
+    await recordAiUsage(user.id, "/api/admin/extract-toc", usage, {
+      inputText: tocPrompt,
+      outputText: JSON.stringify(object, null, 2),
+    });
     parsed = object;
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";

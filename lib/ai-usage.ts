@@ -116,6 +116,12 @@ function normaliseUsage(usage: AiUsageShape | undefined | null): {
   };
 }
 
+export interface RecordAiUsageMeta {
+  model?: string;
+  inputText?: string | null;
+  outputText?: string | null;
+}
+
 /**
  * Record an AI call's token cost. Writes a per-call row to `ai_usage_logs`
  * AND bumps the denormalised `users.aiTokensUsed` counter.
@@ -128,8 +134,11 @@ export async function recordAiUsage(
   userId: string,
   route: string,
   usage: AiUsageShape | undefined | null,
-  model: string = MODEL
+  meta?: RecordAiUsageMeta | string
 ): Promise<void> {
+  const opts: RecordAiUsageMeta =
+    typeof meta === "string" ? { model: meta } : meta ?? {};
+  const model = opts.model ?? MODEL;
   const { prompt, completion, total } = normaliseUsage(usage);
   if (total <= 0) return;
   try {
@@ -141,6 +150,8 @@ export async function recordAiUsage(
       promptTokens: prompt,
       completionTokens: completion,
       totalTokens: total,
+      inputText: opts.inputText ?? null,
+      outputText: opts.outputText ?? null,
       createdAt: new Date(),
     });
     await db

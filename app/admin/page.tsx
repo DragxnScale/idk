@@ -6,6 +6,7 @@ import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
 import { AppUiEditorTab } from "@/components/admin/AppUiEditorTab";
 import { AdminStudyCalendar } from "@/components/admin/AdminStudyCalendar";
+import { UserAiUsageLog } from "@/components/admin/UserAiUsageLog";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -477,6 +478,7 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   const [studyChartRange, setStudyChartRange] = useState<StudyChartRange>("7");
   const [studyCalendarYear, setStudyCalendarYear] = useState(() => new Date().getUTCFullYear());
   const [studyCalendarMonth, setStudyCalendarMonth] = useState(() => new Date().getUTCMonth() + 1);
+  const [userDetailTab, setUserDetailTab] = useState<"overview" | "ai-usage">("overview");
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState<string | null>(null);
@@ -487,6 +489,7 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
 
   useEffect(() => {
     setStudyChartRange("7");
+    setUserDetailTab("overview");
     const t = new Date();
     setStudyCalendarYear(t.getUTCFullYear());
     setStudyCalendarMonth(t.getUTCMonth() + 1);
@@ -1291,6 +1294,41 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
           </div>
         </div>
 
+        <div className="flex rounded-lg border border-gray-700 p-0.5 text-xs w-fit mb-5">
+          <button
+            type="button"
+            onClick={() => setUserDetailTab("overview")}
+            className={`rounded-md px-3 py-1.5 transition ${
+              userDetailTab === "overview"
+                ? "bg-gray-700 text-white"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => setUserDetailTab("ai-usage")}
+            className={`rounded-md px-3 py-1.5 transition ${
+              userDetailTab === "ai-usage"
+                ? "bg-gray-700 text-white"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            AI usage
+          </button>
+        </div>
+
+        {userDetailTab === "ai-usage" ? (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
+            <h3 className="text-sm font-semibold mb-3">AI usage log</h3>
+            <UserAiUsageLog
+              userId={selectedUser.id}
+              lifetimeTokensUsed={userAiTokensUsed}
+            />
+          </div>
+        ) : (
+          <>
         {/* Study time by day */}
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -1723,6 +1761,8 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
               );
             })}
           </div>
+        )}
+          </>
         )}
 
         {confirmWipeAll && (

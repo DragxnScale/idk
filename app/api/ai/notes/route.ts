@@ -80,15 +80,19 @@ export async function POST(request: Request) {
   if (overBudget) return overBudget;
 
   const ownerExtra = await getAiOwnerStyleExtra();
+  const notesPrompt = `Generate notes for page ${pageNumber} of the textbook.\n\n${wrapUntrusted(
+    "page text",
+    pageText.slice(0, 6000)
+  )}`;
   const { text: rawNotes, usage } = await generateText({
     model: openai(MODEL),
     system: appendOwnerStyleToSystem(BASE_SYSTEM, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-    prompt: `Generate notes for page ${pageNumber} of the textbook.\n\n${wrapUntrusted(
-      "page text",
-      pageText.slice(0, 6000)
-    )}`,
+    prompt: notesPrompt,
   });
-  await recordAiUsage(user.id, "/api/ai/notes", usage);
+  await recordAiUsage(user.id, "/api/ai/notes", usage, {
+    inputText: notesPrompt,
+    outputText: rawNotes,
+  });
 
   content = stripLatexForAiNotes(rawNotes);
 

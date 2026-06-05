@@ -179,16 +179,20 @@ Rules:
 
   let topics;
   try {
+    const videosPrompt = `Pick the major topics for this reading.\n\n${wrapUntrusted(
+      "reading material",
+      accumulatedText.slice(0, 12_000)
+    )}`;
     const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: topicsSchema,
       system: appendOwnerStyleToSystem(baseTopicSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-      prompt: `Pick the major topics for this reading.\n\n${wrapUntrusted(
-        "reading material",
-        accumulatedText.slice(0, 12_000)
-      )}`,
+      prompt: videosPrompt,
     });
-    await recordAiUsage(user.id, "/api/ai/videos", usage);
+    await recordAiUsage(user.id, "/api/ai/videos", usage, {
+      inputText: videosPrompt,
+      outputText: JSON.stringify(object, null, 2),
+    });
     topics = object.topics;
   } catch (e) {
     console.error("[ai/videos] topic generation failed:", e);

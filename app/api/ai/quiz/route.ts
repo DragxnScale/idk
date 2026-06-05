@@ -226,20 +226,24 @@ QUESTION QUALITY
 
 For chapters with very few formulas, the rules collapse to: one definition per key term, then conceptual application questions. The application-slot rule still applies.`;
 
+  const quizPrompt = `Generate the quiz from the reading material below.\n\n${wrapUntrusted(
+    "reading material",
+    accumulatedText.slice(0, 30000)
+  )}${
+    notesContext
+      ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
+      : ""
+  }`;
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: questionsSchema,
     system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-    prompt: `Generate the quiz from the reading material below.\n\n${wrapUntrusted(
-      "reading material",
-      accumulatedText.slice(0, 30000)
-    )}${
-      notesContext
-        ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
-        : ""
-    }`,
+    prompt: quizPrompt,
   });
-  await recordAiUsage(authUser.id, "/api/ai/quiz", usage);
+  await recordAiUsage(authUser.id, "/api/ai/quiz", usage, {
+    inputText: quizPrompt,
+    outputText: JSON.stringify(object, null, 2),
+  });
 
   // ── Fact-check pass: drop unsupported questions, rewrite fixable ones.
   // Runs against the same source text + notes the generator saw. If the
@@ -259,7 +263,10 @@ For chapters with very few formulas, the rules collapse to: one definition per k
     ownerExtra
   );
   if (verifierUsage) {
-    await recordAiUsage(authUser.id, "/api/ai/quiz/factcheck", verifierUsage);
+    await recordAiUsage(authUser.id, "/api/ai/quiz/factcheck", verifierUsage, {
+      inputText: verifierSourceText,
+      outputText: JSON.stringify({ dropped, fixed, questions: verified }, null, 2),
+    });
   }
   if (dropped > 0 || fixed > 0) {
     console.log(

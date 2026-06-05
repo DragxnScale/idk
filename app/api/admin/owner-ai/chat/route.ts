@@ -75,7 +75,11 @@ export async function POST(request: Request) {
     // Owner chat is super-admin only; no budget gate (owner has no cap) but
     // we still record so the admin dashboard shows the tokens spent.
     if (session.user?.id) {
-      await recordAiUsage(session.user.id, "/api/admin/owner-ai/chat", usage);
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      await recordAiUsage(session.user.id, "/api/admin/owner-ai/chat", usage, {
+        inputText: lastUser?.content ?? JSON.stringify(messages, null, 2),
+        outputText: text,
+      });
     }
     return NextResponse.json({ role: "assistant" as const, content: text });
   } catch (e) {

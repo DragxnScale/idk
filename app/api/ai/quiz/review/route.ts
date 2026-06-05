@@ -95,16 +95,20 @@ Based ONLY on the questions they got wrong, generate:
 
 Do not add review items for topics the student already demonstrated they understand.`;
 
+  const reviewPrompt = `Generate review material targeting the questions below.\n\n${wrapUntrusted(
+    "wrong answers",
+    wrongSummary
+  )}`;
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: reviewSchema,
     system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-    prompt: `Generate review material targeting the questions below.\n\n${wrapUntrusted(
-      "wrong answers",
-      wrongSummary
-    )}`,
+    prompt: reviewPrompt,
   });
-  await recordAiUsage(user.id, "/api/ai/quiz/review", usage);
+  await recordAiUsage(user.id, "/api/ai/quiz/review", usage, {
+    inputText: reviewPrompt,
+    outputText: JSON.stringify(object, null, 2),
+  });
 
   const review = { perfect: false, ...object };
 
