@@ -100,7 +100,7 @@ function LogRow({ log }: { log: UsageLogRow }) {
   );
 }
 
-function SectionBlock({
+function SectionPanel({
   section,
   onLoadMore,
   loadingMore,
@@ -109,41 +109,27 @@ function SectionBlock({
   onLoadMore: (sectionId: string, nextPage: number) => Promise<void>;
   loadingMore: string | null;
 }) {
-  const [expanded, setExpanded] = useState(true);
-
   return (
-    <div className="rounded-xl border border-gray-800 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-950 hover:bg-gray-900/80 transition text-left"
-      >
-        <div>
-          <p className="text-sm font-semibold">{section.label}</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {section.callCount} call{section.callCount !== 1 ? "s" : ""} ·{" "}
-            {section.totalTokens.toLocaleString()} tokens
-          </p>
-        </div>
-        <span className="text-gray-500 text-sm">{expanded ? "−" : "+"}</span>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-3 pt-2 space-y-2 border-t border-gray-800">
-          {section.logs.map((log) => (
-            <LogRow key={log.id} log={log} />
-          ))}
-          {section.hasMore && (
-            <button
-              type="button"
-              disabled={loadingMore === section.id}
-              onClick={() => onLoadMore(section.id, section.page + 1)}
-              className="w-full rounded-lg border border-gray-700 py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-50"
-            >
-              {loadingMore === section.id ? "Loading…" : "Show more"}
-            </button>
-          )}
-        </div>
-      )}
+    <div>
+      <p className="text-xs text-gray-500 mb-3">
+        {section.callCount} call{section.callCount !== 1 ? "s" : ""} ·{" "}
+        {section.totalTokens.toLocaleString()} tokens
+      </p>
+      <div className="space-y-2">
+        {section.logs.map((log) => (
+          <LogRow key={log.id} log={log} />
+        ))}
+        {section.hasMore && (
+          <button
+            type="button"
+            disabled={loadingMore === section.id}
+            onClick={() => onLoadMore(section.id, section.page + 1)}
+            className="w-full rounded-lg border border-gray-700 py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-50"
+          >
+            {loadingMore === section.id ? "Loading…" : "Show more"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -153,10 +139,12 @@ export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState<string | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setActiveSectionId(null);
     try {
       const res = await fetch(`/api/admin/users/${userId}/ai-usage`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -171,6 +159,15 @@ export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!data?.sections.length) return;
+    setActiveSectionId((current) =>
+      current && data.sections.some((s) => s.id === current)
+        ? current
+        : data.sections[0].id
+    );
+  }, [data]);
 
   const loadMore = async (sectionId: string, nextPage: number) => {
     setLoadingMore(sectionId);
@@ -215,20 +212,37 @@ export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
     );
   }
 
+  const activeSection = data.sections.find((s) => s.id === activeSectionId);
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
         Lifetime counter: {lifetimeTokensUsed.toLocaleString()} tokens · {data.totalCalls} logged call
         {data.totalCalls !== 1 ? "s" : ""} ({data.totalTokens.toLocaleString()} tokens in log)
       </p>
-      {data.sections.map((section) => (
-        <SectionBlock
-          key={section.id}
-          section={section}
+      <div className="flex flex-wrap rounded-lg border border-gray-700 p-0.5 text-xs w-fit gap-0.5">
+        {data.sections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => setActiveSectionId(section.id)}
+            className={`rounded-md px-3 py-1.5 transition whitespace-nowrap ${
+              activeSectionId === section.id
+                ? "bg-gray-700 text-white"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+      {activeSection && (
+        <SectionPanel
+          section={activeSection}
           onLoadMore={loadMore}
           loadingMore={loadingMore}
         />
-      ))}
+      )}
     </div>
   );
 }

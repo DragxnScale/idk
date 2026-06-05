@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -61,6 +63,13 @@ function compactTime(minutes: number): string {
   return `${minutes}m`;
 }
 
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return el.isContentEditable;
+}
+
 export interface AdminStudyCalendarProps {
   minutesByDay: Record<string, DayBucket>;
   year: number;
@@ -84,6 +93,8 @@ export function AdminStudyCalendar({
   maxMonth,
   fmtHms,
 }: AdminStudyCalendarProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const monthDays = daysInMonth(year, month, minutesByDay);
   const firstOfMonth = new Date(Date.UTC(year, month - 1, 1));
   const leadPad = firstOfMonth.getUTCDay();
@@ -106,13 +117,41 @@ export function AdminStudyCalendar({
     else onMonthChange(year, month + 1);
   };
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (isTypingTarget(e.target)) return;
+      if (!containerRef.current?.contains(document.activeElement)) return;
+
+      e.preventDefault();
+      if (e.key === "ArrowLeft") {
+        if (!canGoBack) return;
+        if (month === 1) onMonthChange(year - 1, 12);
+        else onMonthChange(year, month - 1);
+      } else {
+        if (!canGoForward) return;
+        if (month === 12) onMonthChange(year + 1, 1);
+        else onMonthChange(year, month + 1);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canGoBack, canGoForward, year, month, onMonthChange]);
+
   const totalMinutes = monthDays.reduce((s, d) => s + d.minutes, 0);
   const totalSessions = monthDays.reduce((s, d) => s + d.sessions, 0);
   const activeDays = monthDays.filter((d) => d.minutes > 0).length;
   const today0 = todayKey();
 
   return (
-    <div>
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      role="group"
+      aria-label={`Study calendar for ${MONTH_NAMES[month - 1]} ${year}. Use arrow keys to change month.`}
+      className="outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 rounded-lg"
+    >
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"
