@@ -343,15 +343,6 @@ export default function DashboardPage() {
             >
               <SuiText page="dashboard" k="btn.newSession" def="New session" as="span" />
             </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              disabled={signingOut}
-              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-              title="Sign out of Bowl Beacon"
-            >
-              {signingOut ? "Signing out…" : "Log out"}
-            </button>
           </div>
         </div>
 
@@ -1019,6 +1010,15 @@ export default function DashboardPage() {
               </span>
             )}
           </button>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:hover:bg-gray-800 transition"
+            title="Sign out of Bowl Beacon"
+          >
+            {signingOut ? "Signing out…" : "Log out"}
+          </button>
         </div>
 
         {/* Message modal */}
@@ -1228,18 +1228,15 @@ function MessageModal({
             return (
               <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+                  className={`max-w-[70%] rounded-xl px-3 py-2 text-sm ${
                     isMe
-                      ? "btn-primary"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-800 text-gray-200"
                   }`}
                 >
-                  {!isMe && (
-                    <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Developer</p>
-                  )}
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   {msg.createdAt && (
-                    <p className={`text-[10px] mt-1 ${isMe ? "text-gray-300 dark:text-gray-600" : "text-gray-400"}`}>
+                    <p className={`text-[10px] mt-1 ${isMe ? "text-blue-200" : "text-gray-500"}`}>
                       {new Date(msg.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   )}
