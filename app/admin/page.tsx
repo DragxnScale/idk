@@ -5,6 +5,7 @@ import { uploadPdfToStorage } from "@/lib/upload-client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
 import { AppUiEditorTab } from "@/components/admin/AppUiEditorTab";
+import { AiContentTab } from "@/components/admin/AiContentTab";
 import { AdminStudyCalendar } from "@/components/admin/AdminStudyCalendar";
 import { UserAiUsageLog } from "@/components/admin/UserAiUsageLog";
 
@@ -128,7 +129,7 @@ interface TocRow {
   endPage: number;
 }
 
-type Tab = "users" | "appUi" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
+type Tab = "users" | "aiContent" | "appUi" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
@@ -384,6 +385,7 @@ export default function AdminPage() {
             {(
               [
                 "users",
+                "aiContent",
                 "appUi",
                 "upload",
                 "catalog",
@@ -401,7 +403,9 @@ export default function AdminPage() {
                     : "border-transparent text-gray-500 hover:text-gray-300"
                 }`}
               >
-                {t === "appUi"
+                {t === "aiContent"
+                  ? "AI Content"
+                  : t === "appUi"
                   ? "App UI"
                   : t === "upload"
                   ? "Upload to Archive"
@@ -422,6 +426,7 @@ export default function AdminPage() {
         </div>
 
         {tab === "users" && <UsersTab isDeveloperMode={isDeveloperMode} />}
+        {tab === "aiContent" && <AiContentTab />}
         {tab === "appUi" && <AppUiEditorTab />}
         {tab === "upload" && <UploadTab />}
         {tab === "catalog" && <CatalogTab />}
