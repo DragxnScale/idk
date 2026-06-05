@@ -23,7 +23,18 @@ export async function GET(req: NextRequest) {
 
   const admin = await isAdmin(user.email ?? "");
 
-  if (admin) {
+  // The dashboard "Message Developer" modal calls this endpoint with
+  // `?asUser=1` because it always wants the per-user transcript shape
+  // — even when the caller happens to be the admin / developer (who
+  // would otherwise get the conversations-list shape below). Without
+  // this branch admins see "No messages yet" in their own dashboard
+  // modal because `data.messages` is undefined in the conversations
+  // response. For admin self-conversations (admin→admin) the fall-
+  // through query below treats `adminId === user.id` and returns the
+  // self-thread, so the modal renders proper bubbles.
+  const asUser = req.nextUrl.searchParams.get("asUser") === "1";
+
+  if (admin && !asUser) {
     const userId = req.nextUrl.searchParams.get("userId");
     if (userId) {
       const rows = await db.query.messages.findMany({

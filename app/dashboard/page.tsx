@@ -1041,6 +1041,10 @@ export default function DashboardPage() {
                 if (res.ok) {
                   setMsgSent(true);
                   setMsgText("");
+                  // Clear the "Message sent" banner after the user has
+                  // had a beat to see it. Keeps the input form visible
+                  // the whole time so they can fire off a follow-up.
+                  setTimeout(() => setMsgSent(false), 2500);
                 } else {
                   const data = await res.json().catch(() => ({}));
                   alert(data.error ?? "Failed to send");
@@ -1202,7 +1206,7 @@ function MessageModal({
   }, []);
 
   useEffect(() => {
-    fetch("/api/messages")
+    fetch("/api/messages?asUser=1")
       .then((r) => (r.ok ? r.json() : { messages: [], currentUserId: null }))
       .then((data: { messages?: { id: string; fromUserId: string; content: string; createdAt: string | null }[]; currentUserId?: string }) => {
         if (data.messages) setHistory(data.messages);
@@ -1248,28 +1252,29 @@ function MessageModal({
         </div>
 
         <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-3">
-          {msgSent ? (
-            <p className="text-sm text-green-600 dark:text-green-400 text-center py-2">Message sent!</p>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={msgText}
-                onChange={(e) => setMsgText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onSend()}
-                placeholder="Type a message…"
-                maxLength={2000}
-                className="flex-1 rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-gray-600"
-              />
-              <button
-                onClick={onSend}
-                disabled={msgSending || !msgText.trim()}
-                className="btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
-              >
-                {msgSending ? "…" : "Send"}
-              </button>
-            </div>
+          {msgSent && (
+            <p className="text-xs text-green-600 dark:text-green-400 text-center pb-2">
+              Message sent
+            </p>
           )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={msgText}
+              onChange={(e) => setMsgText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onSend()}
+              placeholder="Type a message…"
+              maxLength={2000}
+              className="flex-1 rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-gray-600"
+            />
+            <button
+              onClick={onSend}
+              disabled={msgSending || !msgText.trim()}
+              className="btn-primary rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
+            >
+              {msgSending ? "…" : "Send"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
