@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TocEditor } from "@/components/TocEditor";
+import { createDefaultTocRows, tocRowsToRanges } from "@/lib/toc-editor-utils";
 import { uploadPdfToStorage } from "@/lib/upload-client";
 import { pdfjs } from "react-pdf";
 
@@ -602,12 +604,6 @@ function UploadPanel({
 
 /* ── Uploaded Doc Editor ───────────────────────────────────────────── */
 
-interface TocRow {
-  chapter: string;    // user-facing label, e.g. "1" or "Introduction"
-  start: string;      // text input — PDF page number
-  end: string;
-}
-
 function UploadedDocEditor({
   docs,
   onSelect,
@@ -616,35 +612,21 @@ function UploadedDocEditor({
   onSelect: (doc: SelectedDocument) => void;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [tocRows, setTocRows] = useState<TocRow[]>([{ chapter: "", start: "", end: "" }]);
-  const [pageOffset, setPageOffset] = useState("0");
+  const [tocRows, setTocRows] = useState(createDefaultTocRows);
+  const [pageOffset, setPageOffset] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const doc = docs[activeIdx]?.result!;
 
-  function addRow() {
-    setTocRows((prev) => [...prev, { chapter: "", start: "", end: "" }]);
-  }
-
-  function removeRow(i: number) {
-    setTocRows((prev) => prev.filter((_, idx) => idx !== i));
-  }
-
-  function updateRow(i: number, field: keyof TocRow, value: string) {
-    setTocRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+  function resetTocState() {
+    setTocRows(createDefaultTocRows());
+    setPageOffset(0);
+    setSaveError(null);
   }
 
   function buildRanges(): Record<string, [number, number]> | null {
-    const result: Record<string, [number, number]> = {};
-    for (const row of tocRows) {
-      if (!row.chapter.trim()) continue;
-      const s = parseInt(row.start, 10);
-      const e = parseInt(row.end, 10);
-      if (!isNaN(s) && !isNaN(e) && s > 0 && e >= s) {
-        result[row.chapter.trim()] = [s, e];
-      }
-    }
+    const result = tocRowsToRanges(tocRows, pageOffset);
     return Object.keys(result).length > 0 ? result : null;
   }
 
@@ -652,7 +634,7 @@ function UploadedDocEditor({
     setSaving(true);
     setSaveError(null);
     const ranges = skipToc ? null : buildRanges();
-    const offset = parseInt(pageOffset, 10) || 0;
+    const offset = pageOffset;
 
     if (ranges || offset !== 0) {
       try {
@@ -697,7 +679,10 @@ function UploadedDocEditor({
             <button
               key={i}
               type="button"
-              onClick={() => { setActiveIdx(i); setTocRows([{ chapter: "", start: "", end: "" }]); setPageOffset("0"); }}
+              onClick={() => {
+                setActiveIdx(i);
+                resetTocState();
+              }}
               className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${i === activeIdx ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-300 hover:border-gray-500 dark:border-gray-600"}`}
             >
               {it.result!.title}
@@ -714,67 +699,13 @@ function UploadedDocEditor({
           </p>
         </div>
 
-        {/* Page offset */}
-        <div>
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
-            Page offset
-            <span className="ml-1 font-normal text-gray-400">(PDF page 1 = book page 1 + offset, e.g. enter 10 if the book&apos;s page&nbsp;1 is PDF page 11)</span>
-          </label>
-          <input
-            type="number"
-            min={0}
-            value={pageOffset}
-            onChange={(e) => setPageOffset(e.target.value)}
-            className="w-28 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
-            placeholder="0"
-          />
-        </div>
-
-        {/* TOC rows */}
-        <div>
-          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-            Table of contents <span className="font-normal text-gray-400">(PDF page numbers)</span>
-          </p>
-          <div className="space-y-2">
-            {tocRows.map((row, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={row.chapter}
-                  onChange={(e) => updateRow(i, "chapter", e.target.value)}
-                  placeholder="Chapter / title"
-                  className="flex-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                <input
-                  type="number"
-                  value={row.start}
-                  onChange={(e) => updateRow(i, "start", e.target.value)}
-                  placeholder="Start pg"
-                  min={1}
-                  className="w-20 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                <input
-                  type="number"
-                  value={row.end}
-                  onChange={(e) => updateRow(i, "end", e.target.value)}
-                  placeholder="End pg"
-                  min={1}
-                  className="w-20 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800"
-                />
-                {tocRows.length > 1 && (
-                  <button type="button" onClick={() => removeRow(i)} className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
-                )}
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={addRow}
-            className="mt-2 text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 underline underline-offset-2"
-          >
-            + Add row
-          </button>
-        </div>
+        <TocEditor
+          variant="study"
+          rows={tocRows}
+          onChange={setTocRows}
+          pageOffset={pageOffset}
+          onPageOffsetChange={setPageOffset}
+        />
 
         {saveError && <p className="text-xs text-red-500">{saveError}</p>}
 

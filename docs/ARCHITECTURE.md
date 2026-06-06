@@ -640,7 +640,8 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 **Study (`components/study/`)**
 
 - **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`; optional **`initialElapsedSeconds`** for resume (parent remounts via `key`).
-- **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`. After upload completes, shows `UploadedDocEditor` — lets the user enter a per-chapter TOC (chapter label + PDF start/end page) and a page offset; saves to `PATCH /api/documents/[id]`; the chapter data is then available immediately in the session.
+- **`DocumentPicker.tsx`** — Modes: My Drive, upload (multipart Blob client), textbook catalog; PDF.js outline parsing for chapter ranges; yields `SelectedDocument`. After upload completes, shows `UploadedDocEditor` with shared **`TocEditor`** (`components/TocEditor.tsx`, `variant="study"`): book-page chapter rows + page offset, **Edit as JSON** (PDF-page ranges), Enter on End pg adds the next ascending chapter row; `lib/toc-editor-utils.ts` converts rows → PDF `chapterPageRanges` on save via `PATCH /api/documents/[id]`; chapter data is available immediately in the session.
+- **`TocEditor.tsx`** — Shared TOC grid/JSON editor (`variant`: `"admin"` \| `"study"`). Admin catalog/upload and user upload both use it; rows are *book* pages, stored ranges are *PDF* pages after offset.
 - **`PdfViewer.tsx`** — `react-pdf`; zoom, search, TOC, bookmarks/highlights, page visit batching, `onPageText` for AI.
 - **`AiNotesPanel.tsx`** — Generates/displays notes per page; accepts `textbookCatalogId` for shared cache; page numbers shown relative to chapter start.
 - **`QuizView.tsx`** — Steps through questions, tracks wrong answers, calls `onComplete(score, total, wrongAnswers)`.

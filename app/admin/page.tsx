@@ -8,6 +8,8 @@ import { AppUiEditorTab } from "@/components/admin/AppUiEditorTab";
 import { AiContentTab } from "@/components/admin/AiContentTab";
 import { AdminStudyCalendar } from "@/components/admin/AdminStudyCalendar";
 import { UserAiUsageLog } from "@/components/admin/UserAiUsageLog";
+import { TocEditor } from "@/components/TocEditor";
+import { rangesToTocRows, tocRowsToRanges, type TocRow } from "@/lib/toc-editor-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -121,12 +123,6 @@ interface CatalogEntry {
   hidden?: boolean;
   visibleToUserIds?: string[];
   createdAt: string | null;
-}
-
-interface TocRow {
-  label: string;
-  startPage: number;
-  endPage: number;
 }
 
 type Tab = "users" | "aiContent" | "appUi" | "upload" | "catalog" | "messages" | "storage" | "debug" | "owner";
@@ -1993,236 +1989,6 @@ function BanModal({ user, banning, banBlacklist, setBanBlacklist, onCancel, onCo
   );
 }
 
-// ── TOC Editor ────────────────────────────────────────────────────────────
-
-function tocRowsToRanges(rows: TocRow[], offset: number): Record<string, [number, number]> {
-  const ranges: Record<string, [number, number]> = {};
-  for (const row of rows) {
-    if (!row.label.trim()) continue;
-    ranges[row.label.trim()] = [row.startPage + offset, row.endPage + offset];
-  }
-  return ranges;
-}
-
-function rangesToTocRows(
-  ranges: Record<string, [number, number]>,
-  offset: number
-): TocRow[] {
-  return Object.entries(ranges)
-    .sort(([, a], [, b]) => a[0] - b[0])
-    .map(([label, [start, end]]) => ({
-      label,
-      startPage: start - offset,
-      endPage: end - offset,
-    }));
-}
-
-function TocEditor({
-  rows,
-  onChange,
-  pageOffset,
-  onPageOffsetChange,
-}: {
-  rows: TocRow[];
-  onChange: (rows: TocRow[]) => void;
-  pageOffset: number;
-  onPageOffsetChange: (n: number) => void;
-}) {
-  const [showJson, setShowJson] = useState(false);
-  const [jsonDraft, setJsonDraft] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [focusIdx, setFocusIdx] = useState<number | null>(null);
-  const endPageRefs = useRef<Map<number, HTMLInputElement>>(new Map());
-
-  useEffect(() => {
-    if (focusIdx !== null) {
-      const el = endPageRefs.current.get(focusIdx);
-      if (el) el.focus();
-      setFocusIdx(null);
-    }
-  }, [focusIdx, rows.length]);
-
-  function updateRow(idx: number, patch: Partial<TocRow>) {
-    const next = rows.map((r, i) => (i === idx ? { ...r, ...patch } : r));
-    onChange(next);
-  }
-
-  function removeRow(idx: number) {
-    endPageRefs.current.delete(idx);
-    onChange(rows.filter((_, i) => i !== idx));
-  }
-
-  function addRowAfter(idx?: number) {
-    const ref = idx !== undefined ? rows[idx] : rows[rows.length - 1];
-    const prevEnd = ref?.endPage || 0;
-    const nextLabel = String((idx !== undefined ? idx : rows.length) + 2);
-    const newRow: TocRow = { label: nextLabel, startPage: prevEnd ? prevEnd + 1 : 0, endPage: 0 };
-    if (idx !== undefined) {
-      const next = [...rows];
-      next.splice(idx + 1, 0, newRow);
-      onChange(next);
-      setFocusIdx(idx + 1);
-    } else {
-      onChange([...rows, newRow]);
-      setFocusIdx(rows.length);
-    }
-  }
-
-  function openJsonView() {
-    const ranges = tocRowsToRanges(rows, pageOffset);
-    setJsonDraft(JSON.stringify(ranges, null, 2));
-    setJsonError(null);
-    setShowJson(true);
-  }
-
-  function applyJson() {
-    try {
-      const parsed = JSON.parse(jsonDraft);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Must be an object");
-      for (const [k, v] of Object.entries(parsed)) {
-        if (!Array.isArray(v) || v.length !== 2 || typeof v[0] !== "number" || typeof v[1] !== "number") {
-          throw new Error(`Invalid range for "${k}"`);
-        }
-      }
-      const newRows = rangesToTocRows(parsed as Record<string, [number, number]>, pageOffset);
-      onChange(newRows);
-      setShowJson(false);
-    } catch (e) {
-      setJsonError(e instanceof Error ? e.message : "Invalid JSON");
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      {/* Page offset */}
-      <div className="flex items-end gap-4">
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
-            Page Offset
-          </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={pageOffset || ""}
-            onChange={(e) => onPageOffsetChange(Math.max(0, parseInt(e.target.value) || 0))}
-            className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-500"
-          />
-          <p className="text-xs text-gray-600 mt-1">
-            If the book&apos;s page 1 is on PDF page 15, enter <strong className="text-gray-400">14</strong>.
-            Chapter pages below are <em>book</em> pages — the offset converts them to PDF pages automatically.
-          </p>
-        </div>
-      </div>
-
-      {/* Table header */}
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">
-          Chapters ({rows.length})
-        </label>
-        <button
-          type="button"
-          onClick={showJson ? () => setShowJson(false) : openJsonView}
-          className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 transition"
-        >
-          {showJson ? "Visual editor" : "Edit as JSON"}
-        </button>
-      </div>
-
-      {showJson ? (
-        <div className="space-y-2">
-          <textarea
-            value={jsonDraft}
-            onChange={(e) => { setJsonDraft(e.target.value); setJsonError(null); }}
-            rows={Math.min(20, rows.length * 2 + 4)}
-            spellCheck={false}
-            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm font-mono placeholder-gray-600 focus:outline-none focus:border-gray-500 resize-y"
-          />
-          {jsonError && <p className="text-xs text-red-400">{jsonError}</p>}
-          <p className="text-xs text-gray-600">
-            JSON uses <strong className="text-gray-400">PDF page numbers</strong> (offset already applied).
-          </p>
-          <button
-            type="button"
-            onClick={applyJson}
-            className="rounded-lg bg-white text-black px-4 py-1.5 text-xs font-medium hover:bg-gray-200 transition"
-          >
-            Apply JSON
-          </button>
-        </div>
-      ) : (
-        <>
-          {rows.length > 0 && (
-            <div className="rounded-xl border border-gray-800 overflow-x-auto">
-              {/* Column headers */}
-              <div className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-2 bg-gray-800/50 text-xs text-gray-500 uppercase tracking-wide min-w-[350px]">
-                <span>Chapter</span>
-                <span>Start pg</span>
-                <span>End pg</span>
-                <span />
-              </div>
-              <div className="divide-y divide-gray-800">
-                {rows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_90px_90px_36px] gap-2 px-3 py-1.5 items-center min-w-[350px]">
-                    <input
-                      type="text"
-                      value={row.label}
-                      onChange={(e) => updateRow(idx, { label: e.target.value })}
-                      placeholder="e.g. 1 or Introduction"
-                      className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm focus:outline-none focus:border-gray-500"
-                    />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={row.startPage || ""}
-                      onChange={(e) => updateRow(idx, { startPage: parseInt(e.target.value) || 0 })}
-                      placeholder="start"
-                      className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
-                    />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      ref={(el) => { if (el) endPageRefs.current.set(idx, el); else endPageRefs.current.delete(idx); }}
-                      value={row.endPage || ""}
-                      onChange={(e) => updateRow(idx, { endPage: parseInt(e.target.value) || 0 })}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRowAfter(idx); } }}
-                      placeholder="end"
-                      className="rounded border border-gray-700 bg-gray-950 px-2 py-1 text-sm font-mono focus:outline-none focus:border-gray-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeRow(idx)}
-                      className="rounded p-1 text-gray-600 hover:text-red-400 hover:bg-gray-800 transition"
-                      title="Remove chapter"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => addRowAfter()}
-            className="w-full rounded-lg border border-dashed border-gray-700 px-4 py-2 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition"
-          >
-            + Add chapter
-          </button>
-
-          {rows.length > 0 && pageOffset > 0 && (
-            <p className="text-xs text-gray-600">
-              Preview: Chapter &quot;{rows[0].label}&quot; = PDF pages {rows[0].startPage + pageOffset}–{rows[0].endPage + pageOffset}
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 // ── Debug logs (client errors) ──────────────────────────────────────────────
 
 interface DebugLogRow {
@@ -2850,6 +2616,7 @@ function UploadTab() {
               )}
 
               <TocEditor
+                variant="admin"
                 rows={tocRows}
                 onChange={setTocRows}
                 pageOffset={pageOffset}
@@ -2877,6 +2644,7 @@ function UploadTab() {
                   <input type="text" value={isbn} onChange={(e) => setIsbn(e.target.value)} placeholder="ISBN" className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm" />
                 </div>
                 <TocEditor
+                  variant="admin"
                   rows={tocRows}
                   onChange={setTocRows}
                   pageOffset={pageOffset}
@@ -2993,6 +2761,7 @@ function UploadTab() {
             {addToCatalog && (
               <div className="mt-4">
                 <TocEditor
+                  variant="admin"
                   rows={tocRows}
                   onChange={setTocRows}
                   pageOffset={pageOffset}
@@ -3391,6 +3160,7 @@ function CatalogTab() {
             </p>
             <div className="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
               <TocEditor
+                variant="admin"
                 rows={editTocRows}
                 onChange={setEditTocRows}
                 pageOffset={editPageOffset}
