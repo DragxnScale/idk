@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AI_MODEL_PRESETS,
   OWNER_AI_SETTING_KEYS,
+  type AiReasoningMode,
   type OwnerAiSettings,
 } from "@/lib/owner-ai-settings-shared";
 import {
@@ -27,6 +29,16 @@ interface InsightsSummary {
 
 const ANALYZE_USER_MESSAGE =
   "Analyze recent production data and suggest prompt improvements.";
+
+function modelSupportsReasoning(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return (
+    id.startsWith("gpt-5") ||
+    id.startsWith("o1") ||
+    id.startsWith("o3") ||
+    id.startsWith("o4")
+  );
+}
 
 const EMPTY_SETTINGS: OwnerAiSettings = {
   aiOwnerStyle: "",
@@ -102,6 +114,7 @@ function snakePatchesToCamel(
 export function OwnerAiTab() {
   const [settings, setSettings] = useState<OwnerAiSettings>(EMPTY_SETTINGS);
   const [model, setModel] = useState("");
+  const [reasoningMode, setReasoningMode] = useState<AiReasoningMode>("instant");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -132,6 +145,9 @@ export function OwnerAiTab() {
         setSettings((s) => ({ ...s, aiOwnerStyle: data.noteStyleExtra }));
       }
       setModel(data.model ?? "");
+      if (data.reasoningMode === "thinking" || data.reasoningMode === "instant") {
+        setReasoningMode(data.reasoningMode);
+      }
     } finally {
       setLoading(false);
     }
@@ -162,13 +178,21 @@ export function OwnerAiTab() {
       const res = await fetch("/api/admin/owner-ai", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({
+          settings,
+          aiModel: model.trim(),
+          aiReasoningMode: reasoningMode,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setSettings(data.settings ?? settings);
+        if (data.settings) setSettings(data.settings);
+        if (data.model) setModel(data.model);
+        if (data.reasoningMode === "thinking" || data.reasoningMode === "instant") {
+          setReasoningMode(data.reasoningMode);
+        }
         setSaveMsg(
-          "Saved. Applies to notes, quiz, flashcards, velocity, videos, and admin TOC extract."
+          "Saved. Model, reasoning mode, and prompts apply to all AI features."
         );
       } else {
         setSaveMsg(data.error ?? "Save failed");
@@ -325,14 +349,65 @@ export function OwnerAiTab() {
 
   return (
     <div className="space-y-10 max-w-3xl">
-      <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
-        <h2 className="text-sm font-semibold text-white mb-1">AI model</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          All Bowl Beacon AI features use this model (set in code / env).
-        </p>
-        <code className="text-sm text-emerald-400 bg-gray-950 px-2 py-1 rounded border border-gray-800">
-          {model || "—"}
-        </code>
+      <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white mb-1">AI model</h2>
+          <p className="text-xs text-gray-500">
+            Applies to notes, quiz, flashcards, velocity, videos, owner copilot, and
+            admin TOC extract. Saved with <span className="text-gray-400">Save all settings</span>{" "}
+            below.
+          </p>
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Model id</label>
+          <input
+            type="text"
+            list="owner-ai-model-presets"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="gpt-5.4"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 font-mono focus:border-gray-500 focus:outline-none"
+          />
+          <datalist id="owner-ai-model-presets">
+            {AI_MODEL_PRESETS.map((id) => (
+              <option key={id} value={id} />
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-2">Reasoning mode</label>
+          <div className="inline-flex rounded-lg border border-gray-700 p-0.5 bg-gray-950">
+            <button
+              type="button"
+              onClick={() => setReasoningMode("instant")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                reasoningMode === "instant"
+                  ? "bg-white text-gray-950"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Instant
+            </button>
+            <button
+              type="button"
+              onClick={() => setReasoningMode("thinking")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                reasoningMode === "thinking"
+                  ? "bg-white text-gray-950"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Thinking
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">
+            {modelSupportsReasoning(model)
+              ? reasoningMode === "instant"
+                ? "Minimal internal reasoning — faster, lower cost."
+                : "Deeper internal reasoning — slower, often higher quality."
+              : "Reasoning mode applies to GPT-5 and o-series models only; ignored for this model."}
+          </p>
+        </div>
       </section>
 
       <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6 space-y-6">
@@ -396,7 +471,7 @@ export function OwnerAiTab() {
             disabled={saving}
             className="rounded-lg bg-white text-gray-950 px-4 py-2 text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save all settings"}
+            {saving ? "Saving…" : "Save all settings (model + prompts)"}
           </button>
           {saveMsg && <span className="text-xs text-gray-400">{saveMsg}</span>}
         </div>

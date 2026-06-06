@@ -3,7 +3,8 @@ import { generateObject } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt, getAiOwnerExtrasForFeature } from "@/lib/app-settings";
 import {
@@ -739,13 +740,15 @@ SCHEMA — every field is REQUIRED on EVERY question:
           ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
           : ""
       }`;
+      const aiModel = await resolveAiLanguageModel();
       const { object, usage } = await generateObject({
-        model: openai(MODEL),
+        ...aiGenerateOptions(aiModel),
         schema: payloadSchema,
         system: await buildAiSystemPrompt(baseSystem, "velocity"),
         prompt: velocityPrompt,
       });
       await recordAiUsage(user.id, "/api/ai/velocity", usage, {
+        model: aiModel.modelId,
         inputText: velocityPrompt,
         outputText: JSON.stringify(object, null, 2),
       });

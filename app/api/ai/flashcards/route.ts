@@ -3,7 +3,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { flashcards, aiNotes } from "@/lib/db/schema";
@@ -127,13 +128,15 @@ RULES:
       notesSummary.slice(0, 12000)
     )}`;
     const system = await buildAiSystemPrompt(baseSystem, "flashcards");
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: flashcardSchema,
       system,
       prompt: flashcardsPrompt,
     });
     await recordAiUsage(user.id, "/api/ai/flashcards", usage, {
+      model: aiModel.modelId,
       inputText: flashcardsPrompt,
       outputText: JSON.stringify(object, null, 2),
     });

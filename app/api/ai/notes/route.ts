@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { and, eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
@@ -114,12 +115,14 @@ export async function POST(request: Request) {
     "page text",
     pageText.slice(0, 6000)
   )}`;
+  const aiModel = await resolveAiLanguageModel();
   const { text: rawNotes, usage } = await generateText({
-    model: openai(MODEL),
+    ...aiGenerateOptions(aiModel),
     system,
     prompt: notesPrompt,
   });
   await recordAiUsage(user.id, "/api/ai/notes", usage, {
+    model: aiModel.modelId,
     inputText: notesPrompt,
     outputText: rawNotes,
   });

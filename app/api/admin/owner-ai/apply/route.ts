@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSuperOwner } from "@/lib/admin";
-import { MODEL } from "@/lib/ai";
+import { getAiModelSettings } from "@/lib/ai-model-config";
 import { getOwnerAiSettings, patchOwnerAiSettings } from "@/lib/app-settings";
 
 export async function POST(request: Request) {
@@ -29,9 +29,10 @@ export async function POST(request: Request) {
 
   try {
     const settings = await patchOwnerAiSettings(normalized);
+    const { modelId } = await getAiModelSettings();
     return NextResponse.json({
       ok: true,
-      model: MODEL,
+      model: modelId,
       settings,
     });
   } catch (e) {
@@ -48,5 +49,6 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const settings = await getOwnerAiSettings();
-  return NextResponse.json({ model: MODEL, settings });
+  const { modelId } = await getAiModelSettings();
+  return NextResponse.json({ model: modelId, settings });
 }

@@ -12,7 +12,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { quizzes } from "@/lib/db/schema";
@@ -99,13 +100,15 @@ Do not add review items for topics the student already demonstrated they underst
     wrongSummary
   )}`;
   const system = await buildAiSystemPrompt(baseSystem, "quiz");
+  const aiModel = await resolveAiLanguageModel();
   const { object, usage } = await generateObject({
-    model: openai(MODEL),
+    ...aiGenerateOptions(aiModel),
     schema: reviewSchema,
     system,
     prompt: reviewPrompt,
   });
   await recordAiUsage(user.id, "/api/ai/quiz/review", usage, {
+    model: aiModel.modelId,
     inputText: reviewPrompt,
     outputText: JSON.stringify(object, null, 2),
   });

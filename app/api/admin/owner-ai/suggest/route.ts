@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { requireSuperOwner } from "@/lib/admin";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { isAiConfigured } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { getOwnerAiSettings } from "@/lib/app-settings";
 import {
   buildOwnerAnalysisAddendum,
@@ -36,8 +37,9 @@ export async function POST() {
     const systemPrompt =
       buildOwnerChatSystemPrompt(settings) + buildOwnerAnalysisAddendum();
 
+    const aiModel = await resolveAiLanguageModel();
     const { text, usage } = await generateText({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -46,6 +48,7 @@ export async function POST() {
 
     if (session.user?.id) {
       await recordAiUsage(session.user.id, "/api/admin/owner-ai/suggest", usage, {
+        model: aiModel.modelId,
         inputText: userMessage.slice(0, 8000),
         outputText: text,
       });

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireSuperOwner } from "@/lib/admin";
-import { MODEL } from "@/lib/ai";
+import {
+  getAiModelSettings,
+  patchAiModelSettings,
+} from "@/lib/ai-model-config";
+import { AI_MODEL_PRESETS } from "@/lib/owner-ai-settings-shared";
 import {
   getOwnerAiSettings,
   patchOwnerAiSettingsFromFields,
@@ -8,9 +12,12 @@ import {
   type OwnerAiSettingsPatch,
 } from "@/lib/app-settings";
 
-function settingsToResponse(settings: OwnerAiSettings) {
+async function settingsToResponse(settings: OwnerAiSettings) {
+  const modelSettings = await getAiModelSettings();
   return {
-    model: MODEL,
+    model: modelSettings.modelId,
+    reasoningMode: modelSettings.reasoningMode,
+    modelPresets: AI_MODEL_PRESETS,
     settings,
     /** @deprecated use settings.aiOwnerStyle */
     noteStyleExtra: settings.aiOwnerStyle,
@@ -24,7 +31,7 @@ export async function GET() {
   }
 
   const settings = await getOwnerAiSettings();
-  return NextResponse.json(settingsToResponse(settings));
+  return NextResponse.json(await settingsToResponse(settings));
 }
 
 export async function PATCH(request: Request) {
@@ -36,6 +43,18 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
 
   const patch: OwnerAiSettingsPatch = {};
+  const modelPatch: { modelId?: string; reasoningMode?: string } = {};
+
+  if (typeof body.aiModel === "string" || typeof body.model === "string") {
+    modelPatch.modelId =
+      typeof body.aiModel === "string" ? body.aiModel : body.model;
+  }
+  if (typeof body.aiReasoningMode === "string") {
+    modelPatch.reasoningMode = body.aiReasoningMode;
+  }
+  if (typeof body.reasoningMode === "string") {
+    modelPatch.reasoningMode = body.reasoningMode;
+  }
 
   if (typeof body.noteStyleExtra === "string") {
     patch.aiOwnerStyle = body.noteStyleExtra;
@@ -61,13 +80,27 @@ export async function PATCH(request: Request) {
     if (typeof s.aiVideosExtra === "string") patch.aiVideosExtra = s.aiVideosExtra;
   }
 
-  if (Object.keys(patch).length === 0) {
+  const hasModelPatch =
+    modelPatch.modelId !== undefined || modelPatch.reasoningMode !== undefined;
+
+  if (Object.keys(patch).length === 0 && !hasModelPatch) {
     return NextResponse.json({ error: "No settings to update" }, { status: 400 });
   }
 
   try {
-    const settings = await patchOwnerAiSettingsFromFields(patch);
-    return NextResponse.json({ ok: true, ...settingsToResponse(settings) });
+    if (hasModelPatch) {
+      await patchAiModelSettings({
+        ...(modelPatch.modelId !== undefined ? { modelId: modelPatch.modelId } : {}),
+        ...(modelPatch.reasoningMode === "instant" || modelPatch.reasoningMode === "thinking"
+          ? { reasoningMode: modelPatch.reasoningMode }
+          : {}),
+      });
+    }
+    const settings =
+      Object.keys(patch).length > 0
+        ? await patchOwnerAiSettingsFromFields(patch)
+        : await getOwnerAiSettings();
+    return NextResponse.json({ ok: true, ...(await settingsToResponse(settings)) });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Save failed" },

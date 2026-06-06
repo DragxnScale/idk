@@ -4,8 +4,11 @@ const apiKey = process.env.OPENAI_API_KEY;
 
 export const openai = createOpenAI({ apiKey: apiKey ?? "" });
 
-/** OpenAI chat model for all AI features (notes, quiz, videos, owner chat). */
-export const MODEL = "gpt-5.4";
+/** Default model when no owner override is stored in app_settings. */
+export const DEFAULT_MODEL = "gpt-5.4";
+
+/** @deprecated Use resolveAiLanguageModel() — kept for fallbacks. */
+export const MODEL = DEFAULT_MODEL;
 
 export function isAiConfigured(): boolean {
   return Boolean(apiKey);

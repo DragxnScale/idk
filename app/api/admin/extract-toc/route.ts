@@ -4,13 +4,8 @@ import { z } from "zod";
 import { extractText, getDocumentProxy } from "unpdf";
 import { requireAdmin } from "@/lib/admin";
 import { getAppUser } from "@/lib/app-user";
-import {
-  openai,
-  MODEL,
-  isAiConfigured,
-  wrapUntrusted,
-  UNTRUSTED_INPUT_GUARD,
-} from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 import { fetchPdf } from "@/lib/storage-backend";
@@ -295,13 +290,15 @@ export async function POST(request: Request) {
 
 ${wrapUntrusted("pdf front matter", pageText.slice(0, TOC_TEXT_CHAR_LIMIT))}`;
   try {
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: tocSchema,
       system: await buildAiSystemPrompt(SYSTEM_PROMPT, "global"),
       prompt: tocPrompt,
     });
     await recordAiUsage(user.id, "/api/admin/extract-toc", usage, {
+      model: aiModel.modelId,
       inputText: tocPrompt,
       outputText: JSON.stringify(object, null, 2),
     });

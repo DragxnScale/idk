@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, aiUsageLogs } from "@/lib/db/schema";
 import { randomUUID } from "crypto";
-import { MODEL } from "@/lib/ai";
+import { DEFAULT_MODEL } from "@/lib/ai";
 
 /**
  * Fallback AI token budget used when a user has no per-user limit set
@@ -138,7 +138,7 @@ export async function recordAiUsage(
 ): Promise<void> {
   const opts: RecordAiUsageMeta =
     typeof meta === "string" ? { model: meta } : meta ?? {};
-  const model = opts.model ?? MODEL;
+  const model = opts.model ?? DEFAULT_MODEL;
   const { prompt, completion, total } = normaliseUsage(usage);
   if (total <= 0) return;
   try {

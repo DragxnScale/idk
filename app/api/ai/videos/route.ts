@@ -26,13 +26,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import {
-  openai,
-  MODEL,
-  isAiConfigured,
-  wrapUntrusted,
-  UNTRUSTED_INPUT_GUARD,
-} from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
@@ -182,13 +177,15 @@ Rules:
       "reading material",
       accumulatedText.slice(0, 12_000)
     )}`;
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: topicsSchema,
       system: await buildAiSystemPrompt(baseTopicSystem, "videos"),
       prompt: videosPrompt,
     });
     await recordAiUsage(user.id, "/api/ai/videos", usage, {
+      model: aiModel.modelId,
       inputText: videosPrompt,
       outputText: JSON.stringify(object, null, 2),
     });

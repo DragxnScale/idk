@@ -20,13 +20,8 @@
  */
 import { generateObject } from "ai";
 import { z } from "zod";
-import {
-  openai,
-  MODEL,
-  isAiConfigured,
-  wrapUntrusted,
-  UNTRUSTED_INPUT_GUARD,
-} from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import type { AiUsageShape } from "@/lib/ai-usage";
 
 /** Per-question fact-check verdict. Flat schema (no oneOf) so OpenAI
@@ -124,8 +119,9 @@ export async function factCheckQuizQuestions(
   }));
 
   try {
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: factCheckResponseSchema,
       system:
         VERIFIER_BASE_SYSTEM +
@@ -243,8 +239,9 @@ export async function factCheckVelocityQuestions(
   }));
 
   try {
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: factCheckResponseSchema,
       system:
         VERIFIER_BASE_SYSTEM +
@@ -374,8 +371,9 @@ Output:
 - "reason" = one short sentence explaining your conclusion, plain language. If you flip the verdict, name the specific acceptance rule that applies (e.g. "spoken Greek-letter name of the symbol χ", "more-specific textbook term electrolysis").`;
 
   try {
+    const aiModel = await resolveAiLanguageModel();
     const { object, usage } = await generateObject({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       schema: selfCheckSchema,
       system: system + UNTRUSTED_INPUT_GUARD,
       prompt: `Question: ${args.question}

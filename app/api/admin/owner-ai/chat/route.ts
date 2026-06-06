@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { requireSuperOwner } from "@/lib/admin";
-import { openai, MODEL, isAiConfigured } from "@/lib/ai";
+import { isAiConfigured } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { getOwnerAiSettings } from "@/lib/app-settings";
 import { buildOwnerChatSystemPrompt } from "@/lib/owner-ai-context";
 import { recordAiUsage } from "@/lib/ai-usage";
@@ -54,13 +55,15 @@ export async function POST(request: Request) {
       { role: "system", content: systemPrompt },
       ...messages.filter((m) => m.role !== "system"),
     ];
+    const aiModel = await resolveAiLanguageModel();
     const { text, usage } = await generateText({
-      model: openai(MODEL),
+      ...aiGenerateOptions(aiModel),
       messages: messagesWithGuard,
     });
     if (session.user?.id) {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       await recordAiUsage(session.user.id, "/api/admin/owner-ai/chat", usage, {
+        model: aiModel.modelId,
         inputText: lastUser?.content ?? JSON.stringify(messages, null, 2),
         outputText: text,
       });

@@ -92,7 +92,8 @@ High-level map (only meaningful directories and notable files).
 │   └── focus/                    # Visibility, fullscreen, override / exit password
 ├── lib/
 │   ├── auth.ts                   # NextAuth options + auth() JWT-from-cookie
-│   ├── ai.ts                     # OpenAI client, MODEL id ("gpt-5.4"), isAiConfigured()
+│   ├── ai.ts                     # OpenAI client, DEFAULT_MODEL fallback ("gpt-5.4"), isAiConfigured()
+│   ├── ai-model-config.ts        # getAiModelSettings(), resolveAiLanguageModel(), reasoning instant/thinking
 │   ├── ai-notes-render.ts        # stripLatexForAiNotes(), aiNoteContentToHtml()
 │   ├── document-ai-cache.ts      # resolveDocumentFromSession(), parsePagesFromAccumulatedText(), assertDocumentOwner()
 │   ├── app-settings.ts           # Owner AI settings (app_settings), buildAiSystemPrompt()
@@ -413,7 +414,7 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |
 | GET | `/api/admin/debug-logs` | **Super-owner:** `userLogs` + `devLogs` (`limit` per list). |
 | POST | `/api/admin/impersonate` | Set/clear admin **view-as** cookie. |
-| GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set all Owner AI `app_settings` (`ai_product_context`, `ai_owner_style`, per-feature `ai_*_extra` keys) + active `MODEL`. Legacy field `noteStyleExtra` aliases `ai_owner_style`. |
+| GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set Owner AI prompt `app_settings` + runtime model (`ai_model`, `ai_reasoning_mode`: `instant` \| `thinking`). Returns `{ model, reasoningMode, modelPresets, settings }`. Legacy `noteStyleExtra` aliases `ai_owner_style`. |
 | POST | `/api/admin/owner-ai/apply` | Super-owner: apply copilot proposal patches `{ patches: { ai_owner_style: "…", … } }`; returns updated settings. |
 | POST | `/api/admin/owner-ai/chat` | Super-owner: context-aware copilot (`docs/AI_OWNER_CONTEXT.md` + current settings injected); may return `owner_ai_proposal` JSON for one-click Apply. |
 | GET | `/api/admin/owner-ai/insights` | Super-owner: production snapshot — AI usage samples/totals (30d), velocity bank reports, AI Content counts, recent AI-route client errors (~12k char budget). |
@@ -447,7 +448,7 @@ The **flashcards** table doubles as the SRS card store via the FSRS-4.5 columns 
 
 - **`OPENAI_API_KEY`**: required for AI routes; absence yields **503**.
 - **`openai`**: `createOpenAI` from `@ai-sdk/openai`.
-- **`MODEL`**: currently `"gpt-5.4"` — change here to swap globally.
+- **Model selection**: `app_settings.ai_model` (owner-editable in Admin → Owner AI; default `DEFAULT_MODEL` = `"gpt-5.4"` in `lib/ai.ts`). **`ai_reasoning_mode`**: `instant` → minimal/`none` reasoning effort; `thinking` → `high` (GPT-5 / o-series only; ignored for other models). Resolved per request via `resolveAiLanguageModel()`.
 - **`isAiConfigured()`**: boolean guard used by all AI routes.
 
 ### 6.1b Per-user AI token budgets (`lib/ai-usage.ts`)
@@ -497,7 +498,8 @@ Schema notes: every verdict is a flat object (no `oneOf`/discriminated union —
 - **Owner copilot** (`lib/owner-ai-context.ts`): loads `docs/AI_OWNER_CONTEXT.md` into chat system prompt; proposals parsed via `lib/owner-ai-proposal.ts`.
 - **Production insights** (`lib/owner-ai-insights.ts`): aggregates last-30-day `ai_usage_logs` (2 samples per feature section, truncated audit text), top velocity bank reports, `fetchAiContentCounts()`, and recent `client_error_logs` on `/api/ai/*` routes. Serialized payload capped at ~12k chars for LLM context.
 - **Analyze & suggest** (`POST /api/admin/owner-ai/suggest`): server builds analysis user message via `formatInsightsForAnalysis()`; system prompt adds `buildOwnerAnalysisAddendum()`; same `owner_ai_proposal` Apply flow as chat.
-- Admin panel **Owner AI** tab: edit all settings, copilot chat, **Analyze & suggest**, collapsible production snapshot (`GET /api/admin/owner-ai/insights`), **Apply** on proposed patches (`POST /api/admin/owner-ai/apply`).
+- **Runtime model** (`lib/ai-model-config.ts`): `ai_model` + `ai_reasoning_mode` in `app_settings`; all `generateText` / `generateObject` calls use `resolveAiLanguageModel()` + OpenAI `reasoningEffort` when supported.
+- Admin panel **Owner AI** tab: edit model id + instant/thinking toggle, prompt settings, copilot chat, **Analyze & suggest**, collapsible production snapshot (`GET /api/admin/owner-ai/insights`), **Apply** on proposed patches (`POST /api/admin/owner-ai/apply`).
 
 ### 6.3 Routes
 
@@ -629,7 +631,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | `/settings` | User settings (includes quiz question min/max). |
 | `/admin` | Admin dashboard (guarded; **Settings UI** tab for global copy/typography; **Debug log** / **Owner AI** super-owner only). |
 
-- **Owner AI tab** (`components/admin/OwnerAiTab.tsx`) — super-owner only. **Product context** + **global style** + per-feature instruction textareas (Notes, Quiz, Flashcards, Velocity, Videos); **Save all** → `PATCH /api/admin/owner-ai`. **Copilot chat** uses injected `docs/AI_OWNER_CONTEXT.md` and live settings; assistant may emit `{"type":"owner_ai_proposal","patches":{…},"summary":"…"}` — owner clicks **Apply changes** → `POST /api/admin/owner-ai/apply`. **Analyze & suggest** → `POST /api/admin/owner-ai/suggest` (shows short user bubble, full data stays server-side). **Production snapshot** (collapsed by default) → `GET /api/admin/owner-ai/insights` for 30-day token totals, content counts, and velocity report count. Model id shown read-only from `lib/ai.ts`.
+- **Owner AI tab** (`components/admin/OwnerAiTab.tsx`) — super-owner only. **Model id** (preset datalist or custom) + **Instant / Thinking** reasoning toggle; **product context** + **global style** + per-feature instruction textareas; **Save all (model + prompts)** → `PATCH /api/admin/owner-ai`. **Copilot chat** uses injected `docs/AI_OWNER_CONTEXT.md` and live settings; assistant may emit `{"type":"owner_ai_proposal","patches":{…},"summary":"…"}` — owner clicks **Apply changes** → `POST /api/admin/owner-ai/apply`. **Analyze & suggest** → `POST /api/admin/owner-ai/suggest`. **Production snapshot** → `GET /api/admin/owner-ai/insights`.
 
 Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error` (`kind: user`); **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`). Owner feature notes use **`reportDevDebug`** from `lib/dev-debug.ts` → `/api/debug/dev-log`.
 

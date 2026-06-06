@@ -1,5 +1,20 @@
 /** Client-safe Owner AI settings types and keys (no DB imports). */
 
+export const AI_MODEL_SETTING_KEY = "ai_model";
+export const AI_REASONING_MODE_SETTING_KEY = "ai_reasoning_mode";
+
+export const AI_MODEL_PRESETS = [
+  "gpt-5.4",
+  "gpt-5.2",
+  "gpt-5.1",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "o4-mini",
+  "o3-mini",
+] as const;
+
+export type AiReasoningMode = "instant" | "thinking";
+
 export const OWNER_AI_SETTING_KEYS = {
   aiOwnerStyle: "ai_owner_style",
   aiProductContext: "ai_product_context",

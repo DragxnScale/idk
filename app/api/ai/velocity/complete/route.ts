@@ -3,7 +3,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
@@ -201,13 +202,15 @@ Keep everything short and actionable. No filler.`;
       summary
     )}\n\nWrong answers: ${wrong.length}.`;
     try {
+      const aiModel = await resolveAiLanguageModel();
       const { object, usage } = await generateObject({
-        model: openai(MODEL),
+        ...aiGenerateOptions(aiModel),
         schema: reviewSchema,
         system: await buildAiSystemPrompt(baseSystem, "velocity"),
         prompt: completePrompt,
       });
       await recordAiUsage(user.id, "/api/ai/velocity/complete", usage, {
+        model: aiModel.modelId,
         inputText: completePrompt,
         outputText: JSON.stringify(object, null, 2),
       });

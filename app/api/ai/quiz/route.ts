@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { isAiConfigured, wrapUntrusted } from "@/lib/ai";
+import { aiGenerateOptions, resolveAiLanguageModel } from "@/lib/ai-model-config";
 import { db } from "@/lib/db";
 import { buildAiSystemPrompt, getAiOwnerExtrasForFeature } from "@/lib/app-settings";
 import { quizzes, aiNotes, users, documentQuizQuestions } from "@/lib/db/schema";
@@ -331,13 +332,15 @@ PAGE TAGGING: Every page in the reading is demarcated by a "[Page N]" marker (1-
   }`;
   const system = await buildAiSystemPrompt(baseSystem, "quiz");
   const ownerExtras = await getAiOwnerExtrasForFeature("quiz");
+  const aiModel = await resolveAiLanguageModel();
   const { object, usage } = await generateObject({
-    model: openai(MODEL),
+    ...aiGenerateOptions(aiModel),
     schema: questionsSchema,
     system,
     prompt: quizPrompt,
   });
   await recordAiUsage(authUser.id, "/api/ai/quiz", usage, {
+    model: aiModel.modelId,
     inputText: quizPrompt,
     outputText: JSON.stringify(object, null, 2),
   });
