@@ -384,7 +384,7 @@ export function OwnerAiTab() {
             list="owner-ai-model-presets"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="gpt-5.4"
+            placeholder="gpt-5.5"
             className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 font-mono focus:border-gray-500 focus:outline-none"
           />
           <datalist id="owner-ai-model-presets">

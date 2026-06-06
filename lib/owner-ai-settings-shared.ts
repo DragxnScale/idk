@@ -3,14 +3,28 @@
 export const AI_MODEL_SETTING_KEY = "ai_model";
 export const AI_REASONING_MODE_SETTING_KEY = "ai_reasoning_mode";
 
+/** Chat / reasoning models supported by generateText & generateObject (not image/audio-only). */
 export const AI_MODEL_PRESETS = [
+  "gpt-5.5",
+  "gpt-5.5-pro",
   "gpt-5.4",
+  "gpt-5.4-pro",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
   "gpt-5.2",
   "gpt-5.1",
+  "gpt-5.1-codex-max",
   "gpt-4.1",
   "gpt-4.1-mini",
+  "gpt-4.1-nano",
+  "gpt-4o",
+  "gpt-4o-mini",
   "o4-mini",
+  "o3",
   "o3-mini",
+  "o3-pro",
+  "o1",
+  "o1-mini",
 ] as const;
 
 export type AiReasoningMode = "instant" | "thinking";

@@ -92,7 +92,7 @@ High-level map (only meaningful directories and notable files).
 │   └── focus/                    # Visibility, fullscreen, override / exit password
 ├── lib/
 │   ├── auth.ts                   # NextAuth options + auth() JWT-from-cookie
-│   ├── ai.ts                     # OpenAI client, DEFAULT_MODEL fallback ("gpt-5.4"), isAiConfigured()
+│   ├── ai.ts                     # OpenAI client, DEFAULT_MODEL fallback ("gpt-5.5"), isAiConfigured()
 │   ├── ai-model-config.ts        # getAiModelSettings(), resolveAiLanguageModel(), reasoning instant/thinking
 │   ├── ai-notes-render.ts        # stripLatexForAiNotes(), aiNoteContentToHtml()
 │   ├── document-ai-cache.ts      # resolveDocumentFromSession(), parsePagesFromAccumulatedText(), assertDocumentOwner()
@@ -448,7 +448,7 @@ The **flashcards** table doubles as the SRS card store via the FSRS-4.5 columns 
 
 - **`OPENAI_API_KEY`**: required for AI routes; absence yields **503**.
 - **`openai`**: `createOpenAI` from `@ai-sdk/openai`.
-- **Model selection**: `app_settings.ai_model` (owner-editable in Admin → Owner AI; default `DEFAULT_MODEL` = `"gpt-5.4"` in `lib/ai.ts`). **`ai_reasoning_mode`**: `instant` → minimal/`none` reasoning effort; `thinking` → `high` (GPT-5 / o-series only; ignored for other models). Resolved per request via `resolveAiLanguageModel()`.
+- **Model selection**: `app_settings.ai_model` (owner-editable in Admin → Owner AI; preset list in `AI_MODEL_PRESETS`; default `DEFAULT_MODEL` = `"gpt-5.5"` in `lib/ai.ts`). **`ai_reasoning_mode`**: `instant` → `none`/`minimal` reasoning effort; `thinking` → `high` (GPT-5 / o-series only; ignored for other models). Resolved per request via `resolveAiLanguageModel()`.
 - **`isAiConfigured()`**: boolean guard used by all AI routes.
 
 ### 6.1b Per-user AI token budgets (`lib/ai-usage.ts`)

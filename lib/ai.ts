@@ -5,7 +5,7 @@ const apiKey = process.env.OPENAI_API_KEY;
 export const openai = createOpenAI({ apiKey: apiKey ?? "" });
 
 /** Default model when no owner override is stored in app_settings. */
-export const DEFAULT_MODEL = "gpt-5.4";
+export const DEFAULT_MODEL = "gpt-5.5";
 
 /** @deprecated Use resolveAiLanguageModel() — kept for fallbacks. */
 export const MODEL = DEFAULT_MODEL;

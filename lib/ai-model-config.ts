@@ -36,6 +36,14 @@ export function modelSupportsReasoning(modelId: string): boolean {
   );
 }
 
+function gpt5SupportsReasoningNone(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  if (!id.startsWith("gpt-5")) return false;
+  const minor = id.match(/^gpt-5\.(\d+)/)?.[1];
+  if (!minor) return true;
+  return parseInt(minor, 10) >= 1;
+}
+
 /** Map owner-facing instant/thinking toggle to OpenAI reasoningEffort. */
 export function reasoningEffortForMode(
   mode: AiReasoningMode,
@@ -44,7 +52,7 @@ export function reasoningEffortForMode(
   if (!modelSupportsReasoning(modelId)) return undefined;
   if (mode === "instant") {
     const id = modelId.toLowerCase();
-    if (id === "gpt-5.4" || /^gpt-5\.[1-9]/.test(id)) return "none";
+    if (gpt5SupportsReasoningNone(id)) return "none";
     if (id.startsWith("gpt-5")) return "minimal";
     return "low";
   }
