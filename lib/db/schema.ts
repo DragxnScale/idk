@@ -329,6 +329,32 @@ export const publicNotes = sqliteTable("public_notes", {
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
 
+/** Per-upload notes cache — keyed by document + page (mirrors public_notes for catalog). */
+export const documentNotes = sqliteTable("document_notes", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id")
+    .notNull()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull(),
+  content: text("content").notNull(),
+  promptVersion: integer("prompt_version").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
+/** Reusable quiz question bank for uploaded PDFs — keyed by document + page. */
+export const documentQuizQuestions = sqliteTable("document_quiz_questions", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id")
+    .notNull()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  /** 1-indexed page; 0 = unknown. */
+  pageIndex: integer("page_index").notNull().default(0),
+  /** { question, options, correctIndex, explanation, pageIndex? } */
+  questionJson: text("question_json").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
 // ── Global site config (single-row, id always = 1) ──────────────────────────
 
 export const globalConfig = sqliteTable("global_config", {
@@ -344,6 +370,10 @@ export const flashcards = sqliteTable("flashcards", {
   sessionId: text("session_id")
     .notNull()
     .references(() => studySessions.id, { onDelete: "cascade" }),
+  /** Upload cache key — cards with the same document_id share SRS across sessions. */
+  documentId: text("document_id").references(() => documents.id, {
+    onDelete: "cascade",
+  }),
   front: text("front").notNull(),    // term or question
   back: text("back").notNull(),      // definition or answer
   pageNumber: integer("page_number"),

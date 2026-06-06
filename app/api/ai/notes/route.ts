@@ -6,8 +6,9 @@ import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } f
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { stripLatexForAiNotes } from "@/lib/ai-notes-render";
-import { aiNotes, publicNotes } from "@/lib/db/schema";
+import { aiNotes, documentNotes, publicNotes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
+import { assertDocumentOwner } from "@/lib/document-ai-cache";
 
 /** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
 export const maxDuration = 60;
@@ -20,6 +21,9 @@ export const maxDuration = 60;
  */
 const PUBLIC_NOTE_PROMPT_VERSION = 1;
 
+/** Bump when upload document-notes prompt changes (invalidates document_notes cache). */
+const DOCUMENT_NOTE_PROMPT_VERSION = 1;
+
 const BASE_SYSTEM = `You are a study assistant. Given text from a textbook page, produce concise, well-organized study notes. Use bullet points. Highlight key terms in **bold**. Keep it under 300 words. Focus on the most important concepts, definitions, and formulas.
 
 Never use LaTeX or math typesetting: no \\( \\), \\[ \\], $ delimiters, \\text{}, \\frac, or similar. Write units and equations in plain text (e.g. "1 in = 2.54 cm", "F = ma").`;
@@ -31,11 +35,12 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { sessionId, pageNumber, pageText, textbookCatalogId } = body as {
+  const { sessionId, pageNumber, pageText, textbookCatalogId, documentId } = body as {
     sessionId: string;
     pageNumber: number;
     pageText: string;
     textbookCatalogId?: string;
+    documentId?: string;
   };
 
   if (!sessionId || !pageText) {
@@ -55,7 +60,6 @@ export async function POST(request: Request) {
     });
 
     if (cached) {
-      // Cache hit — save to user session without calling OpenAI
       const id = crypto.randomUUID();
       await db.insert(aiNotes).values({
         id,
@@ -65,6 +69,32 @@ export async function POST(request: Request) {
         createdAt: new Date(),
       });
       return NextResponse.json({ id, pageNumber, content: cached.content });
+    }
+  }
+
+  // ── Check document notes cache for uploads ───────────────────────────
+  if (documentId && !textbookCatalogId) {
+    const owned = await assertDocumentOwner(documentId, user.id);
+    if (owned) {
+      const cached = await db.query.documentNotes.findFirst({
+        where: and(
+          eq(documentNotes.documentId, documentId),
+          eq(documentNotes.pageNumber, pageNumber),
+          eq(documentNotes.promptVersion, DOCUMENT_NOTE_PROMPT_VERSION)
+        ),
+      });
+
+      if (cached) {
+        const id = crypto.randomUUID();
+        await db.insert(aiNotes).values({
+          id,
+          sessionId,
+          pageNumber,
+          content: cached.content,
+          createdAt: new Date(),
+        });
+        return NextResponse.json({ id, pageNumber, content: cached.content });
+      }
     }
   }
 
@@ -109,8 +139,6 @@ export async function POST(request: Request) {
   // ── Populate public cache for catalog textbooks ─────────────────────
   if (textbookCatalogId) {
     const now = new Date();
-    // Use insert-or-replace to handle the rare race condition where two
-    // users hit the same page simultaneously.
     const existingPublic = await db.query.publicNotes.findFirst({
       where: and(
         eq(publicNotes.textbookCatalogId, textbookCatalogId),
@@ -132,6 +160,40 @@ export async function POST(request: Request) {
         createdAt: now,
         updatedAt: now,
       });
+    }
+  }
+
+  // ── Populate document cache for uploads ─────────────────────────────
+  if (documentId && !textbookCatalogId) {
+    const owned = await assertDocumentOwner(documentId, user.id);
+    if (owned) {
+      const now = new Date();
+      const existingDoc = await db.query.documentNotes.findFirst({
+        where: and(
+          eq(documentNotes.documentId, documentId),
+          eq(documentNotes.pageNumber, pageNumber)
+        ),
+      });
+      if (existingDoc) {
+        await db
+          .update(documentNotes)
+          .set({
+            content,
+            promptVersion: DOCUMENT_NOTE_PROMPT_VERSION,
+            updatedAt: now,
+          })
+          .where(eq(documentNotes.id, existingDoc.id));
+      } else {
+        await db.insert(documentNotes).values({
+          id: crypto.randomUUID(),
+          documentId,
+          pageNumber,
+          content,
+          promptVersion: DOCUMENT_NOTE_PROMPT_VERSION,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
   }
 

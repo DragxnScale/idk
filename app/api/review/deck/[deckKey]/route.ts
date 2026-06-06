@@ -109,11 +109,12 @@ export async function PATCH(request: Request, { params }: Params) {
       SELECT 1 AS ok
       FROM flashcards f
       INNER JOIN study_sessions ss ON ss.id = f.session_id
-      INNER JOIN session_content sc ON sc.session_id = ss.id
-      WHERE ss.user_id = ? AND sc.document_id = ?
+      LEFT JOIN session_content sc ON sc.session_id = ss.id
+      WHERE (ss.user_id = ? AND sc.document_id = ?)
+         OR f.document_id = ?
       LIMIT 1
     `,
-    args: [user.id, documentId],
+    args: [user.id, documentId, documentId],
   });
   if (ownershipRes.rows.length === 0) {
     // 404 (not 403) so we don't leak existence of someone else's deck.

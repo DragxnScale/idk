@@ -1746,6 +1746,7 @@ function StudySessionInner() {
               currentPage={currentPage}
               startPage={startPage}
               textbookCatalogId={selectedDoc?.type === "textbook" ? selectedDoc.documentId : undefined}
+              documentId={selectedDoc?.type === "upload" ? selectedDoc.documentId : undefined}
             />
           </aside>
         </div>

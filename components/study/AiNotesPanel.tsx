@@ -17,9 +17,11 @@ interface AiNotesPanelProps {
   startPage?: number;
   /** If set, the public shared notes cache is checked/populated for this catalog book. */
   textbookCatalogId?: string;
+  /** Upload document id — enables document_notes cache for private PDFs. */
+  documentId?: string;
 }
 
-export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1, textbookCatalogId }: AiNotesPanelProps) {
+export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1, textbookCatalogId, documentId }: AiNotesPanelProps) {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1,
         const res = await fetch("/api/ai/notes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, pageNumber, pageText, textbookCatalogId }),
+          body: JSON.stringify({ sessionId, pageNumber, pageText, textbookCatalogId, documentId }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -68,7 +70,7 @@ export function AiNotesPanel({ sessionId, pageTexts, currentPage, startPage = 1,
         setGenerating(false);
       }
     },
-    [sessionId, pageTexts, generatedPages, textbookCatalogId]
+    [sessionId, pageTexts, generatedPages, textbookCatalogId, documentId]
   );
 
   const generateAllNew = useCallback(async () => {

@@ -94,6 +94,7 @@ High-level map (only meaningful directories and notable files).
 │   ├── auth.ts                   # NextAuth options + auth() JWT-from-cookie
 │   ├── ai.ts                     # OpenAI client, MODEL id ("gpt-5.4"), isAiConfigured()
 │   ├── ai-notes-render.ts        # stripLatexForAiNotes(), aiNoteContentToHtml()
+│   ├── document-ai-cache.ts      # resolveDocumentFromSession(), parsePagesFromAccumulatedText(), assertDocumentOwner()
 │   ├── app-settings.ts           # getAiOwnerStyleExtra(), appendOwnerStyleToSystem()
 │   ├── admin.ts                  # requireAdmin(), requireSuperOwner() (Node)
 │   ├── admin-edge.ts             # Admin check for Edge routes
@@ -117,6 +118,7 @@ High-level map (only meaningful directories and notable files).
 ├── scripts/
 │   ├── r2-set-cors.mjs           # One-shot: apply PUT/GET/HEAD CORS policy to the R2 bucket
 │   ├── apply-srs-schema.mjs      # Idempotent: add FSRS columns to flashcards + srs_* user prefs (§4)
+│   ├── apply-document-ai-cache.mjs # Idempotent: document_notes, document_quiz_questions, flashcards.document_id (§4)
 │   ├── apply-ai-usage-text-columns.mjs  # Idempotent: add input_text/output_text to ai_usage_logs
 │   ├── _test-srs.ts              # Smoke test for lib/srs.ts (no test runner installed; run with `npx tsx`)
 │   └── bump-version.mjs
@@ -176,8 +178,10 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 - `ai_notes` — generated notes per `session_id` + `page_number` + `content`.
 - `public_notes` — shared notes cache per `textbook_catalog_id` + `page_number` + `prompt_version`. Cache hit = zero AI tokens for subsequent users on same page. Bump `PUBLIC_NOTE_PROMPT_VERSION` in `app/api/ai/notes/route.ts` to invalidate on prompt change.
-- `quizzes` — `questions_json`, `review_json`, optional `score` / `total_questions`.
-- `flashcards` — `session_id`, `front`, `back`, `page_number`; cascades on session delete. Now extended with **FSRS-4.5 spaced-repetition columns**: `srs_state` (0=New, 1=Learning, 2=Review, 3=Relearning), `stability` (real, days at 90% retrievability), `difficulty` (real, 1.0–10.0), `due_at` (timestamp, indexed via `flashcards_due_at_idx ON (session_id, due_at)`), `last_reviewed_at`, `lapses` (Again presses), `reps` (total grades), `learning_steps` (sub-day step counter — must round-trip for graduation to work). Existing rows default to `srs_state=0` and naturally enter the queue as "new" cards on first `/review` visit; no migration script needed.
+- `document_notes` — per-upload notes cache per `document_id` + `page_number` + `prompt_version` (mirrors `public_notes` for private PDFs). Bump `DOCUMENT_NOTE_PROMPT_VERSION` in `app/api/ai/notes/route.ts` to invalidate. Unique on `(document_id, page_number)`.
+- `document_quiz_questions` — reusable quiz question bank for uploads. Columns: `document_id`, `page_index` (1-indexed; 0 = unknown), `question_json` (`{ question, options, correctIndex, explanation, pageIndex? }`), `created_at`. Indexed on `(document_id, page_index)`.
+- `quizzes` — `questions_json`, `review_json`, optional `score` / `total_questions`. Quiz questions may include optional `pageIndex` per question (same pattern as Velocity).
+- `flashcards` — `session_id`, optional **`document_id`** (upload cache key — cards with the same `document_id` share SRS across sessions), `front`, `back`, `page_number`; cascades on session delete. Unique on `(document_id, front)` where `document_id IS NOT NULL`. Now extended with **FSRS-4.5 spaced-repetition columns**: `srs_state` (0=New, 1=Learning, 2=Review, 3=Relearning), `stability` (real, days at 90% retrievability), `difficulty` (real, 1.0–10.0), `due_at` (timestamp, indexed via `flashcards_due_at_idx ON (session_id, due_at)`), `last_reviewed_at`, `lapses` (Again presses), `reps` (total grades), `learning_steps` (sub-day step counter — must round-trip for graduation to work). Existing rows default to `srs_state=0` and naturally enter the queue as "new" cards on first `/review` visit; no migration script needed.
 
   Manual Turso migration (project pattern):
   ```sql
@@ -195,6 +199,34 @@ Drizzle **SQLite** tables (conceptual grouping):
   ```
 
   Use `node scripts/apply-srs-schema.mjs` (idempotent) to apply both the flashcards columns and the matching `srs_new_per_day` / `srs_reviews_per_day` columns on `users` in one shot.
+
+  Manual Turso migration for document AI cache (project pattern):
+  ```sql
+  -- Or run: node scripts/apply-document-ai-cache.mjs
+  CREATE TABLE IF NOT EXISTS document_notes (
+    id TEXT PRIMARY KEY NOT NULL,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    page_number INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    prompt_version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER,
+    updated_at INTEGER,
+    UNIQUE(document_id, page_number)
+  );
+  CREATE TABLE IF NOT EXISTS document_quiz_questions (
+    id TEXT PRIMARY KEY NOT NULL,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    page_index INTEGER NOT NULL DEFAULT 0,
+    question_json TEXT NOT NULL,
+    created_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS document_quiz_questions_doc_page_idx ON document_quiz_questions (document_id, page_index);
+  ALTER TABLE flashcards ADD COLUMN document_id TEXT REFERENCES documents(id) ON DELETE CASCADE;
+  CREATE INDEX IF NOT EXISTS flashcards_document_page_idx ON flashcards (document_id, page_number);
+  CREATE UNIQUE INDEX IF NOT EXISTS flashcards_document_front_unique ON flashcards (document_id, front) WHERE document_id IS NOT NULL;
+  ```
+
+  Use `node scripts/apply-document-ai-cache.mjs` (idempotent) to apply all of the above in one shot.
 - `velocity_games` — reaction-speed minigame run per session. Columns: `questions_json` (mixed MC + short-answer `VelocityQuestion[]`), `results_json` (per-attempt record + accuracy / reaction stats), `review_json` (`growthAreas[]` + `videoSuggestions[]`), `accuracy`, `avg_reaction_ms`, `created_at`, `completed_at`. Cascades on session delete.
 - `velocity_question_bank` — **reusable question pool** for the Velocity minigame. Every AI-generated `VelocityQuestion` is written here so subsequent games for the same reading + page set can pull from the existing pool instead of calling the model again. Columns: `source_key` (stable identifier for the reading: `textbook:<catalogId>` for shared textbook questions — automatically cross-user — or `doc:<documentId>` for uploads), `page_index` (1-indexed page the question was sourced from; 0 = unknown / spans pages), `topic`, `type` (`mc` | `sa`), `question_json` (full serialised `VelocityQuestion`), `created_by` (userId that triggered the generating run, `SET NULL` on user delete), `created_at`, **`report_count`** (incremented when users hit the in-game "Report" button; bank reads filter out any row with `report_count >= BAD_QUESTION_REPORT_THRESHOLD`), **`last_report_reason`** (free-form reason from the most recent reporter), **`first_reported_at`** (timestamp of the first report).
 
@@ -360,7 +392,9 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET, PATCH, DELETE | `/api/admin/users/[id]` | User detail, update, delete. **PATCH** accepts `inactivityTimeout`, `storageQuotaBytes`, **`aiTokenLimit`** (number of tokens, null = reset to default), and **`resetAiTokens: true`** to zero the `ai_tokens_used` counter for a billing-style reset. Response body always includes the current `aiTokensUsed` and `aiTokenLimit`. |
 | GET | `/api/admin/users/[id]/sessions/[sessionId]` | Inspect session — session meta, document info, full `pageVisits[]` (each row carries `durationSeconds` + nullable **`focusedSeconds`**), plus **`quiz`** (score / accuracy / questions with highlighted correct option / review) and **`velocity`** (accuracy / reaction stats / per-attempt log with topic, user answer, correct answer, reaction time / growth areas). Admin UI renders dedicated **Quiz Performance** + **Velocity Performance** cards, plus an always-on **Focused studying per page** dev panel built off `focusedSeconds` (admin access already qualifies — the separate Developer-mode toggle was removed on 2026-06). |
 | GET | `/api/admin/users/[id]/ai-usage` | Per-user AI call history grouped into feature sections (`lib/ai-route-sections.ts`: Notes, Quiz, Flashcards, Videos, Velocity, Admin/other). Each section returns `totalTokens`, `callCount`, and up to 10 newest `logs` (full `inputText` / `outputText` when recorded). Query `?section={id}&page=N` loads more within one section. |
-| GET | `/api/admin/ai-content` | Global browse of **persisted** AI artifacts (`lib/ai-stored-content-sections.ts`: notes, quiz, flashcards, velocity-games, velocity-bank). `?counts=1` returns per-section totals. `?section={id}&page=N` returns paginated `items` with shared `source` context (`lib/ai-content-source.ts`: `textbookTitle`, `sourceType`, `page`, `chapterOrSection` from TOC lookup, `sessionLabel` from `document_json`). Notes: `?notesType=session\|public\|all`. Excludes videos and non-persisted calls. |
+| GET | `/api/admin/ai-content` | Global browse of **persisted** AI artifacts (`lib/ai-stored-content-sections.ts`: notes, quiz, flashcards, velocity-games, velocity-bank). `?counts=1` returns per-section totals (quiz count = sum of questions across all quizzes, not quiz rows). `?section={id}&page=N` returns **20 items per page** (fixed), sorted by page ascending (nulls last) then `created_at` desc where a page column exists; velocity-games sorted by `created_at` only. Quiz section lists **individual questions** flattened from `quizzes.questions_json` via `json_each` (composite id `{quizId}:{index}`). Shared `source` context (`lib/ai-content-source.ts`). Notes: `?notesType=session\|public\|document\|all` (document = `document_notes` upload cache). Each item includes `editable` and `cacheDeletable` flags. Excludes videos and non-persisted calls. |
+| DELETE | `/api/admin/ai-content/cache-notes/[id]` | Delete one cached notes row. Query `?kind=public` (default) deletes `public_notes`; `?kind=document` deletes `document_notes`. Does not remove session `ai_notes` copies. |
+| PATCH | `/api/admin/ai-content/item` | Admin edit persisted content. Body `{ section, id, kind?, patch }`. Sections: `notes` (kind `session\|public\|document`, patch `{ content }`), `flashcards` (`{ front, back }`), `quiz` (composite id, question fields), `velocity-bank` (`questionJson` or parsed fields). Velocity games are read-only. |
 | GET | `/api/admin/catalog/cleanup-blobs` | Dry-run preview: reports how many rows/blobs would be deleted and estimated freed bytes. |
 | POST | `/api/admin/catalog/cleanup-blobs` | Deletes all per-user catalog document blobs + rows and clears `cachedBlobUrl` from catalog rows. Recalculates `storageBytes` for affected users. |
 | GET, DELETE | `/api/admin/blobs` | List / delete R2 PDFs. `GET` lists every object in the R2 bucket via `lib/storage-backend.ts` and enriches user-upload rows from `documents.file_url` + `users` so they include `documentTitle`, `documentSourceType`, and uploader `{ id, name, email }`. `DELETE` calls `deletePdf()` which removes the R2 object and is a no-op for any non-R2 URL. |
@@ -382,9 +416,9 @@ The **flashcards** table doubles as the SRS card store via the FSRS-4.5 columns 
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/review/decks` | Lists the user's flashcard decks (textbook / PDF buckets) with `cardCount`, `dueCount`, `newCount`, `oldestCardAt`. Powers the `/review` home-screen deck picker — keys are `tc:<id>` (textbook catalog), `d:<id>` (per-user document), or the literal `untitled` for cards whose session lost its document link. Deck-title resolution priority: `tc.title → d.title → session.document_json.title → "Untitled deck"` (the document-JSON fallback runs in `lib/review-deck-title.ts` so historical sessions that pre-date `session_content` still surface a sensible name; same helper is used by `/api/review/queue` so card-level deck titles match the picker). |
+| GET | `/api/review/decks` | Lists the user's flashcard decks (textbook / PDF buckets) with `cardCount`, `dueCount`, `newCount`, `oldestCardAt`. Deck keys prefer `f.document_id` for upload cards (aggregates all cards for that document across sessions), then `session_content → documents`, then `tc:*`. Ownership via `study_sessions.user_id` OR `flashcards.document_id → documents.user_id`. |
 | PATCH | `/api/review/deck/[deckKey]` | Rename a deck from the `/review` home screen. Body `{ title: string }` (trimmed, max 200 chars). **`tc:*`** decks return **403** with a "shared textbook" message — catalog titles are global and the UI surfaces the error inline. **`untitled`** returns **400** (no backing row to rename — the right fix for that case is the `document_json` title fallback above). **`d:*`** verifies the caller owns at least one flashcard whose session links to this document AND owns the `documents` row itself, then updates `documents.title`. Returns 404 (not 403) on a cross-user attempt so the existence of someone else's deck never leaks. |
-| GET | `/api/review/queue` | Build the user's review queue. Accepts `mode=due\|all\|new\|review\|leeches` (default `due`), `decks=<deckKey,...>` (empty = all decks), `maxAgeDays=N` (0 = all time), and `limit` (0 / omitted in explicit modes = unlimited, capped at 1000 server-side). Joins `flashcards → study_sessions → session_content → documents → textbook_catalog` for ownership + deck-title resolution. Returns `{ cards[], queueSize, newRemainingToday, reviewsRemainingToday, capReached, mode }`. **`mode=due`** preserves the original behavior — Learning/Relearning cards within a 10-minute lookahead, then Review cards due now, topped up with new cards under `srs_new_per_day` and truncated by `srs_reviews_per_day`; this is what the dashboard auto-fetch uses. **Explicit modes (`all`, `new`, `review`, `leeches`) bypass the daily caps** because the user opted into them from the home screen — caps are still reported in the response so the UI can surface "12/20 new today" context. |
+| GET | `/api/review/queue` | Build the user's review queue. Joins `flashcards → study_sessions` plus optional `f.document_id → documents` for upload-card ownership and deck filtering. Deck filter `d:<id>` matches `f.document_id` or session-linked upload documents. Returns `{ cards[], queueSize, newRemainingToday, reviewsRemainingToday, capReached, mode }`. **`mode=due`** preserves the original behavior — Learning/Relearning cards within a 10-minute lookahead, then Review cards due now, topped up with new cards under `srs_new_per_day` and truncated by `srs_reviews_per_day`; this is what the dashboard auto-fetch uses. **Explicit modes (`all`, `new`, `review`, `leeches`) bypass the daily caps** because the user opted into them from the home screen — caps are still reported in the response so the UI can surface "12/20 new today" context. |
 | POST | `/api/review/grade` | Body `{ cardId: string, grade: 1\|2\|3\|4 }` (Again \| Hard \| Good \| Easy). Verifies the card belongs to the calling user via the session join, runs `scheduleNext()`, persists the new FSRS state (`srs_state`, `stability`, `difficulty`, `due_at`, `last_reviewed_at`, `lapses`, `reps`, `learning_steps`), and returns the updated card with `intervalDays` so the UI can render "next review in 4d" feedback. |
 | GET | `/api/review/stats` | Single aggregation over the user's flashcards. Returns `{ dueNow, dueToday, newToday, newAvailable, newRemainingToday, matureCount, learningCount, totalCards }`. Powers the dashboard "Due today" card and the top-nav badge. |
 | POST | `/api/review/session` | Synthetic study-session writer for streak compatibility. Body `{ startedAt, endedAt, cardsReviewed }` — when `cardsReviewed > 0` inserts a `study_sessions` row tagged `goal_type = "review"` so the existing daily-streak query picks it up. Empty review visits (`cardsReviewed === 0`) are skipped to avoid inflating the streak with no-op opens. Called once on `/review` page unmount; `navigator.sendBeacon` falls back for tab-close cases. |
@@ -599,7 +633,7 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 - **Upload tab — AI TOC auto-extract.** When `addToCatalog` is checked, the catalog row is **no longer saved immediately** after `uploadPdfToStorage` resolves. Instead the screen lands on a new "Review table of contents" pane that (a) fires a non-blocking `POST /api/admin/extract-toc` with the freshly-uploaded PDF URL, (b) shows one of four inline status banners — `running` ("Scanning PDF for table of contents…"), `found` ("AI extracted N chapters with offset M — please review before saving."), `empty` ("AI couldn't find a table of contents in this PDF. You can enter it manually."), or `error` ("Auto-extract failed: …" in red, never blocking) — and (c) waits for the admin to click **Save to catalog** before committing. The visual `TocEditor` is pre-populated via the existing `rangesToTocRows(ranges, offset)` helper on a `found` response so the admin can edit/delete rows like any other catalog entry. Every branch (success, empty, error) also writes a structured line to the upload debug log so a failed extraction is visible alongside upload progress. The flow is additive: extraction errors never gate the catalog save — the admin can always type the TOC by hand and hit save.
 - **Users tab — session detail "Page Reading Time".** Two tabs: **Reading path** (default) lists `page_visits` in `enteredAt` order as numbered steps (`#1`, `p. 3`, duration, entry time). Consecutive rows for the same page are merged in the UI only (sums `duration_seconds` / `focused_seconds`) so the PdfViewer's 30 s periodic flush does not split one long stay into repeated steps; true revisits (e.g. 3 → 4 → 3) stay separate. **Summary by page** aggregates total wall-clock time per unique page number (no visit-count multiplier). Data comes from `GET /api/admin/users/[id]/sessions/[sessionId]` (visits already sorted by `enteredAt`).
 - **Users tab — user detail "Study time by day".** Focused study time per calendar day (completed sessions only; buckets by `startedAt` UTC date, same as dashboard heatmap). Range toggles: **7 days** (default) and **Month** (30). **7 days** uses a bar chart with `HH:MM:SS` labels. **Month** uses inline `AdminStudyCalendar` (`components/admin/AdminStudyCalendar.tsx`) — a paginated month grid (Sun–Sat) with prev/next navigation clamped to the 30-day window, intensity-colored cells, compact time in cells, and full `HH:MM:SS` plus session count in tooltips. The calendar container is focusable (`tabIndex={0}`); when focused, ←/→ arrow keys move to the previous/next month (same bounds as the nav buttons; ignored while typing in inputs). In-progress sessions are excluded; an amber hint shows active focused time until the session ends. Data is aggregated client-side from `GET /api/admin/users/[id]` (`sessions[]`).
-- **AI Content tab.** Top-level admin tab (`components/admin/AiContentTab.tsx`) — browse all persisted AI-generated content across users. Section tabs: Notes, Quiz, Flashcards, Velocity games, Velocity bank (counts from `?counts=1`). Each row shows user (when session-scoped), timestamp, and **source** line (textbook title, chapter/section from `chapterPageRanges` or session label, page number). Notes sub-filter: All / Session notes / Public notes. Rows expand to full content or JSON. Data from `GET /api/admin/ai-content`. Videos and ephemeral AI calls are excluded.
+- **AI Content tab.** Top-level admin tab (`components/admin/AiContentTab.tsx`) — browse all persisted AI-generated content across users. Section tabs: Notes, Quiz (individual questions), Flashcards, Velocity games, Velocity bank (counts from `?counts=1`; quiz count = question total). Each row shows user (when session-scoped), timestamp, and **source** line. Notes sub-filter: All / Session notes / Public notes / Document cache. All sections paginated 20/page, sorted by page where available. **Right-click** any editable row to open an edit modal (notes content, flashcard front/back, quiz question fields, velocity-bank JSON). **×** on public or document cache notes deletes the cache row after confirmation (session copies kept). Data from `GET /api/admin/ai-content`; edits via `PATCH /api/admin/ai-content/item`; cache delete via `DELETE /api/admin/ai-content/cache-notes/[id]`. Videos and ephemeral AI calls are excluded.
 - **Users tab — user detail Overview / AI usage tabs.** **Overview** (default) shows study chart, limits, storage, sessions. **AI usage** renders `UserAiUsageLog` (`components/admin/UserAiUsageLog.tsx`) — toggleable section tabs per feature (Notes, Quiz, Flashcards, Videos, Velocity, Admin/other) from `GET /api/admin/users/[id]/ai-usage`; one section visible at a time with per-section "Show more" pagination; each call expandable to full input/output text. Token limit controls stay on Overview.
 
 ### 7.3 Dashboard features
@@ -712,26 +746,32 @@ sequenceDiagram
   API->>DB: insert study_sessions (+ optional study_goals)
   SP->>PV: Load PDF (public Blob URL)
   PV->>SP: onPageText(page, text)
-  SP->>API: POST /api/ai/notes (+ textbookCatalogId)
-  API->>DB: check public_notes cache
+  SP->>API: POST /api/ai/notes (+ textbookCatalogId or documentId)
+  API->>DB: check public_notes or document_notes cache
   alt cache hit
     API->>DB: insert ai_notes (no AI call)
   else cache miss
     API->>AI: generateText
-    API->>DB: insert ai_notes + upsert public_notes
+    API->>DB: insert ai_notes + upsert public_notes or document_notes
   end
   U->>SP: End session
   SP->>API: PATCH /api/study/sessions (visitedPagesList)
   SP->>SP: sessionStorage session-text-*
   U->>API: POST /api/ai/quiz (summary page)
-  API->>AI: generateObject (questions only)
-  API->>DB: insert quizzes
+  API->>DB: check document_quiz_questions bank (uploads)
+  alt bank sufficient
+    API->>DB: insert quizzes from bank (no AI)
+  else
+    API->>AI: generateObject (questions + pageIndex)
+    API->>DB: insert quizzes + persist new rows to document_quiz_questions
+  end
   U->>API: POST /api/ai/quiz/review (wrong answers)
   API->>AI: generateObject (targeted review)
   API->>DB: update quizzes.review_json
   U->>API: POST /api/ai/flashcards
-  API->>AI: generateObject (term/formula cards)
-  API->>DB: insert flashcards
+  API->>DB: reuse flashcards by document_id + page overlap
+  API->>AI: generateObject (only missing pages)
+  API->>DB: insert new flashcards with document_id
 ```
 
 ---

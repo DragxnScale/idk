@@ -12,7 +12,6 @@ import {
 import {
   AI_STORED_CONTENT_SECTIONS,
   DEFAULT_CONTENT_PAGE_SIZE,
-  MAX_CONTENT_PAGE_SIZE,
   type AiStoredContentSectionId,
   isValidContentSection,
 } from "@/lib/ai-stored-content-sections";
@@ -56,12 +55,31 @@ function sessionSourceFromRow(
   });
 }
 
+function documentSourceFromRow(
+  r: Record<string, unknown>,
+  page: number | null
+): ContentSource {
+  return resolveSourceFromSession({
+    catalogTitle: null,
+    documentTitle: rowStr(r.documentTitle),
+    catalogId: null,
+    documentId: rowStr(r.documentId),
+    catalogRangesJson: null,
+    documentRangesJson: rowStr(r.documentRangesJson),
+    documentJson: null,
+    page,
+  });
+}
+
 async function fetchCounts(): Promise<Record<AiStoredContentSectionId, number>> {
-  const [notesSession, notesPublic, quiz, flashcards, velGames, velBank] =
+  const [notesSession, notesPublic, notesDocument, quiz, flashcards, velGames, velBank] =
     await Promise.all([
       db.$client.execute("SELECT count(*) AS n FROM ai_notes"),
       db.$client.execute("SELECT count(*) AS n FROM public_notes"),
-      db.$client.execute("SELECT count(*) AS n FROM quizzes"),
+      db.$client.execute("SELECT count(*) AS n FROM document_notes"),
+      db.$client.execute(
+        "SELECT coalesce(sum(json_array_length(questions_json)), 0) AS n FROM quizzes"
+      ),
       db.$client.execute("SELECT count(*) AS n FROM flashcards"),
       db.$client.execute("SELECT count(*) AS n FROM velocity_games"),
       db.$client.execute("SELECT count(*) AS n FROM velocity_question_bank"),
@@ -70,7 +88,8 @@ async function fetchCounts(): Promise<Record<AiStoredContentSectionId, number>> 
   const countRows = (res: ResultSet) => Number(res.rows[0]?.n ?? 0);
 
   return {
-    notes: countRows(notesSession) + countRows(notesPublic),
+    notes:
+      countRows(notesSession) + countRows(notesPublic) + countRows(notesDocument),
     quiz: countRows(quiz),
     flashcards: countRows(flashcards),
     "velocity-games": countRows(velGames),
@@ -79,7 +98,7 @@ async function fetchCounts(): Promise<Record<AiStoredContentSectionId, number>> 
 }
 
 async function fetchNotes(
-  notesType: "session" | "public" | "all",
+  notesType: "session" | "public" | "document" | "all",
   page: number,
   limit: number
 ) {
@@ -111,7 +130,7 @@ async function fetchNotes(
         INNER JOIN study_sessions ss ON ss.id = an.session_id
         INNER JOIN users u ON u.id = ss.user_id
         ${SESSION_SOURCE_JOIN}
-        ORDER BY an.created_at DESC
+        ORDER BY (an.page_number IS NULL), an.page_number ASC, an.created_at DESC
         LIMIT ? OFFSET ?
       `,
       args: [limit, offset],
@@ -122,6 +141,8 @@ async function fetchNotes(
       return {
         kind: "session" as const,
         id: String(r.id),
+        editable: true,
+        cacheDeletable: false,
         userEmail: rowStr(r.userEmail),
         userName: rowStr(r.userName),
         sessionId: String(r.sessionId),
@@ -151,7 +172,7 @@ async function fetchNotes(
           tc.chapter_page_ranges AS catalogRangesJson
         FROM public_notes pn
         INNER JOIN textbook_catalog tc ON tc.id = pn.textbook_catalog_id
-        ORDER BY pn.updated_at DESC
+        ORDER BY (pn.page_number IS NULL), pn.page_number ASC, pn.updated_at DESC
         LIMIT ? OFFSET ?
       `,
       args: [limit, offset],
@@ -162,6 +183,8 @@ async function fetchNotes(
       return {
         kind: "public" as const,
         id: String(r.id),
+        editable: true,
+        cacheDeletable: true,
         promptVersion: Number(r.promptVersion ?? 1),
         createdAt: tsToIso(r.updatedAt),
         preview: previewText(String(r.content ?? "")),
@@ -176,9 +199,57 @@ async function fetchNotes(
     return { total, items, hasMore: offset + items.length < total };
   }
 
-  // all — UNION sorted by timestamp
+  if (notesType === "document") {
+    const countRes = await db.$client.execute(
+      "SELECT count(*) AS n FROM document_notes"
+    );
+    const total = Number(countRes.rows[0]?.n ?? 0);
+    const res = await db.$client.execute({
+      sql: `
+        SELECT
+          dn.id,
+          dn.content,
+          dn.page_number AS pageNumber,
+          dn.prompt_version AS promptVersion,
+          dn.updated_at AS updatedAt,
+          d.title AS documentTitle,
+          d.id AS documentId,
+          d.chapter_page_ranges AS documentRangesJson,
+          u.email AS userEmail,
+          u.name AS userName
+        FROM document_notes dn
+        INNER JOIN documents d ON d.id = dn.document_id
+        INNER JOIN users u ON u.id = d.user_id
+        ORDER BY (dn.page_number IS NULL), dn.page_number ASC, dn.updated_at DESC
+        LIMIT ? OFFSET ?
+      `,
+      args: [limit, offset],
+    });
+    const items = res.rows.map((r) => {
+      const pageNum =
+        r.pageNumber == null ? null : Number(r.pageNumber);
+      return {
+        kind: "document" as const,
+        id: String(r.id),
+        editable: true,
+        cacheDeletable: true,
+        promptVersion: Number(r.promptVersion ?? 1),
+        userEmail: rowStr(r.userEmail),
+        userName: rowStr(r.userName),
+        createdAt: tsToIso(r.updatedAt),
+        preview: previewText(String(r.content ?? "")),
+        fullContent: String(r.content ?? ""),
+        source: documentSourceFromRow(r as Record<string, unknown>, pageNum),
+      };
+    });
+    return { total, items, hasMore: offset + items.length < total };
+  }
+
+  // all — UNION sorted by page then timestamp
   const countRes = await db.$client.execute(
-    "SELECT (SELECT count(*) FROM ai_notes) + (SELECT count(*) FROM public_notes) AS n"
+    `SELECT (SELECT count(*) FROM ai_notes)
+      + (SELECT count(*) FROM public_notes)
+      + (SELECT count(*) FROM document_notes) AS n`
   );
   const total = Number(countRes.rows[0]?.n ?? 0);
   const res = await db.$client.execute({
@@ -225,19 +296,42 @@ async function fetchNotes(
           NULL AS documentJson
         FROM public_notes pn
         INNER JOIN textbook_catalog tc ON tc.id = pn.textbook_catalog_id
+        UNION ALL
+        SELECT
+          'document' AS kind,
+          dn.id,
+          dn.content,
+          dn.page_number AS pageNumber,
+          dn.updated_at AS sortAt,
+          u.email AS userEmail,
+          u.name AS userName,
+          NULL AS sessionId,
+          dn.prompt_version AS promptVersion,
+          NULL AS catalogTitle,
+          d.title AS documentTitle,
+          NULL AS catalogId,
+          d.id AS documentId,
+          NULL AS catalogRangesJson,
+          d.chapter_page_ranges AS documentRangesJson,
+          NULL AS documentJson
+        FROM document_notes dn
+        INNER JOIN documents d ON d.id = dn.document_id
+        INNER JOIN users u ON u.id = d.user_id
       )
-      ORDER BY sortAt DESC
+      ORDER BY (pageNumber IS NULL), pageNumber ASC, sortAt DESC
       LIMIT ? OFFSET ?
     `,
     args: [limit, offset],
   });
 
   const items = res.rows.map((r) => {
-    const kind = String(r.kind) as "session" | "public";
+    const kind = String(r.kind) as "session" | "public" | "document";
     const pageNum = r.pageNumber == null ? null : Number(r.pageNumber);
     const base = {
       kind,
       id: String(r.id),
+      editable: true,
+      cacheDeletable: kind === "public" || kind === "document",
       createdAt: tsToIso(r.sortAt),
       preview: previewText(String(r.content ?? "")),
       fullContent: String(r.content ?? ""),
@@ -249,6 +343,15 @@ async function fetchNotes(
         userName: rowStr(r.userName),
         sessionId: String(r.sessionId),
         source: sessionSourceFromRow(r as Record<string, unknown>, pageNum),
+      };
+    }
+    if (kind === "document") {
+      return {
+        ...base,
+        promptVersion: Number(r.promptVersion ?? 1),
+        userEmail: rowStr(r.userEmail),
+        userName: rowStr(r.userName),
+        source: documentSourceFromRow(r as Record<string, unknown>, pageNum),
       };
     }
     return {
@@ -265,18 +368,39 @@ async function fetchNotes(
   return { total, items, hasMore: offset + items.length < total };
 }
 
+interface QuizQuestionFields {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  pageIndex?: number;
+}
+
+function parseQuizQuestion(raw: unknown): QuizQuestionFields | null {
+  try {
+    const q =
+      typeof raw === "string"
+        ? (JSON.parse(raw) as QuizQuestionFields)
+        : (raw as QuizQuestionFields);
+    if (!q?.question || !Array.isArray(q.options)) return null;
+    return q;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchQuiz(page: number, limit: number) {
   const offset = (page - 1) * limit;
-  const countRes = await db.$client.execute("SELECT count(*) AS n FROM quizzes");
+  const countRes = await db.$client.execute(
+    "SELECT coalesce(sum(json_array_length(questions_json)), 0) AS n FROM quizzes"
+  );
   const total = Number(countRes.rows[0]?.n ?? 0);
   const res = await db.$client.execute({
     sql: `
       SELECT
-        q.id,
-        q.questions_json AS questionsJson,
-        q.review_json AS reviewJson,
-        q.score,
-        q.total_questions AS totalQuestions,
+        q.id AS quizId,
+        je.key AS questionIndex,
+        je.value AS questionJson,
         q.created_at AS createdAt,
         u.email AS userEmail,
         u.name AS userName,
@@ -292,38 +416,42 @@ async function fetchQuiz(page: number, limit: number) {
       INNER JOIN study_sessions ss ON ss.id = q.session_id
       INNER JOIN users u ON u.id = ss.user_id
       ${SESSION_SOURCE_JOIN}
-      ORDER BY q.created_at DESC
+      JOIN json_each(q.questions_json) je
+      ORDER BY
+        (CASE
+          WHEN json_extract(je.value, '$.pageIndex') IS NULL
+            OR json_extract(je.value, '$.pageIndex') = 0
+          THEN 1 ELSE 0
+        END),
+        json_extract(je.value, '$.pageIndex') ASC,
+        q.created_at DESC
       LIMIT ? OFFSET ?
     `,
     args: [limit, offset],
   });
 
   const items = res.rows.map((r) => {
-    let questionCount = 0;
-    let firstQuestion: string | null = null;
-    try {
-      const qs = JSON.parse(String(r.questionsJson ?? "[]")) as {
-        question?: string;
-      }[];
-      questionCount = Array.isArray(qs) ? qs.length : 0;
-      firstQuestion = qs[0]?.question ?? null;
-    } catch {
-      /* ignore */
-    }
+    const q = parseQuizQuestion(r.questionJson);
+    const idx = Number(r.questionIndex ?? 0);
+    const quizId = String(r.quizId);
+    const pageIdx = q?.pageIndex && q.pageIndex > 0 ? q.pageIndex : null;
     return {
-      id: String(r.id),
+      id: `${quizId}:${idx}`,
+      quizId,
+      questionIndex: idx,
+      editable: true,
+      cacheDeletable: false,
       userEmail: rowStr(r.userEmail),
       userName: rowStr(r.userName),
       sessionId: String(r.sessionId),
       createdAt: tsToIso(r.createdAt),
-      score: r.score == null ? null : Number(r.score),
-      totalQuestions:
-        r.totalQuestions == null ? questionCount : Number(r.totalQuestions),
-      questionCount,
-      preview: firstQuestion ? previewText(firstQuestion) : null,
-      questionsJson: String(r.questionsJson ?? ""),
-      reviewJson: r.reviewJson ? String(r.reviewJson) : null,
-      source: sessionSourceFromRow(r as Record<string, unknown>, null),
+      question: q?.question ?? "",
+      options: q?.options ?? [],
+      correctIndex: q?.correctIndex ?? 0,
+      explanation: q?.explanation ?? "",
+      pageIndex: pageIdx,
+      preview: q?.question ? previewText(q.question) : null,
+      source: sessionSourceFromRow(r as Record<string, unknown>, pageIdx),
     };
   });
 
@@ -359,7 +487,7 @@ async function fetchFlashcards(page: number, limit: number) {
       INNER JOIN study_sessions ss ON ss.id = f.session_id
       INNER JOIN users u ON u.id = ss.user_id
       ${SESSION_SOURCE_JOIN}
-      ORDER BY f.created_at DESC
+      ORDER BY (f.page_number IS NULL), f.page_number ASC, f.created_at DESC
       LIMIT ? OFFSET ?
     `,
     args: [limit, offset],
@@ -369,6 +497,8 @@ async function fetchFlashcards(page: number, limit: number) {
     const pageNum = r.pageNumber == null ? null : Number(r.pageNumber);
     return {
       id: String(r.id),
+      editable: true,
+      cacheDeletable: false,
       userEmail: rowStr(r.userEmail),
       userName: rowStr(r.userName),
       sessionId: String(r.sessionId),
@@ -440,6 +570,8 @@ async function fetchVelocityGames(page: number, limit: number) {
     }
     return {
       id: String(r.id),
+      editable: false,
+      cacheDeletable: false,
       userEmail: rowStr(r.userEmail),
       userName: rowStr(r.userName),
       sessionId: String(r.sessionId),
@@ -486,7 +618,10 @@ async function fetchVelocityBank(page: number, limit: number) {
       LEFT JOIN users u ON u.id = vqb.created_by
       LEFT JOIN textbook_catalog tc ON vqb.source_key = 'textbook:' || tc.id
       LEFT JOIN documents d ON vqb.source_key = 'doc:' || d.id
-      ORDER BY vqb.created_at DESC
+      ORDER BY
+        (CASE WHEN vqb.page_index IS NULL OR vqb.page_index = 0 THEN 1 ELSE 0 END),
+        vqb.page_index ASC,
+        vqb.created_at DESC
       LIMIT ? OFFSET ?
     `,
     args: [limit, offset],
@@ -507,6 +642,8 @@ async function fetchVelocityBank(page: number, limit: number) {
     }
     return {
       id: String(r.id),
+      editable: true,
+      cacheDeletable: false,
       sourceKey,
       topic: rowStr(r.topic),
       type: String(r.type ?? ""),
@@ -559,23 +696,19 @@ export async function GET(request: Request) {
       1,
       parseInt(searchParams.get("page") ?? "1", 10) || 1
     );
-    const limit = Math.min(
-      MAX_CONTENT_PAGE_SIZE,
-      Math.max(
-        1,
-        parseInt(
-          searchParams.get("limit") ?? String(DEFAULT_CONTENT_PAGE_SIZE),
-          10
-        ) || DEFAULT_CONTENT_PAGE_SIZE
-      )
-    );
+    const limit = DEFAULT_CONTENT_PAGE_SIZE;
 
     const notesType = (searchParams.get("notesType") ?? "all") as
       | "session"
       | "public"
+      | "document"
       | "all";
     const safeNotesType =
-      notesType === "session" || notesType === "public" ? notesType : "all";
+      notesType === "session" ||
+      notesType === "public" ||
+      notesType === "document"
+        ? notesType
+        : "all";
 
     let result: { total: number; items: unknown[]; hasMore: boolean };
     switch (section) {

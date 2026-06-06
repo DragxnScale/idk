@@ -91,6 +91,7 @@ export interface QuizQuestionDraft {
   options: string[];
   correctIndex: number;
   explanation: string;
+  pageIndex?: number;
 }
 
 /**
@@ -171,6 +172,7 @@ export async function factCheckQuizQuestions(
               ? v.fixedCorrectIndex
               : original.correctIndex,
           explanation: v.fixedExplanation || original.explanation,
+          pageIndex: original.pageIndex,
         });
         continue;
       }

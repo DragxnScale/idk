@@ -5,10 +5,14 @@ import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
-import { quizzes, aiNotes, users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { quizzes, aiNotes, users, documentQuizQuestions } from "@/lib/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 import { factCheckQuizQuestions } from "@/lib/ai-fact-check";
+import {
+  parsePagesFromAccumulatedText,
+  resolveDocumentFromSession,
+} from "@/lib/document-ai-cache";
 
 /** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
 export const maxDuration = 60;
@@ -28,17 +32,21 @@ const questionsSchema = z.object({
       options: z.array(z.string()).length(4),
       correctIndex: z.number().int().min(0).max(3),
       explanation: z.string(),
+      pageIndex: z.number().int().min(0).optional(),
     })
   ),
 });
 
-/** Fisher-Yates shuffle — shuffles options and adjusts correctIndex. */
-function shuffleOptions(q: {
+type QuizQuestion = {
   question: string;
   options: string[];
   correctIndex: number;
   explanation: string;
-}) {
+  pageIndex?: number;
+};
+
+/** Fisher-Yates shuffle — shuffles options and adjusts correctIndex. */
+function shuffleOptions(q: QuizQuestion): QuizQuestion {
   const indices = [0, 1, 2, 3];
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -49,7 +57,69 @@ function shuffleOptions(q: {
     options: indices.map((i) => q.options[i]),
     correctIndex: indices.indexOf(q.correctIndex),
     explanation: q.explanation,
+    pageIndex: q.pageIndex,
   };
+}
+
+function sampleQuestions(pool: QuizQuestion[], count: number): QuizQuestion[] {
+  const shuffled = [...pool];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, count);
+}
+
+async function loadBankQuestions(
+  documentId: string,
+  pageIndexes: number[]
+): Promise<QuizQuestion[]> {
+  if (pageIndexes.length === 0) return [];
+  const rows = await db.query.documentQuizQuestions.findMany({
+    where: and(
+      eq(documentQuizQuestions.documentId, documentId),
+      inArray(documentQuizQuestions.pageIndex, pageIndexes)
+    ),
+  });
+  const out: QuizQuestion[] = [];
+  for (const row of rows) {
+    try {
+      const q = JSON.parse(row.questionJson) as QuizQuestion;
+      if (q?.question && Array.isArray(q.options)) {
+        out.push({
+          ...q,
+          pageIndex: row.pageIndex > 0 ? row.pageIndex : q.pageIndex,
+        });
+      }
+    } catch {
+      /* skip bad row */
+    }
+  }
+  return out;
+}
+
+async function persistBankQuestions(
+  documentId: string,
+  questions: QuizQuestion[]
+): Promise<void> {
+  const now = new Date();
+  for (const q of questions) {
+    const pageIndex =
+      q.pageIndex && q.pageIndex > 0 ? q.pageIndex : 0;
+    await db.insert(documentQuizQuestions).values({
+      id: crypto.randomUUID(),
+      documentId,
+      pageIndex,
+      questionJson: JSON.stringify({
+        question: q.question,
+        options: q.options,
+        correctIndex: q.correctIndex,
+        explanation: q.explanation,
+        pageIndex,
+      }),
+      createdAt: now,
+    });
+  }
 }
 
 /** Count unique pages in the accumulated text (markers like "[Page 47]"). */
@@ -97,8 +167,29 @@ export async function POST(request: Request) {
 
   // ── Calculate question count from pages read ─────────────────────────
   const pagesRead = countPages(accumulatedText);
-  // 1.5 questions per page, clamped within user limits
   const targetQ = Math.max(userMin, Math.min(userMax, Math.round(pagesRead * 1.5)));
+
+  const resolvedDoc = await resolveDocumentFromSession(sessionId, authUser.id);
+  const readingPages = parsePagesFromAccumulatedText(accumulatedText);
+  const readingPagesSet = new Set(readingPages);
+
+  // ── Try document question bank for uploads ───────────────────────────
+  if (resolvedDoc) {
+    const bankPool = await loadBankQuestions(resolvedDoc.documentId, readingPages);
+    if (bankPool.length >= targetQ) {
+      const questions = sampleQuestions(bankPool, targetQ).map(shuffleOptions);
+      const id = crypto.randomUUID();
+      await db.insert(quizzes).values({
+        id,
+        sessionId,
+        questionsJson: JSON.stringify(questions),
+        reviewJson: null,
+        totalQuestions: questions.length,
+        createdAt: new Date(),
+      });
+      return NextResponse.json({ id, questions });
+    }
+  }
 
   // ── Build prompt ─────────────────────────────────────────────────────
   const existingNotes = await db.query.aiNotes.findMany({
@@ -224,9 +315,15 @@ QUESTION QUALITY
 - Each question's "explanation" names the formula/law the question hinges on AND, for application questions, shows the rearrangement.
 - Distribute questions across the chapter, not all on the first section.
 
-For chapters with very few formulas, the rules collapse to: one definition per key term, then conceptual application questions. The application-slot rule still applies.`;
+For chapters with very few formulas, the rules collapse to: one definition per key term, then conceptual application questions. The application-slot rule still applies.
 
-  const quizPrompt = `Generate the quiz from the reading material below.\n\n${wrapUntrusted(
+PAGE TAGGING: Every page in the reading is demarcated by a "[Page N]" marker (1-indexed). For each question, set "pageIndex" to the N of the page where the concept is primarily introduced. If you cannot tie a question to a specific page, set pageIndex to 0.`;
+
+  const quizPrompt = `Generate the quiz from the reading material below.${
+    readingPages.length > 0
+      ? `\n\nPages in this reading: ${readingPages.join(", ")}. When tagging pageIndex, use one of those numbers (or 0 if unknown).`
+      : ""
+  }\n\n${wrapUntrusted(
     "reading material",
     accumulatedText.slice(0, 30000)
   )}${
@@ -245,7 +342,7 @@ For chapters with very few formulas, the rules collapse to: one definition per k
     outputText: JSON.stringify(object, null, 2),
   });
 
-  // ── Fact-check pass: drop unsupported questions, rewrite fixable ones.
+  // ── Fact-check pass
   // Runs against the same source text + notes the generator saw. If the
   // verifier itself fails, returns the original list unchanged so we never
   // block on a broken verifier.
@@ -275,7 +372,33 @@ For chapters with very few formulas, the rules collapse to: one definition per k
   }
 
   // ── Shuffle answer options so correct index is randomised ────────────
-  const questions = verified.map(shuffleOptions);
+  let questions = verified.map((q) => {
+    const pageIndex =
+      typeof q.pageIndex === "number" && readingPagesSet.has(q.pageIndex)
+        ? q.pageIndex
+        : q.pageIndex && q.pageIndex > 0
+          ? q.pageIndex
+          : undefined;
+    return shuffleOptions({ ...q, pageIndex });
+  });
+
+  // ── Merge with bank pool for uploads when bank was partial ───────────
+  if (resolvedDoc) {
+    const bankPool = await loadBankQuestions(resolvedDoc.documentId, readingPages);
+    if (bankPool.length > 0 && bankPool.length < targetQ) {
+      const needed = targetQ - bankPool.length;
+      const generated = questions.slice(0, needed);
+      const merged = [...sampleQuestions(bankPool, bankPool.length), ...generated];
+      questions = sampleQuestions(merged, targetQ).map((q) =>
+        shuffleOptions(q)
+      );
+      if (generated.length > 0) {
+        await persistBankQuestions(resolvedDoc.documentId, generated);
+      }
+    } else if (bankPool.length === 0) {
+      await persistBankQuestions(resolvedDoc.documentId, questions);
+    }
+  }
 
   // ── Persist (no review yet — generated after quiz completion) ────────
   const id = crypto.randomUUID();

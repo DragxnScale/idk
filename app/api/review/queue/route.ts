@@ -104,11 +104,13 @@ function deckFilterSql(filter: DeckFilter): { sql: string; args: Arg[] } {
   }
   if (filter.documentIds.length > 0) {
     const placeholders = filter.documentIds.map(() => "?").join(",");
-    clauses.push(`(d.id IN (${placeholders}) AND d.textbook_catalog_id IS NULL)`);
-    args.push(...filter.documentIds);
+    clauses.push(
+      `(f.document_id IN (${placeholders}) OR (d.id IN (${placeholders}) AND d.textbook_catalog_id IS NULL))`
+    );
+    args.push(...filter.documentIds, ...filter.documentIds);
   }
   if (filter.includeUntitled) {
-    clauses.push(`(d.id IS NULL AND tc.id IS NULL)`);
+    clauses.push(`(d.id IS NULL AND fd.id IS NULL AND tc.id IS NULL)`);
   }
   if (clauses.length === 0) {
     return { sql: "", args: [] };
@@ -223,10 +225,12 @@ export async function GET(request: Request) {
     INNER JOIN study_sessions ss ON ss.id = f.session_id
     LEFT JOIN session_content sc ON sc.session_id = ss.id
     LEFT JOIN documents d ON d.id = sc.document_id
-    LEFT JOIN textbook_catalog tc ON tc.id = d.textbook_catalog_id
+    LEFT JOIN documents fd ON fd.id = f.document_id
+    LEFT JOIN textbook_catalog tc ON tc.id = COALESCE(d.textbook_catalog_id, fd.textbook_catalog_id)
   `;
-  const baseWhere = `ss.user_id = ?${deckFilter.sql}${ageFilterSql}`;
+  const baseWhere = `(ss.user_id = ? OR fd.user_id = ?)${deckFilter.sql}${ageFilterSql}`;
   const baseArgs = (extra: Arg[]): Arg[] => [
+    user.id,
     user.id,
     ...deckFilter.args,
     ...ageFilterArgs,

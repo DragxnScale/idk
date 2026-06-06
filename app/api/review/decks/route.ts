@@ -60,10 +60,11 @@ export async function GET() {
     SELECT
       COALESCE(
         CASE WHEN tc.id IS NOT NULL THEN 'tc:' || tc.id END,
+        CASE WHEN fd.id IS NOT NULL THEN 'd:' || fd.id END,
         CASE WHEN d.id IS NOT NULL THEN 'd:' || d.id END,
         'untitled'
       ) AS deckKey,
-      COALESCE(tc.title, d.title) AS dbTitle,
+      COALESCE(tc.title, fd.title, d.title) AS dbTitle,
       MIN(ss.document_json) AS fallbackDocumentJson,
       COUNT(DISTINCT f.id) AS cardCount,
       SUM(CASE
@@ -76,14 +77,15 @@ export async function GET() {
     INNER JOIN study_sessions ss ON ss.id = f.session_id
     LEFT JOIN session_content sc ON sc.session_id = ss.id
     LEFT JOIN documents d ON d.id = sc.document_id
-    LEFT JOIN textbook_catalog tc ON tc.id = d.textbook_catalog_id
-    WHERE ss.user_id = ?
+    LEFT JOIN documents fd ON fd.id = f.document_id
+    LEFT JOIN textbook_catalog tc ON tc.id = COALESCE(d.textbook_catalog_id, fd.textbook_catalog_id)
+    WHERE ss.user_id = ? OR fd.user_id = ?
     GROUP BY deckKey, dbTitle
     ORDER BY cardCount DESC
   `;
   const res = await db.$client.execute({
     sql,
-    args: [lookaheadSec, nowSec, user.id],
+    args: [lookaheadSec, nowSec, user.id, user.id],
   });
 
   const decks = res.rows.map((r) => ({

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
 import { flashcards, aiNotes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
+import { resolveDocumentFromSession } from "@/lib/document-ai-cache";
 
 /** Allow up to 60s for slow OpenAI responses. See velocity/route.ts. */
 export const maxDuration = 60;
@@ -45,7 +46,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
   }
 
-  // Fetch existing notes for this session
   const notes = await db.query.aiNotes.findMany({
     where: eq(aiNotes.sessionId, sessionId),
   });
@@ -58,12 +58,36 @@ export async function POST(request: Request) {
     );
   }
 
-  const notesSummary = notes
-    .map((n) => `[Page ${n.pageNumber ?? "?"}]\n${n.content}`)
-    .join("\n\n---\n\n");
+  const pageNumbers = Array.from(
+    new Set(notes.map((n) => n.pageNumber).filter((p): p is number => p != null))
+  );
 
-  const ownerExtra = await getAiOwnerStyleExtra();
-  const baseSystem = `You are a study assistant generating reference flashcards from study notes.
+  const resolvedDoc = await resolveDocumentFromSession(sessionId, user.id);
+  let existingCards: typeof flashcards.$inferSelect[] = [];
+
+  if (resolvedDoc && pageNumbers.length > 0) {
+    existingCards = await db.query.flashcards.findMany({
+      where: and(
+        eq(flashcards.documentId, resolvedDoc.documentId),
+        inArray(flashcards.pageNumber, pageNumbers)
+      ),
+    });
+  }
+
+  const coveredPages = new Set(
+    existingCards.map((c) => c.pageNumber).filter((p): p is number => p != null)
+  );
+  const notesToGenerate = notes.filter(
+    (n) => n.pageNumber == null || !coveredPages.has(n.pageNumber)
+  );
+
+  if (notesToGenerate.length > 0) {
+    const notesSummary = notesToGenerate
+      .map((n) => `[Page ${n.pageNumber ?? "?"}]\n${n.content}`)
+      .join("\n\n---\n\n");
+
+    const ownerExtra = await getAiOwnerStyleExtra();
+    const baseSystem = `You are a study assistant generating reference flashcards from study notes.
 
 These flashcards are NOT a quiz — they are a reference tool for understanding and applying material.
 
@@ -99,35 +123,80 @@ RULES:
 - No upper limit on count when notes contain many formulas — better to ship one card per formula than to drop coverage to hit a target.
 - Soft target: ~3-5 cards per page of notes for normal pages, more on pages dense with formulas.`;
 
-  const flashcardsPrompt = `Generate flashcards from the study notes below.\n\n${wrapUntrusted(
-    "study notes",
-    notesSummary.slice(0, 12000)
-  )}`;
-  const { object, usage } = await generateObject({
-    model: openai(MODEL),
-    schema: flashcardSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
-    prompt: flashcardsPrompt,
+    const flashcardsPrompt = `Generate flashcards from the study notes below.\n\n${wrapUntrusted(
+      "study notes",
+      notesSummary.slice(0, 12000)
+    )}`;
+    const { object, usage } = await generateObject({
+      model: openai(MODEL),
+      schema: flashcardSchema,
+      system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+      prompt: flashcardsPrompt,
+    });
+    await recordAiUsage(user.id, "/api/ai/flashcards", usage, {
+      inputText: flashcardsPrompt,
+      outputText: JSON.stringify(object, null, 2),
+    });
+
+    const now = new Date();
+    const newRows = object.cards.map((card) => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      documentId: resolvedDoc?.documentId ?? null,
+      front: card.front,
+      back: card.back,
+      pageNumber: card.pageNumber ?? null,
+      createdAt: now,
+    }));
+
+    if (newRows.length > 0) {
+      await db.insert(flashcards).values(newRows);
+    }
+
+    const allCards = [...existingCards, ...newRows];
+    allCards.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0));
+
+    return NextResponse.json({
+      cards: allCards.map((c) => ({
+        id: c.id,
+        sessionId: c.sessionId,
+        front: c.front,
+        back: c.back,
+        pageNumber: c.pageNumber,
+        createdAt: c.createdAt,
+      })),
+    });
+  }
+
+  if (existingCards.length > 0) {
+    existingCards.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0));
+    return NextResponse.json({
+      cards: existingCards.map((c) => ({
+        id: c.id,
+        sessionId: c.sessionId,
+        front: c.front,
+        back: c.back,
+        pageNumber: c.pageNumber,
+        createdAt: c.createdAt,
+      })),
+    });
+  }
+
+  const sessionCards = await db.query.flashcards.findMany({
+    where: eq(flashcards.sessionId, sessionId),
   });
-  await recordAiUsage(user.id, "/api/ai/flashcards", usage, {
-    inputText: flashcardsPrompt,
-    outputText: JSON.stringify(object, null, 2),
+  sessionCards.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0));
+
+  return NextResponse.json({
+    cards: sessionCards.map((c) => ({
+      id: c.id,
+      sessionId: c.sessionId,
+      front: c.front,
+      back: c.back,
+      pageNumber: c.pageNumber,
+      createdAt: c.createdAt,
+    })),
   });
-
-  // Persist
-  const now = new Date();
-  const rows = object.cards.map((card) => ({
-    id: crypto.randomUUID(),
-    sessionId,
-    front: card.front,
-    back: card.back,
-    pageNumber: card.pageNumber ?? null,
-    createdAt: now,
-  }));
-
-  await db.insert(flashcards).values(rows);
-
-  return NextResponse.json({ cards: rows });
 }
 
 export async function GET(request: Request) {
