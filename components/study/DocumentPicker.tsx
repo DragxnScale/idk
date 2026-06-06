@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TocEditor } from "@/components/TocEditor";
-import { createDefaultTocRows, tocRowsToRanges } from "@/lib/toc-editor-utils";
+import {
+  createDefaultTocRows,
+  rangesToTocRows,
+  tocRowsToRanges,
+} from "@/lib/toc-editor-utils";
 import { uploadPdfToStorage } from "@/lib/upload-client";
 import { pdfjs } from "react-pdf";
 
@@ -181,6 +185,7 @@ function DrivePanel({
   const [docs, setDocs] = useState<DriveDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [editingDoc, setEditingDoc] = useState<DriveDoc | null>(null);
 
   // URL import state
   const [importUrl, setImportUrl] = useState("");
@@ -226,6 +231,32 @@ function DrivePanel({
     await fetch(`/api/user/drive?id=${doc.id}`, { method: "DELETE" });
     setDocs((prev) => prev.filter((d) => d.id !== doc.id));
     setDeleting(null);
+  }
+
+  if (editingDoc) {
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setEditingDoc(null)}
+          className="text-sm underline underline-offset-4"
+        >
+          ← Back to drive
+        </button>
+        <DocTocEditor
+          key={editingDoc.id}
+          doc={{
+            id: editingDoc.id,
+            title: editingDoc.title,
+            fileUrl: editingDoc.fileUrl,
+          }}
+          savedChapterPageRanges={editingDoc.chapterPageRanges}
+          savedPageOffset={editingDoc.pageOffset}
+          skipKeepsSavedToc
+          onSelect={onSelect}
+        />
+      </div>
+    );
   }
 
   return (
@@ -281,19 +312,7 @@ function DrivePanel({
             >
               <button
                 type="button"
-                onClick={() => onSelect({
-                  type: "upload",
-                  documentId: doc.id,
-                  title: doc.title,
-                  sourceUrl: doc.fileUrl,
-                  pageOffset: doc.pageOffset || undefined,
-                  ...(doc.chapterPageRanges && Object.keys(doc.chapterPageRanges).length > 0
-                    ? {
-                        availableChapters: Object.keys(doc.chapterPageRanges),
-                        chapterPageRanges: doc.chapterPageRanges,
-                      }
-                    : {}),
-                })}
+                onClick={() => setEditingDoc(doc)}
                 className="flex-1 text-left text-sm font-medium truncate hover:text-gray-600 dark:hover:text-gray-300 transition"
               >
                 {doc.title}
@@ -602,48 +621,89 @@ function UploadPanel({
   );
 }
 
-/* ── Uploaded Doc Editor ───────────────────────────────────────────── */
+/* ── Doc TOC Editor (upload + drive) ─────────────────────────────── */
 
-function UploadedDocEditor({
-  docs,
+function initialTocFromSaved(
+  savedChapterPageRanges: Record<string, [number, number]> | null | undefined,
+  savedPageOffset: number
+) {
+  if (savedChapterPageRanges && Object.keys(savedChapterPageRanges).length > 0) {
+    return {
+      rows: rangesToTocRows(savedChapterPageRanges, savedPageOffset),
+      offset: savedPageOffset,
+    };
+  }
+  return { rows: createDefaultTocRows(), offset: savedPageOffset };
+}
+
+function DocTocEditor({
+  doc,
+  savedChapterPageRanges,
+  savedPageOffset = 0,
+  skipKeepsSavedToc = false,
   onSelect,
 }: {
-  docs: FileItem[];
+  doc: { id: string; title: string; fileUrl: string };
+  savedChapterPageRanges?: Record<string, [number, number]> | null;
+  savedPageOffset?: number;
+  /** When true, Skip starts with previously saved TOC (drive) instead of no chapters. */
+  skipKeepsSavedToc?: boolean;
   onSelect: (doc: SelectedDocument) => void;
 }) {
-  const [activeIdx, setActiveIdx] = useState(0);
-  const [tocRows, setTocRows] = useState(createDefaultTocRows);
-  const [pageOffset, setPageOffset] = useState(0);
+  const initial = initialTocFromSaved(savedChapterPageRanges, savedPageOffset);
+  const [tocRows, setTocRows] = useState(initial.rows);
+  const [pageOffset, setPageOffset] = useState(initial.offset);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const doc = docs[activeIdx]?.result!;
-
-  function resetTocState() {
-    setTocRows(createDefaultTocRows());
-    setPageOffset(0);
-    setSaveError(null);
-  }
+  const hasSavedToc =
+    !!savedChapterPageRanges && Object.keys(savedChapterPageRanges).length > 0;
 
   function buildRanges(): Record<string, [number, number]> | null {
     const result = tocRowsToRanges(tocRows, pageOffset);
     return Object.keys(result).length > 0 ? result : null;
   }
 
+  function startSession(
+    ranges: Record<string, [number, number]> | null,
+    offset: number
+  ) {
+    onSelect({
+      type: "upload",
+      documentId: doc.id,
+      title: doc.title,
+      sourceUrl: doc.fileUrl,
+      pageOffset: offset || undefined,
+      ...(ranges
+        ? { availableChapters: Object.keys(ranges), chapterPageRanges: ranges }
+        : {}),
+    });
+  }
+
   async function saveAndStart(skipToc = false) {
     setSaving(true);
     setSaveError(null);
-    const ranges = skipToc ? null : buildRanges();
-    const offset = pageOffset;
 
-    if (ranges || offset !== 0) {
+    if (skipToc) {
+      if (skipKeepsSavedToc && hasSavedToc) {
+        startSession(savedChapterPageRanges!, savedPageOffset);
+      } else {
+        startSession(null, pageOffset);
+      }
+      setSaving(false);
+      return;
+    }
+
+    const ranges = buildRanges();
+
+    if (ranges || pageOffset !== 0) {
       try {
         const res = await fetch(`/api/documents/${doc.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...(ranges ? { chapterPageRanges: ranges } : {}),
-            pageOffset: offset,
+            pageOffset,
           }),
         });
         if (!res.ok) {
@@ -659,17 +719,62 @@ function UploadedDocEditor({
       }
     }
 
-    onSelect({
-      type: "upload",
-      documentId: doc.id,
-      title: doc.title,
-      sourceUrl: doc.fileUrl,
-      pageOffset: offset || undefined,
-      ...(ranges
-        ? { availableChapters: Object.keys(ranges), chapterPageRanges: ranges }
-        : {}),
-    });
+    startSession(ranges, pageOffset);
+    setSaving(false);
   }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4 dark:border-gray-700 dark:bg-gray-800/50">
+      <div>
+        <p className="text-sm font-semibold mb-0.5">{doc.title}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {hasSavedToc
+            ? "Edit the table of contents and page offset, or start with your saved settings."
+            : "Optionally enter a table of contents and page offset so chapter selection works."}
+        </p>
+      </div>
+
+      <TocEditor
+        variant="study"
+        rows={tocRows}
+        onChange={setTocRows}
+        pageOffset={pageOffset}
+        onPageOffsetChange={setPageOffset}
+      />
+
+      {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => saveAndStart(false)}
+          className="btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save & start studying"}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => saveAndStart(true)}
+          className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 disabled:opacity-60"
+        >
+          {skipKeepsSavedToc && hasSavedToc ? "Start with saved TOC" : "Skip"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UploadedDocEditor({
+  docs,
+  onSelect,
+}: {
+  docs: FileItem[];
+  onSelect: (doc: SelectedDocument) => void;
+}) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const doc = docs[activeIdx]?.result!;
 
   return (
     <div className="space-y-4">
@@ -679,10 +784,7 @@ function UploadedDocEditor({
             <button
               key={i}
               type="button"
-              onClick={() => {
-                setActiveIdx(i);
-                resetTocState();
-              }}
+              onClick={() => setActiveIdx(i)}
               className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${i === activeIdx ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-300 hover:border-gray-500 dark:border-gray-600"}`}
             >
               {it.result!.title}
@@ -691,43 +793,11 @@ function UploadedDocEditor({
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4 dark:border-gray-700 dark:bg-gray-800/50">
-        <div>
-          <p className="text-sm font-semibold mb-0.5">{doc.title}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Optionally enter a table of contents and page offset so chapter selection works.
-          </p>
-        </div>
-
-        <TocEditor
-          variant="study"
-          rows={tocRows}
-          onChange={setTocRows}
-          pageOffset={pageOffset}
-          onPageOffsetChange={setPageOffset}
-        />
-
-        {saveError && <p className="text-xs text-red-500">{saveError}</p>}
-
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => saveAndStart(false)}
-            className="btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save & start studying"}
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => saveAndStart(true)}
-            className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800 disabled:opacity-60"
-          >
-            Skip
-          </button>
-        </div>
-      </div>
+      <DocTocEditor
+        key={doc.id}
+        doc={{ id: doc.id, title: doc.title, fileUrl: doc.fileUrl }}
+        onSelect={onSelect}
+      />
     </div>
   );
 }
