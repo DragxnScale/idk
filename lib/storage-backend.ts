@@ -171,7 +171,7 @@ export async function deletePdf(url: string): Promise<void> {
     .catch(() => {});
 }
 
-// ── listPdfs (admin Storage tab) ─────────────────────────────────────
+// ── listR2BucketObjects (admin Storage tab) ──────────────────────────
 
 export interface ListedObject {
   url: string;
@@ -181,13 +181,15 @@ export interface ListedObject {
   backend: BackendName;
 }
 
-/**
- * List every PDF in the R2 bucket. Used by the admin Storage tab.
- */
-export async function listPdfs(): Promise<{
+export interface R2BucketListing {
+  bucketName: string;
   objects: ListedObject[];
+  objectCount: number;
   totalSize: number;
-}> {
+}
+
+/** List every object in the R2 bucket. Used by the admin Storage tab. */
+export async function listR2BucketObjects(): Promise<R2BucketListing> {
   const objects: ListedObject[] = [];
 
   let token: string | undefined;
@@ -213,6 +215,20 @@ export async function listPdfs(): Promise<{
   } while (token);
 
   const totalSize = objects.reduce((s, o) => s + o.size, 0);
+  return {
+    bucketName: r2Bucket(),
+    objects,
+    objectCount: objects.length,
+    totalSize,
+  };
+}
+
+/** @deprecated Use listR2BucketObjects — kept for call-site compatibility. */
+export async function listPdfs(): Promise<{
+  objects: ListedObject[];
+  totalSize: number;
+}> {
+  const { objects, totalSize } = await listR2BucketObjects();
   return { objects, totalSize };
 }
 

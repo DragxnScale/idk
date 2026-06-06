@@ -410,7 +410,7 @@ export default function AdminPage() {
                     : t === "messages"
                       ? "Messages"
                       : t === "storage"
-                        ? "Blob Storage"
+                        ? "R2 Storage"
                         : t === "debug"
                           ? "Debug log"
                           : t === "owner"
@@ -3239,6 +3239,8 @@ function isPdfBlobPathname(pathname: string): boolean {
 function StorageTab() {
   const [blobs, setBlobs] = useState<BlobItem[]>([]);
   const [totalSize, setTotalSize] = useState(0);
+  const [bucketName, setBucketName] = useState<string | null>(null);
+  const [objectCount, setObjectCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BlobItem | null>(null);
@@ -3270,7 +3272,9 @@ function StorageTab() {
     if (res.ok) {
       const data = await res.json();
       setBlobs(data.blobs);
-      setTotalSize(data.totalSize);
+      setTotalSize(data.totalSize ?? 0);
+      setBucketName(typeof data.bucketName === "string" ? data.bucketName : null);
+      setObjectCount(typeof data.objectCount === "number" ? data.objectCount : data.blobs?.length ?? 0);
     }
     setLoading(false);
   }, []);
@@ -3335,7 +3339,7 @@ function StorageTab() {
   const usedPct = Math.min(100, (totalSize / (quotaGB * 1024 * 1024 * 1024)) * 100);
 
   if (loading) {
-    return <p className="text-gray-400 animate-pulse py-8 text-center text-sm">Loading blob storage…</p>;
+    return <p className="text-gray-400 animate-pulse py-8 text-center text-sm">Loading R2 bucket…</p>;
   }
 
   return (
@@ -3366,12 +3370,15 @@ function StorageTab() {
         </div>
       </div>
 
-      {/* Usage overview */}
+      {/* R2 bucket usage */}
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">Storage Usage</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-semibold">R2 bucket usage</h2>
           <button onClick={load} className="rounded-lg border border-gray-700 px-3 py-1 text-xs hover:bg-gray-800 transition">Refresh</button>
         </div>
+        {bucketName && (
+          <p className="text-xs text-gray-500 mb-3 font-mono">{bucketName}</p>
+        )}
         <div className="h-3 rounded-full bg-gray-800 overflow-hidden mb-2">
           <div
             className={`h-full rounded-full transition-all ${usedPct > 90 ? "bg-red-500" : usedPct > 70 ? "bg-amber-500" : "bg-blue-500"}`}
@@ -3379,13 +3386,13 @@ function StorageTab() {
           />
         </div>
         <div className="flex justify-between text-xs text-gray-400">
-          <span>{fmtSize(totalSize)} used</span>
-          <span>{quotaGB} GB limit ({usedPct.toFixed(1)}%)</span>
+          <span>{fmtSize(totalSize)} in bucket</span>
+          <span>{quotaGB} GB free tier ({usedPct.toFixed(1)}%)</span>
         </div>
         <div className="grid grid-cols-3 gap-3 mt-4">
           <div className="rounded-lg border border-gray-800 p-3 text-center">
-            <p className="text-lg font-bold">{blobs.length}</p>
-            <p className="text-xs text-gray-500">Total files</p>
+            <p className="text-lg font-bold">{objectCount || blobs.length}</p>
+            <p className="text-xs text-gray-500">Objects in bucket</p>
           </div>
           <div className="rounded-lg border border-gray-800 p-3 text-center">
             <p className="text-lg font-bold">{adminBlobs.length}</p>

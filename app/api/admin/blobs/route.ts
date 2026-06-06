@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { documents, users } from "@/lib/db/schema";
-import { deletePdf, listPdfs, type BackendName } from "@/lib/storage-backend";
+import { deletePdf, listR2BucketObjects, type BackendName } from "@/lib/storage-backend";
 
 // Node runtime — listing R2 needs the AWS SDK.
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const { objects, totalSize } = await listPdfs();
+    const { bucketName, objects, objectCount, totalSize } = await listR2BucketObjects();
 
     const allBlobs: {
       url: string;
@@ -67,7 +67,12 @@ export async function GET() {
         : null;
     }
 
-    return NextResponse.json({ blobs: allBlobs, totalSize });
+    return NextResponse.json({
+      blobs: allBlobs,
+      bucketName,
+      objectCount,
+      totalSize,
+    });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
