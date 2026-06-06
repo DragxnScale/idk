@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AI_STORED_CONTENT_SECTIONS,
+  DEFAULT_CONTENT_PAGE_SIZE,
   type AiStoredContentSectionId,
 } from "@/lib/ai-stored-content-sections";
 
@@ -120,39 +121,35 @@ function ExpandableRow({
           : undefined
       }
     >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex flex-col gap-1 px-3 py-2 text-left hover:bg-gray-900/60 transition"
-      >
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 w-full">
-          {meta}
-          {cacheDeletable && onDelete && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="ml-auto text-gray-500 hover:text-red-400 text-sm leading-none px-1"
-              title="Delete cached note"
-              aria-label="Delete cached note"
-            >
-              ×
-            </button>
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 min-w-0 flex flex-col gap-1 px-3 py-2 text-left hover:bg-gray-900/60 transition"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 w-full">
+            {meta}
+            {hasMore && (
+              <span className="text-[10px] text-gray-600 ml-auto">{open ? "▲" : "▼"}</span>
+            )}
+          </div>
+          {source && <SourceLine source={source} />}
+          {preview && (
+            <p className="text-xs text-gray-400 line-clamp-2">{preview}</p>
           )}
-          {hasMore && !cacheDeletable && (
-            <span className="text-[10px] text-gray-600 ml-auto">{open ? "▲" : "▼"}</span>
-          )}
-          {hasMore && cacheDeletable && (
-            <span className="text-[10px] text-gray-600">{open ? "▲" : "▼"}</span>
-          )}
-        </div>
-        {source && <SourceLine source={source} />}
-        {preview && (
-          <p className="text-xs text-gray-400 line-clamp-2">{preview}</p>
+        </button>
+        {cacheDeletable && onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex-shrink-0 px-3 text-gray-500 hover:text-red-400 hover:bg-gray-900/60 text-lg leading-none transition border-l border-gray-800"
+            title="Delete cached note"
+            aria-label="Delete cached note"
+          >
+            ×
+          </button>
         )}
-      </button>
+      </div>
       {open && full && (
         <div className="border-t border-gray-800 px-3 py-2">
           <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
@@ -530,7 +527,6 @@ export function AiContentTab() {
   const [data, setData] = useState<ContentResponse | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edit, setEdit] = useState<EditState>(null);
   const [saving, setSaving] = useState(false);
@@ -549,9 +545,8 @@ export function AiContentTab() {
   }, [refreshCounts]);
 
   const loadSection = useCallback(
-    async (section: AiStoredContentSectionId, pageNum: number, append: boolean) => {
-      if (append) setLoadingMore(true);
-      else setLoading(true);
+    async (section: AiStoredContentSectionId, pageNum: number) => {
+      setLoading(true);
       setError(null);
       try {
         const params = new URLSearchParams({
@@ -562,21 +557,12 @@ export function AiContentTab() {
         const res = await fetch(`/api/admin/ai-content?${params}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: ContentResponse = await res.json();
-        setData((prev) => {
-          if (append && prev && prev.section === section) {
-            return {
-              ...json,
-              items: [...prev.items, ...json.items],
-            };
-          }
-          return json;
-        });
+        setData(json);
         setPage(pageNum);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
       } finally {
         setLoading(false);
-        setLoadingMore(false);
       }
     },
     [notesFilter]
@@ -584,7 +570,7 @@ export function AiContentTab() {
 
   useEffect(() => {
     setPage(1);
-    loadSection(activeSection, 1, false);
+    void loadSection(activeSection, 1);
   }, [activeSection, notesFilter, loadSection]);
 
   const handleDelete = async () => {
@@ -717,28 +703,36 @@ export function AiContentTab() {
       </div>
 
       {activeSection === "notes" && (
-        <div className="flex rounded-lg border border-gray-800 p-0.5 text-xs w-fit">
-          {(
-            [
-              ["all", "All"],
-              ["session", "Session notes"],
-              ["public", "Public notes"],
-              ["document", "Document cache"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setNotesFilter(value)}
-              className={`rounded-md px-2.5 py-1 transition whitespace-nowrap ${
-                notesFilter === value
-                  ? "bg-gray-800 text-white"
-                  : "text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex rounded-lg border border-gray-800 p-0.5 text-xs w-fit">
+            {(
+              [
+                ["all", "All"],
+                ["session", "Session notes"],
+                ["public", "Public notes"],
+                ["document", "Document cache"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setNotesFilter(value)}
+                className={`rounded-md px-2.5 py-1 transition whitespace-nowrap ${
+                  notesFilter === value
+                    ? "bg-gray-800 text-white"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {notesFilter === "session" && (
+            <p className="text-[10px] text-gray-600">
+              Session notes cannot be deleted here. Use Public notes or Document cache to remove
+              shared caches (× on each row).
+            </p>
+          )}
         </div>
       )}
 
@@ -752,37 +746,59 @@ export function AiContentTab() {
           Could not load content: {error}
         </p>
       )}
-      {data && !error && (
-        <>
-          <p className="text-xs text-gray-500">
-            {data.total.toLocaleString()} item{data.total !== 1 ? "s" : ""} in {activeLabel}
-          </p>
-          {data.items.length === 0 ? (
-            <p className="text-sm text-gray-500 py-8 text-center">No items in this section.</p>
-          ) : (
-            <div className="space-y-2">
-              {data.items.map((item) =>
-                renderItem(
-                  activeSection,
-                  item,
-                  setConfirmDelete,
-                  (section, row) => setEdit({ section, item: row })
-                )
+      {data && !error && (() => {
+        const totalPages = Math.max(1, Math.ceil(data.total / DEFAULT_CONTENT_PAGE_SIZE));
+        return (
+          <>
+            <p className="text-xs text-gray-500">
+              {data.total.toLocaleString()} item{data.total !== 1 ? "s" : ""} in {activeLabel}
+              {totalPages > 1 && (
+                <span className="text-gray-600">
+                  {" "}
+                  · page {page} of {totalPages}
+                </span>
               )}
-            </div>
-          )}
-          {data.hasMore && (
-            <button
-              type="button"
-              disabled={loadingMore}
-              onClick={() => loadSection(activeSection, page + 1, true)}
-              className="w-full rounded-lg border border-gray-700 py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-50"
-            >
-              {loadingMore ? "Loading…" : "Show more"}
-            </button>
-          )}
-        </>
-      )}
+            </p>
+            {data.items.length === 0 ? (
+              <p className="text-sm text-gray-500 py-8 text-center">No items in this section.</p>
+            ) : (
+              <div className={`space-y-2 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
+                {data.items.map((item) =>
+                  renderItem(
+                    activeSection,
+                    item,
+                    setConfirmDelete,
+                    (section, row) => setEdit({ section, item: row })
+                  )
+                )}
+              </div>
+            )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={page <= 1 || loading}
+                  onClick={() => void loadSection(activeSection, page - 1)}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                >
+                  ← Previous
+                </button>
+                <span className="text-xs text-gray-500 tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => void loadSection(activeSection, page + 1)}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <EditModal
         edit={edit}
