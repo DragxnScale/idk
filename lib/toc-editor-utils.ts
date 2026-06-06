@@ -68,6 +68,35 @@ export function createNewTocRowAfter(rows: TocRow[], afterIndex?: number): TocRo
   };
 }
 
+/** Book-page ranges for the editable JSON tab (no offset). */
+export function tocRowsToBookRanges(rows: TocRow[]): Record<string, [number, number]> {
+  const ranges: Record<string, [number, number]> = {};
+  for (const row of rows) {
+    if (!row.label.trim()) continue;
+    if (row.startPage <= 0 || row.endPage <= 0 || row.endPage < row.startPage) continue;
+    ranges[row.label.trim()] = [row.startPage, row.endPage];
+  }
+  return ranges;
+}
+
+export function bookRangesToTocRows(ranges: Record<string, [number, number]>): TocRow[] {
+  return Object.entries(ranges)
+    .sort(([, a], [, b]) => a[0] - b[0])
+    .map(([label, [start, end]]) => ({
+      label,
+      startPage: start,
+      endPage: end,
+    }));
+}
+
+/** Final PDF ranges saved to chapterPageRanges (book + offset). */
+export function finalPdfRanges(
+  rows: TocRow[],
+  offset: number
+): Record<string, [number, number]> {
+  return tocRowsToRanges(rows, offset);
+}
+
 export function parseTocRangesJson(json: string): Record<string, [number, number]> {
   const parsed = JSON.parse(json) as unknown;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
