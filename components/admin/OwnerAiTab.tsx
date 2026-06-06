@@ -5,7 +5,11 @@ import {
   OWNER_AI_SETTING_KEYS,
   type OwnerAiSettings,
 } from "@/lib/owner-ai-settings-shared";
-import { parseOwnerAiProposal } from "@/lib/owner-ai-proposal";
+import {
+  contentMentionsOwnerAiProposal,
+  parseOwnerAiProposal,
+  stripOwnerAiProposalFromDisplay,
+} from "@/lib/owner-ai-proposal";
 
 type ChatRole = "user" | "assistant";
 
@@ -139,6 +143,16 @@ export function OwnerAiTab() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, pendingProposal]);
+
+  useEffect(() => {
+    if (pendingProposal) return;
+    const lastIdx = messages.findLastIndex((m) => m.role === "assistant");
+    if (lastIdx === -1) return;
+    const proposal = parseOwnerAiProposal(messages[lastIdx].content);
+    if (proposal) {
+      setPendingProposal({ ...proposal, messageIndex: lastIdx });
+    }
   }, [messages, pendingProposal]);
 
   async function saveAll() {
@@ -454,18 +468,37 @@ export function OwnerAiTab() {
               chemistry.&quot;
             </p>
           )}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`text-sm rounded-lg px-3 py-2 max-w-[95%] whitespace-pre-wrap ${
-                m.role === "user"
-                  ? "ml-auto bg-gray-800 text-gray-100"
-                  : "mr-auto bg-gray-900 border border-gray-800 text-gray-300"
-              }`}
-            >
-              {m.content}
-            </div>
-          ))}
+          {messages.map((m, i) => {
+            const displayContent =
+              m.role === "assistant"
+                ? stripOwnerAiProposalFromDisplay(m.content)
+                : m.content;
+            if (!displayContent && m.role === "assistant") return null;
+            return (
+              <div
+                key={i}
+                className={`text-sm rounded-lg px-3 py-2 max-w-[95%] whitespace-pre-wrap ${
+                  m.role === "user"
+                    ? "ml-auto bg-gray-800 text-gray-100"
+                    : "mr-auto bg-gray-900 border border-gray-800 text-gray-300"
+                }`}
+              >
+                {displayContent}
+              </div>
+            );
+          })}
+          {!pendingProposal &&
+            messages.some(
+              (m) =>
+                m.role === "assistant" &&
+                contentMentionsOwnerAiProposal(m.content) &&
+                !parseOwnerAiProposal(m.content)
+            ) && (
+              <p className="text-xs text-amber-400/90">
+                A settings proposal was mentioned but could not be parsed. Ask the copilot to
+                resend valid JSON, or edit the textareas manually.
+              </p>
+            )}
           {pendingProposal && (
             <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-sm">
               <p className="text-emerald-300 font-medium mb-2">Proposed settings change</p>
