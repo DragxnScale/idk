@@ -8,9 +8,13 @@ import {
   flashcards,
   publicNotes,
   quizzes,
+  velocityGames,
   velocityQuestionBank,
 } from "@/lib/db/schema";
-import type { AiStoredContentSectionId } from "@/lib/ai-stored-content-sections";
+import {
+  isValidContentSection,
+  type AiStoredContentSectionId,
+} from "@/lib/ai-stored-content-sections";
 
 export const runtime = "nodejs";
 
@@ -175,5 +179,114 @@ export async function PATCH(request: Request) {
   } catch (err) {
     console.error("[admin/ai-content/item]", err);
     return NextResponse.json({ error: "Update failed" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const admin = await requireAdmin();
+    if (!admin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const section = searchParams.get("section");
+    const id = searchParams.get("id");
+    const kind = searchParams.get("kind") ?? "public";
+
+    if (!section || !id || !isValidContentSection(section)) {
+      return NextResponse.json({ error: "Missing section or id" }, { status: 400 });
+    }
+
+    if (section === "notes") {
+      if (kind === "document") {
+        const row = await db.query.documentNotes.findFirst({
+          where: eq(documentNotes.id, id),
+        });
+        if (!row) {
+          return NextResponse.json({ error: "Not found" }, { status: 404 });
+        }
+        await db.delete(documentNotes).where(eq(documentNotes.id, id));
+        return NextResponse.json({ ok: true });
+      }
+      const row = await db.query.publicNotes.findFirst({
+        where: eq(publicNotes.id, id),
+      });
+      if (!row) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      await db.delete(publicNotes).where(eq(publicNotes.id, id));
+      return NextResponse.json({ ok: true });
+    }
+
+    if (section === "flashcards") {
+      const row = await db.query.flashcards.findFirst({
+        where: eq(flashcards.id, id),
+      });
+      if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      await db.delete(flashcards).where(eq(flashcards.id, id));
+      return NextResponse.json({ ok: true });
+    }
+
+    if (section === "quiz") {
+      const colon = id.indexOf(":");
+      if (colon <= 0) {
+        return NextResponse.json({ error: "Invalid quiz id" }, { status: 400 });
+      }
+      const quizId = id.slice(0, colon);
+      const questionIndex = parseInt(id.slice(colon + 1), 10);
+      if (!Number.isFinite(questionIndex) || questionIndex < 0) {
+        return NextResponse.json({ error: "Invalid question index" }, { status: 400 });
+      }
+
+      const quiz = await db.query.quizzes.findFirst({
+        where: eq(quizzes.id, quizId),
+      });
+      if (!quiz) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+      let questions: unknown[];
+      try {
+        questions = JSON.parse(quiz.questionsJson) as unknown[];
+      } catch {
+        return NextResponse.json({ error: "Invalid quiz JSON" }, { status: 500 });
+      }
+      if (!Array.isArray(questions) || questionIndex >= questions.length) {
+        return NextResponse.json({ error: "Question not found" }, { status: 404 });
+      }
+
+      questions.splice(questionIndex, 1);
+      if (questions.length === 0) {
+        await db.delete(quizzes).where(eq(quizzes.id, quizId));
+      } else {
+        await db
+          .update(quizzes)
+          .set({ questionsJson: JSON.stringify(questions) })
+          .where(eq(quizzes.id, quizId));
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (section === "velocity-games") {
+      const row = await db.query.velocityGames.findFirst({
+        where: eq(velocityGames.id, id),
+      });
+      if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      await db.delete(velocityGames).where(eq(velocityGames.id, id));
+      return NextResponse.json({ ok: true });
+    }
+
+    if (section === "velocity-bank") {
+      const row = await db.query.velocityQuestionBank.findFirst({
+        where: eq(velocityQuestionBank.id, id),
+      });
+      if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      await db.delete(velocityQuestionBank).where(eq(velocityQuestionBank.id, id));
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: "Section not deletable" }, { status: 400 });
+  } catch (err) {
+    console.error("[admin/ai-content/item DELETE]", err);
+    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 }

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PaginationBar } from "@/components/PaginationBar";
+
+const USAGE_PAGE_SIZE = 10;
 
 interface UsageLogRow {
   id: string;
@@ -23,6 +26,7 @@ interface UsageSection {
   logs: UsageLogRow[];
   hasMore: boolean;
   page: number;
+  perPage?: number;
 }
 
 interface UsageResponse {
@@ -100,55 +104,26 @@ function LogRow({ log }: { log: UsageLogRow }) {
   );
 }
 
-function SectionPanel({
-  section,
-  onLoadMore,
-  loadingMore,
-}: {
-  section: UsageSection;
-  onLoadMore: (sectionId: string, nextPage: number) => Promise<void>;
-  loadingMore: string | null;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-gray-500 mb-3">
-        {section.callCount} call{section.callCount !== 1 ? "s" : ""} ·{" "}
-        {section.totalTokens.toLocaleString()} tokens
-      </p>
-      <div className="space-y-2">
-        {section.logs.map((log) => (
-          <LogRow key={log.id} log={log} />
-        ))}
-        {section.hasMore && (
-          <button
-            type="button"
-            disabled={loadingMore === section.id}
-            onClick={() => onLoadMore(section.id, section.page + 1)}
-            className="w-full rounded-lg border border-gray-700 py-2 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-50"
-          >
-            {loadingMore === section.id ? "Loading…" : "Show more"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
-  const [data, setData] = useState<UsageResponse | null>(null);
+  const [sections, setSections] = useState<UsageSection[]>([]);
+  const [summary, setSummary] = useState<{ totalCalls: number; totalTokens: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingPage, setLoadingPage] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState<string | null>(null);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  const load = useCallback(async () => {
+  const loadOverview = useCallback(async () => {
     setLoading(true);
     setError(null);
     setActiveSectionId(null);
+    setPage(1);
     try {
       const res = await fetch(`/api/admin/users/${userId}/ai-usage`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const data: UsageResponse = await res.json();
+      setSummary({ totalCalls: data.totalCalls, totalTokens: data.totalTokens });
+      setSections(data.sections);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -156,72 +131,74 @@ export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
     }
   }, [userId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const loadSectionPage = useCallback(
+    async (sectionId: string, pageNum: number) => {
+      setLoadingPage(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/admin/users/${userId}/ai-usage?section=${encodeURIComponent(sectionId)}&page=${pageNum}`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: UsageResponse = await res.json();
+        const updated = data.sections[0];
+        if (!updated) return;
+        setSections((prev) =>
+          prev.map((s) => (s.id === sectionId ? { ...s, ...updated, page: pageNum } : s))
+        );
+        setPage(pageNum);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        setLoadingPage(false);
+      }
+    },
+    [userId]
+  );
 
   useEffect(() => {
-    if (!data?.sections.length) return;
+    loadOverview();
+  }, [loadOverview]);
+
+  useEffect(() => {
+    if (!sections.length) return;
     setActiveSectionId((current) =>
-      current && data.sections.some((s) => s.id === current)
-        ? current
-        : data.sections[0].id
+      current && sections.some((s) => s.id === current) ? current : sections[0].id
     );
-  }, [data]);
+  }, [sections]);
 
-  const loadMore = async (sectionId: string, nextPage: number) => {
-    setLoadingMore(sectionId);
-    try {
-      const res = await fetch(
-        `/api/admin/users/${userId}/ai-usage?section=${encodeURIComponent(sectionId)}&page=${nextPage}`
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const more: UsageResponse = await res.json();
-      const extra = more.sections[0];
-      if (!extra) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          sections: prev.sections.map((s) =>
-            s.id === sectionId
-              ? {
-                  ...s,
-                  logs: [...s.logs, ...extra.logs],
-                  hasMore: extra.hasMore,
-                  page: extra.page,
-                }
-              : s
-          ),
-        };
-      });
-    } finally {
-      setLoadingMore(null);
-    }
-  };
+  useEffect(() => {
+    if (!activeSectionId) return;
+    setPage(1);
+    void loadSectionPage(activeSectionId, 1);
+  }, [activeSectionId, loadSectionPage]);
 
   if (loading) {
     return <p className="text-sm text-gray-500 animate-pulse py-8 text-center">Loading AI usage…</p>;
   }
-  if (error) {
+  if (error && !sections.length) {
     return <p className="text-sm text-red-400 py-8 text-center">Could not load AI usage: {error}</p>;
   }
-  if (!data || data.totalCalls === 0) {
+  if (!summary || summary.totalCalls === 0) {
     return (
       <p className="text-sm text-gray-500 py-8 text-center">No AI usage recorded for this user yet.</p>
     );
   }
 
-  const activeSection = data.sections.find((s) => s.id === activeSectionId);
+  const activeSection = sections.find((s) => s.id === activeSectionId);
+  const perPage = activeSection?.perPage ?? USAGE_PAGE_SIZE;
+  const totalPages = activeSection
+    ? Math.max(1, Math.ceil(activeSection.callCount / perPage))
+    : 1;
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
-        Lifetime counter: {lifetimeTokensUsed.toLocaleString()} tokens · {data.totalCalls} logged call
-        {data.totalCalls !== 1 ? "s" : ""} ({data.totalTokens.toLocaleString()} tokens in log)
+        Lifetime counter: {lifetimeTokensUsed.toLocaleString()} tokens · {summary.totalCalls} logged call
+        {summary.totalCalls !== 1 ? "s" : ""} ({summary.totalTokens.toLocaleString()} tokens in log)
       </p>
       <div className="flex flex-wrap rounded-lg border border-gray-700 p-0.5 text-xs w-fit gap-0.5">
-        {data.sections.map((section) => (
+        {sections.map((section) => (
           <button
             key={section.id}
             type="button"
@@ -236,12 +213,34 @@ export function UserAiUsageLog({ userId, lifetimeTokensUsed }: Props) {
           </button>
         ))}
       </div>
+      {error && (
+        <p className="text-sm text-red-400 text-center">Could not load page: {error}</p>
+      )}
       {activeSection && (
-        <SectionPanel
-          section={activeSection}
-          onLoadMore={loadMore}
-          loadingMore={loadingMore}
-        />
+        <div>
+          <p className="text-xs text-gray-500 mb-3">
+            {activeSection.callCount} call{activeSection.callCount !== 1 ? "s" : ""} ·{" "}
+            {activeSection.totalTokens.toLocaleString()} tokens
+            {totalPages > 1 && (
+              <span className="text-gray-600">
+                {" "}
+                · page {page} of {totalPages}
+              </span>
+            )}
+          </p>
+          <div className={`space-y-2 ${loadingPage ? "opacity-60 pointer-events-none" : ""}`}>
+            {activeSection.logs.map((log) => (
+              <LogRow key={log.id} log={log} />
+            ))}
+          </div>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            loading={loadingPage}
+            onPrev={() => void loadSectionPage(activeSection.id, page - 1)}
+            onNext={() => void loadSectionPage(activeSection.id, page + 1)}
+          />
+        </div>
       )}
     </div>
   );

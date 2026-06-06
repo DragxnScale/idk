@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { isTypingTarget } from "@/lib/is-typing-target";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -61,13 +62,6 @@ function compactTime(minutes: number): string {
     return m > 0 ? `${h}h${m}m` : `${h}h`;
   }
   return `${minutes}m`;
-}
-
-function isTypingTarget(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return el.isContentEditable;
 }
 
 export interface AdminStudyCalendarProps {

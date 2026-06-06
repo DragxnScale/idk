@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PaginationBar } from "@/components/PaginationBar";
 import {
   AI_STORED_CONTENT_SECTIONS,
   DEFAULT_CONTENT_PAGE_SIZE,
@@ -36,10 +37,44 @@ type EditState = {
 } | null;
 
 type DeleteState = {
+  section: AiStoredContentSectionId;
   id: string;
-  kind: "public" | "document";
   label: string;
+  notesKind?: "public" | "document";
 } | null;
+
+function deleteConfirmCopy(state: DeleteState): { title: string; body: string } {
+  if (!state) return { title: "Delete?", body: "" };
+  switch (state.section) {
+    case "notes":
+      return {
+        title: "Delete cached notes?",
+        body: "Session copies are kept. The next user on this page will regenerate from AI.",
+      };
+    case "quiz":
+      return {
+        title: "Remove quiz question?",
+        body: "Removes this question from the session quiz. If it was the last question, the whole quiz row is deleted.",
+      };
+    case "flashcards":
+      return {
+        title: "Delete flashcard?",
+        body: "Removes this card from the review queue. Upload cache cards will not be reused for that page overlap.",
+      };
+    case "velocity-games":
+      return {
+        title: "Delete velocity game?",
+        body: "Permanently removes this session's velocity game record.",
+      };
+    case "velocity-bank":
+      return {
+        title: "Delete bank question?",
+        body: "Future velocity games will not draw this question from the shared pool.",
+      };
+    default:
+      return { title: "Delete item?", body: "This cannot be undone." };
+  }
+}
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
@@ -91,7 +126,7 @@ function ExpandableRow({
   full,
   fullLabel = "Full content",
   editable,
-  cacheDeletable,
+  deletable,
   onDelete,
   onEdit,
 }: {
@@ -102,7 +137,7 @@ function ExpandableRow({
   full: string;
   fullLabel?: string;
   editable?: boolean;
-  cacheDeletable?: boolean;
+  deletable?: boolean;
   onDelete?: () => void;
   onEdit?: () => void;
 }) {
@@ -138,13 +173,13 @@ function ExpandableRow({
             <p className="text-xs text-gray-400 line-clamp-2">{preview}</p>
           )}
         </button>
-        {cacheDeletable && onDelete && (
+        {deletable && onDelete && (
           <button
             type="button"
             onClick={onDelete}
             className="flex-shrink-0 px-3 text-gray-500 hover:text-red-400 hover:bg-gray-900/60 text-lg leading-none transition border-l border-gray-800"
-            title="Delete cached note"
-            aria-label="Delete cached note"
+            title="Delete"
+            aria-label="Delete"
           >
             ×
           </button>
@@ -195,7 +230,7 @@ function renderItem(
   const source = item.source as ContentSource | undefined;
   const createdAt = formatWhen((item.createdAt as string) ?? null);
   const editable = Boolean(item.editable);
-  const cacheDeletable = Boolean(item.cacheDeletable);
+  const deletable = Boolean(item.deletable);
   const rowKey = String(item.id);
 
   if (section === "notes") {
@@ -210,14 +245,15 @@ function renderItem(
         preview={(item.preview as string) ?? null}
         full={String(item.fullContent ?? "")}
         editable={editable}
-        cacheDeletable={cacheDeletable}
+        deletable={deletable}
         onEdit={editable ? () => onEdit(section, item) : undefined}
         onDelete={
-          cacheDeletable
+          deletable
             ? () =>
                 onDelete({
+                  section: "notes",
                   id: String(item.id),
-                  kind: kind === "document" ? "document" : "public",
+                  notesKind: kind === "document" ? "document" : "public",
                   label: `${title}${page != null ? ` p. ${page}` : ""}`,
                 })
             : undefined
@@ -250,6 +286,7 @@ function renderItem(
   }
 
   if (section === "quiz") {
+    const qPreview = (item.preview as string) ?? String(item.question ?? "Question");
     return (
       <ExpandableRow
         key={rowKey}
@@ -259,7 +296,18 @@ function renderItem(
         full={formatQuizExpand(item)}
         fullLabel="Question details"
         editable={editable}
+        deletable={deletable}
         onEdit={editable ? () => onEdit(section, item) : undefined}
+        onDelete={
+          deletable
+            ? () =>
+                onDelete({
+                  section: "quiz",
+                  id: String(item.id),
+                  label: qPreview.slice(0, 80),
+                })
+            : undefined
+        }
         meta={
           <>
             <span className="text-xs text-gray-500 w-28 flex-shrink-0">{createdAt}</span>
@@ -282,7 +330,18 @@ function renderItem(
         preview={previewText(`${item.front}\n→ ${item.back}`)}
         full={`${item.front}\n\n→ ${item.back}`}
         editable={editable}
+        deletable={deletable}
         onEdit={editable ? () => onEdit(section, item) : undefined}
+        onDelete={
+          deletable
+            ? () =>
+                onDelete({
+                  section: "flashcards",
+                  id: String(item.id),
+                  label: String(item.front ?? "Flashcard"),
+                })
+            : undefined
+        }
         meta={
           <>
             <span className="text-xs text-gray-500 w-28 flex-shrink-0">{createdAt}</span>
@@ -308,6 +367,17 @@ function renderItem(
         }
         full={String(item.questionsJson ?? "")}
         fullLabel="Questions JSON"
+        deletable={deletable}
+        onDelete={
+          deletable
+            ? () =>
+                onDelete({
+                  section: "velocity-games",
+                  id: String(item.id),
+                  label: `${(item.userEmail as string) ?? "user"} · ${String(item.questionCount)} Q`,
+                })
+            : undefined
+        }
         meta={
           <>
             <span className="text-xs text-gray-500 w-28 flex-shrink-0">{createdAt}</span>
@@ -322,6 +392,8 @@ function renderItem(
   }
 
   if (section === "velocity-bank") {
+    const bankLabel =
+      (item.preview as string) ?? String(item.topic ?? item.type ?? "Bank question");
     return (
       <ExpandableRow
         key={rowKey}
@@ -331,7 +403,18 @@ function renderItem(
         full={String(item.questionJson ?? "")}
         fullLabel="Question JSON"
         editable={editable}
+        deletable={deletable}
         onEdit={editable ? () => onEdit(section, item) : undefined}
+        onDelete={
+          deletable
+            ? () =>
+                onDelete({
+                  section: "velocity-bank",
+                  id: String(item.id),
+                  label: bankLabel.slice(0, 80),
+                })
+            : undefined
+        }
         meta={
           <>
             <span className="text-xs text-gray-500 w-28 flex-shrink-0">{createdAt}</span>
@@ -577,11 +660,16 @@ export function AiContentTab() {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
-      const params = new URLSearchParams({ kind: confirmDelete.kind });
-      const res = await fetch(
-        `/api/admin/ai-content/cache-notes/${confirmDelete.id}?${params}`,
-        { method: "DELETE" }
-      );
+      const params = new URLSearchParams({
+        section: confirmDelete.section,
+        id: confirmDelete.id,
+      });
+      if (confirmDelete.section === "notes" && confirmDelete.notesKind) {
+        params.set("kind", confirmDelete.notesKind);
+      }
+      const res = await fetch(`/api/admin/ai-content/item?${params}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData((prev) =>
         prev
@@ -679,7 +767,7 @@ export function AiContentTab() {
       <p className="text-xs text-gray-500">
         Browse persisted AI-generated content across all users. Videos and ephemeral
         calls (fact-check, grading) are not stored here. Right-click a row to edit.
-        × removes cached public or document notes (session copies are kept).
+        × deletes or invalidates cache rows (notes cache keeps session copies).
       </p>
 
       <div className="flex flex-wrap rounded-lg border border-gray-700 p-0.5 text-xs w-fit gap-0.5">
@@ -773,29 +861,13 @@ export function AiContentTab() {
                 )}
               </div>
             )}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <button
-                  type="button"
-                  disabled={page <= 1 || loading}
-                  onClick={() => void loadSection(activeSection, page - 1)}
-                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-                >
-                  ← Previous
-                </button>
-                <span className="text-xs text-gray-500 tabular-nums">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  disabled={page >= totalPages || loading}
-                  onClick={() => void loadSection(activeSection, page + 1)}
-                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-                >
-                  Next →
-                </button>
-              </div>
-            )}
+            <PaginationBar
+              page={page}
+              totalPages={totalPages}
+              loading={loading}
+              onPrev={() => void loadSection(activeSection, page - 1)}
+              onNext={() => void loadSection(activeSection, page + 1)}
+            />
           </>
         );
       })()}
@@ -807,16 +879,16 @@ export function AiContentTab() {
         onClose={() => setEdit(null)}
       />
 
-      {confirmDelete && (
+      {confirmDelete && (() => {
+        const copy = deleteConfirmCopy(confirmDelete);
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl bg-gray-900 border border-gray-700 p-6 shadow-2xl">
-            <h2 className="text-base font-semibold mb-1">Delete cached notes?</h2>
+            <h2 className="text-base font-semibold mb-1">{copy.title}</h2>
             <p className="text-sm text-gray-400 mb-1">
               <span className="text-white font-medium">{confirmDelete.label}</span>
             </p>
-            <p className="text-sm text-gray-500 mb-5">
-              Session copies are kept. The next user on this page will regenerate from AI.
-            </p>
+            <p className="text-sm text-gray-500 mb-5">{copy.body}</p>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -836,7 +908,8 @@ export function AiContentTab() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   VelocityGame,
   type VelocityResultsPayload,
 } from "@/components/study/VelocityGame";
+import { PaginationBar } from "@/components/PaginationBar";
 import type { VelocityQuestion } from "@/lib/velocity-match";
 
 interface QuizQuestion {
@@ -646,27 +647,17 @@ export default function SessionSummaryPage() {
                         </a>
                       ))}
                     </div>
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-4 text-xs">
-                        <button
-                          onClick={() => setVideosPage((p) => Math.max(0, p - 1))}
-                          disabled={videosPage === 0}
-                          className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition"
-                        >
-                          ← Previous
-                        </button>
-                        <span className="text-gray-500 dark:text-gray-400">
-                          Page {videosPage + 1} of {totalPages} · {videos.length} videos
-                        </span>
-                        <button
-                          onClick={() => setVideosPage((p) => Math.min(totalPages - 1, p + 1))}
-                          disabled={videosPage >= totalPages - 1}
-                          className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition"
-                        >
-                          Next →
-                        </button>
-                      </div>
-                    )}
+                    <PaginationBar
+                      className="mt-4"
+                      variant="light"
+                      page={videosPage + 1}
+                      totalPages={totalPages}
+                      centerLabel={`Page ${videosPage + 1} of ${totalPages} · ${videos.length} videos`}
+                      onPrev={() => setVideosPage((p) => Math.max(0, p - 1))}
+                      onNext={() =>
+                        setVideosPage((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                    />
                   </>
                 );
               })()}

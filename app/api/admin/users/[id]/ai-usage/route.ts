@@ -89,6 +89,7 @@ export async function GET(
           logs: slice.map(mapLogRow),
           hasMore,
           page: sectionFilter ? page : 1,
+          perPage,
         };
       })
       .filter((s): s is NonNullable<typeof s> => s != null && s.callCount > 0);

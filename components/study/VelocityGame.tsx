@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PaginationBar } from "@/components/PaginationBar";
 import {
   matchMultipleChoice,
   MC_LETTERS,
@@ -1418,42 +1419,31 @@ function Results({
               })}
           </ul>
           )}
-          {pageCount > 1 && (
-            <div className="mt-4 flex items-center justify-between gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setReviewPage((p) => Math.max(0, p - 1))}
-                disabled={safePage === 0}
-                className="rounded-md border border-gray-300 px-3 py-1.5 font-medium transition disabled:opacity-40 dark:border-gray-600"
-              >
-                ← Prev
-              </button>
-              <div className="flex flex-wrap items-center gap-1">
-                {Array.from({ length: pageCount }, (_, p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setReviewPage(p)}
-                    className={`min-w-[1.75rem] rounded-md px-2 py-1 font-medium transition ${
-                      p === safePage
-                        ? "bg-black text-white dark:bg-white dark:text-gray-900"
-                        : "border border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
-                    }`}
-                  >
-                    {p + 1}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => setReviewPage((p) => Math.min(pageCount - 1, p + 1))}
-                disabled={safePage >= pageCount - 1}
-                className="rounded-md border border-gray-300 px-3 py-1.5 font-medium transition disabled:opacity-40 dark:border-gray-600"
-              >
-                Next →
-              </button>
+          <PaginationBar
+            className="mt-4"
+            variant="light"
+            page={safePage + 1}
+            totalPages={pageCount}
+            onPrev={() => setReviewPage((p) => Math.max(0, p - 1))}
+            onNext={() => setReviewPage((p) => Math.min(pageCount - 1, p + 1))}
+          >
+            <div className="flex flex-wrap items-center justify-center gap-1">
+              {Array.from({ length: pageCount }, (_, p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setReviewPage(p)}
+                  className={`min-w-[1.75rem] rounded-md px-2 py-1 text-xs font-medium transition ${
+                    p === safePage
+                      ? "bg-black text-white dark:bg-white dark:text-gray-900"
+                      : "border border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {p + 1}
+                </button>
+              ))}
             </div>
-          )}
+          </PaginationBar>
           <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
             Showing {filtered.length === 0 ? 0 : safePage * REVIEW_PAGE_SIZE + 1}–
             {Math.min(filtered.length, safePage * REVIEW_PAGE_SIZE + pageItems.length)} of {filtered.length}
