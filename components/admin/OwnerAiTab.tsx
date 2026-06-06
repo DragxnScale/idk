@@ -513,7 +513,6 @@ export function OwnerAiTab() {
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())}
             placeholder="Message…"
             className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-            maxLength={4000}
             disabled={chatting || analyzing}
           />
           <button

@@ -8,9 +8,6 @@ import { recordAiUsage } from "@/lib/ai-usage";
 
 export const maxDuration = 60;
 
-const MAX_MESSAGES = 24;
-const MAX_MSG_LEN = 4000;
-
 type Role = "user" | "assistant" | "system";
 
 export async function POST(request: Request) {
@@ -34,13 +31,6 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (raw.length > MAX_MESSAGES) {
-    return NextResponse.json(
-      { error: `At most ${MAX_MESSAGES} messages` },
-      { status: 400 }
-    );
-  }
-
   const messages: { role: Role; content: string }[] = [];
   for (const m of raw) {
     if (!m || typeof m !== "object") {
@@ -53,12 +43,6 @@ export async function POST(request: Request) {
     }
     if (typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "Invalid message content" }, { status: 400 });
-    }
-    if (content.length > MAX_MSG_LEN) {
-      return NextResponse.json(
-        { error: `Each message must be under ${MAX_MSG_LEN} characters` },
-        { status: 400 }
-      );
     }
     messages.push({ role, content });
   }
