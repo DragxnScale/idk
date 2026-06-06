@@ -14,6 +14,16 @@ interface ChatMessage {
   content: string;
 }
 
+interface InsightsSummary {
+  contentCounts: Record<string, number>;
+  usageTotals30d: { callCount: number; totalTokens: number };
+  reportedVelocityCount: number;
+  clientErrorCount: number;
+}
+
+const ANALYZE_USER_MESSAGE =
+  "Analyze recent production data and suggest prompt improvements.";
+
 const EMPTY_SETTINGS: OwnerAiSettings = {
   aiOwnerStyle: "",
   aiProductContext: "",
@@ -94,7 +104,11 @@ export function OwnerAiTab() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [chatting, setChatting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [insightsSummary, setInsightsSummary] = useState<InsightsSummary | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<{
     patches: Record<string, string>;
     summary: string;
@@ -150,9 +164,80 @@ export function OwnerAiTab() {
     }
   }
 
+  async function loadSnapshot() {
+    setSnapshotLoading(true);
+    setChatError(null);
+    try {
+      const res = await fetch("/api/admin/owner-ai/insights");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setChatError(data.error ?? "Failed to load production snapshot");
+        return;
+      }
+      const insights = data.insights as {
+        contentCounts: Record<string, number>;
+        reportedVelocityCount: number;
+        usageSections: { callCount30d: number; totalTokens30d: number }[];
+        clientErrors: unknown[];
+      };
+      const usageTotals30d = (insights.usageSections ?? []).reduce(
+        (acc, s) => ({
+          callCount: acc.callCount + s.callCount30d,
+          totalTokens: acc.totalTokens + s.totalTokens30d,
+        }),
+        { callCount: 0, totalTokens: 0 }
+      );
+      setInsightsSummary({
+        contentCounts: insights.contentCounts,
+        usageTotals30d,
+        reportedVelocityCount: insights.reportedVelocityCount ?? 0,
+        clientErrorCount: insights.clientErrors?.length ?? 0,
+      });
+      setSnapshotOpen(true);
+    } catch {
+      setChatError("Network error loading snapshot");
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }
+
+  async function analyzeAndSuggest() {
+    if (chatting || analyzing) return;
+    setChatError(null);
+    setPendingProposal(null);
+    const userMsg: ChatMessage = { role: "user", content: ANALYZE_USER_MESSAGE };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setAnalyzing(true);
+    try {
+      const res = await fetch("/api/admin/owner-ai/suggest", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setChatError(data.error ?? "Analysis request failed");
+        return;
+      }
+      const content = data.content ?? "";
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
+      if (data.insightsSummary) {
+        setInsightsSummary(data.insightsSummary as InsightsSummary);
+      }
+      const proposal = parseOwnerAiProposal(content);
+      if (proposal) {
+        setPendingProposal({
+          ...proposal,
+          messageIndex: next.length,
+        });
+      }
+    } catch {
+      setChatError("Network error");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   async function sendChat() {
     const trimmed = input.trim();
-    if (!trimmed || chatting) return;
+    if (!trimmed || chatting || analyzing) return;
     setChatError(null);
     setPendingProposal(null);
     const next: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
@@ -306,9 +391,62 @@ export function OwnerAiTab() {
       <section className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-6">
         <h2 className="text-sm font-semibold text-amber-200 mb-1">Owner AI copilot</h2>
         <p className="text-xs text-amber-200/70 mb-4">
-          Context-aware assistant with product architecture loaded. Ask how features work or request
-          prompt refinements — proposals can be applied with one click. Messages are not stored.
+          Context-aware assistant with product architecture loaded. Ask how features work, run{" "}
+          <strong className="font-medium text-amber-200/90">Analyze &amp; suggest</strong> on
+          production data, or request prompt refinements — proposals can be applied with one click.
+          Messages are not stored.
         </p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => void analyzeAndSuggest()}
+            disabled={chatting || analyzing}
+            className="rounded-lg border border-amber-700/60 bg-amber-900/40 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-900/60 disabled:opacity-50"
+          >
+            {analyzing ? "Analyzing production data…" : "Analyze & suggest"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (snapshotOpen) {
+                setSnapshotOpen(false);
+              } else if (insightsSummary) {
+                setSnapshotOpen(true);
+              } else {
+                void loadSnapshot();
+              }
+            }}
+            disabled={snapshotLoading || analyzing}
+            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:border-gray-600 disabled:opacity-50"
+          >
+            {snapshotLoading
+              ? "Loading snapshot…"
+              : snapshotOpen
+                ? "Hide production snapshot"
+                : "Show production snapshot"}
+          </button>
+        </div>
+        {snapshotOpen && insightsSummary && (
+          <div className="rounded-lg border border-gray-800 bg-gray-950/80 p-3 mb-3 text-xs text-gray-400 space-y-2">
+            <p className="text-gray-300 font-medium">Production snapshot (30 days)</p>
+            <p>
+              AI calls: {insightsSummary.usageTotals30d.callCount.toLocaleString()} · Tokens:{" "}
+              {insightsSummary.usageTotals30d.totalTokens.toLocaleString()}
+            </p>
+            <p>
+              Stored content — notes: {insightsSummary.contentCounts.notes?.toLocaleString() ?? 0},
+              quiz: {insightsSummary.contentCounts.quiz?.toLocaleString() ?? 0}, flashcards:{" "}
+              {insightsSummary.contentCounts.flashcards?.toLocaleString() ?? 0}, velocity games:{" "}
+              {insightsSummary.contentCounts["velocity-games"]?.toLocaleString() ?? 0}, velocity
+              bank: {insightsSummary.contentCounts["velocity-bank"]?.toLocaleString() ?? 0}
+            </p>
+            <p>
+              Velocity questions reported:{" "}
+              {insightsSummary.reportedVelocityCount.toLocaleString()} · Recent AI client errors
+              sampled: {insightsSummary.clientErrorCount}
+            </p>
+          </div>
+        )}
         <div className="rounded-lg border border-gray-800 bg-gray-950 h-80 overflow-y-auto p-3 space-y-3 mb-3">
           {messages.length === 0 && (
             <p className="text-xs text-gray-600 text-center py-8">
@@ -359,7 +497,11 @@ export function OwnerAiTab() {
               </div>
             </div>
           )}
-          {chatting && <p className="text-xs text-gray-500 animate-pulse">Thinking…</p>}
+          {(chatting || analyzing) && (
+            <p className="text-xs text-gray-500 animate-pulse">
+              {analyzing ? "Analyzing production data…" : "Thinking…"}
+            </p>
+          )}
           <div ref={bottomRef} />
         </div>
         {chatError && <p className="text-xs text-red-400 mb-2">{chatError}</p>}
@@ -372,12 +514,12 @@ export function OwnerAiTab() {
             placeholder="Message…"
             className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
             maxLength={4000}
-            disabled={chatting}
+            disabled={chatting || analyzing}
           />
           <button
             type="button"
             onClick={() => void sendChat()}
-            disabled={chatting || !input.trim()}
+            disabled={chatting || analyzing || !input.trim()}
             className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
           >
             Send

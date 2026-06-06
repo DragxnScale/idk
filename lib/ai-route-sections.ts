@@ -31,7 +31,11 @@ export const AI_USAGE_SECTIONS: readonly AiUsageSectionDef[] = [
   {
     id: "admin",
     label: "Admin / other",
-    routes: ["/api/admin/extract-toc", "/api/admin/owner-ai/chat"],
+    routes: [
+      "/api/admin/extract-toc",
+      "/api/admin/owner-ai/chat",
+      "/api/admin/owner-ai/suggest",
+    ],
   },
 ] as const;
 
@@ -56,6 +60,7 @@ const SUB_ROUTE_LABELS: Record<string, string> = {
   "/api/ai/velocity/complete": "Post-game review",
   "/api/admin/extract-toc": "TOC extract",
   "/api/admin/owner-ai/chat": "Owner chat",
+  "/api/admin/owner-ai/suggest": "Owner suggest",
 };
 
 export function sectionForRoute(route: string): string {

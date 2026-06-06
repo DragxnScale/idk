@@ -1,6 +1,6 @@
-import type { ResultSet } from "@libsql/client";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
+import { fetchAiContentCounts } from "@/lib/ai-content-counts";
 import { db } from "@/lib/db";
 import {
   type ContentSource,
@@ -12,7 +12,6 @@ import {
 import {
   AI_STORED_CONTENT_SECTIONS,
   DEFAULT_CONTENT_PAGE_SIZE,
-  type AiStoredContentSectionId,
   isValidContentSection,
 } from "@/lib/ai-stored-content-sections";
 
@@ -69,32 +68,6 @@ function documentSourceFromRow(
     documentJson: null,
     page,
   });
-}
-
-async function fetchCounts(): Promise<Record<AiStoredContentSectionId, number>> {
-  const [notesSession, notesPublic, notesDocument, quiz, flashcards, velGames, velBank] =
-    await Promise.all([
-      db.$client.execute("SELECT count(*) AS n FROM ai_notes"),
-      db.$client.execute("SELECT count(*) AS n FROM public_notes"),
-      db.$client.execute("SELECT count(*) AS n FROM document_notes"),
-      db.$client.execute(
-        "SELECT coalesce(sum(json_array_length(questions_json)), 0) AS n FROM quizzes"
-      ),
-      db.$client.execute("SELECT count(*) AS n FROM flashcards"),
-      db.$client.execute("SELECT count(*) AS n FROM velocity_games"),
-      db.$client.execute("SELECT count(*) AS n FROM velocity_question_bank"),
-    ]);
-
-  const countRows = (res: ResultSet) => Number(res.rows[0]?.n ?? 0);
-
-  return {
-    notes:
-      countRows(notesSession) + countRows(notesPublic) + countRows(notesDocument),
-    quiz: countRows(quiz),
-    flashcards: countRows(flashcards),
-    "velocity-games": countRows(velGames),
-    "velocity-bank": countRows(velBank),
-  };
 }
 
 async function fetchNotes(
@@ -685,7 +658,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
 
     if (searchParams.get("counts") === "1") {
-      const counts = await fetchCounts();
+      const counts = await fetchAiContentCounts();
       return NextResponse.json({ counts });
     }
 

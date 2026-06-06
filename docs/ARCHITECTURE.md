@@ -97,8 +97,10 @@ High-level map (only meaningful directories and notable files).
 │   ├── document-ai-cache.ts      # resolveDocumentFromSession(), parsePagesFromAccumulatedText(), assertDocumentOwner()
 │   ├── app-settings.ts           # Owner AI settings (app_settings), buildAiSystemPrompt()
 │   ├── owner-ai-context.ts       # loadOwnerAiContextDoc(), buildOwnerChatSystemPrompt() (server)
+│   ├── owner-ai-insights.ts      # gatherOwnerAiInsights(), formatInsightsForAnalysis() (server)
 │   ├── owner-ai-proposal.ts      # parseOwnerAiProposal() (client + server)
 │   ├── owner-ai-settings-shared.ts # Owner AI setting keys/types (client-safe)
+│   ├── ai-content-counts.ts      # fetchAiContentCounts() (shared with admin AI Content)
 │   ├── admin.ts                  # requireAdmin(), requireSuperOwner() (Node)
 │   ├── admin-edge.ts             # Admin check for Edge routes
 │   ├── srs.ts                    # FSRS-4.5 wrapper (`scheduleNext`, `previewAllGrades`, `formatInterval`, `isMature`) — only file in the app that imports `ts-fsrs`
@@ -414,6 +416,8 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set all Owner AI `app_settings` (`ai_product_context`, `ai_owner_style`, per-feature `ai_*_extra` keys) + active `MODEL`. Legacy field `noteStyleExtra` aliases `ai_owner_style`. |
 | POST | `/api/admin/owner-ai/apply` | Super-owner: apply copilot proposal patches `{ patches: { ai_owner_style: "…", … } }`; returns updated settings. |
 | POST | `/api/admin/owner-ai/chat` | Super-owner: context-aware copilot (`docs/AI_OWNER_CONTEXT.md` + current settings injected); may return `owner_ai_proposal` JSON for one-click Apply. |
+| GET | `/api/admin/owner-ai/insights` | Super-owner: production snapshot — AI usage samples/totals (30d), velocity bank reports, AI Content counts, recent AI-route client errors (~12k char budget). |
+| POST | `/api/admin/owner-ai/suggest` | Super-owner: one-shot analysis — gathers insights server-side, calls model with analysis addendum; returns assistant text + `insightsSummary`; usage logged at `/api/admin/owner-ai/suggest`. |
 
 ### 5.13 Spaced repetition (`/review`)
 
@@ -454,7 +458,7 @@ Every AI route is gated by a per-user token budget. The design is intentionally 
 - **Per-user override:** `users.ai_token_limit`. When non-null it takes precedence over the default. Admins edit this from the Users tab (Manage → "AI token usage" card: input + "Save limit" / "Reset to default" / "Reset counter" buttons).
 - **Owner bypass:** the super-owner (`SUPER_ADMIN_EMAIL`) is never gated — the admin list surfaces `aiTokenLimitEffective: null` for them.
 - **Helpers:**
-  - `assertAiBudget(userId)` — returns a ready-to-return 429 `NextResponse` if the user is over budget, else `null`. Called **before** the `generateText` / `generateObject` call in every `app/api/ai/**/route.ts` (plus `app/api/admin/owner-ai/chat/route.ts`).
+  - `assertAiBudget(userId)` — returns a ready-to-return 429 `NextResponse` if the user is over budget, else `null`. Called **before** the `generateText` / `generateObject` call in every `app/api/ai/**/route.ts` (plus `app/api/admin/owner-ai/chat/route.ts` and `app/api/admin/owner-ai/suggest/route.ts`).
   - `recordAiUsage(userId, route, usage, meta?)` — writes an `ai_usage_logs` row and bumps the denormalised `users.ai_tokens_used` counter. `meta` may include `model`, **`inputText`**, and **`outputText`** (full prompt/response for admin audit). Accepts either the new SDK usage shape (`inputTokens` / `outputTokens`) or the older one (`promptTokens` / `completionTokens`). Errors during accounting are swallowed — a broken insert must not cost the user their AI response.
   - `getAiTokenStatus(userId)` / `getDefaultAiTokenLimit()` — UI-facing readers.
 - **Grader special case** (`/api/ai/velocity/grade`): mid-round budget overruns **don't** 429 the grader — that would break gameplay. Instead we short-circuit to a "correct: false, source: fallback" response so the user can finish the round while still being rate-limited on generation.
@@ -491,7 +495,9 @@ Schema notes: every verdict is a flat object (no `oneOf`/discriminated union —
 - **`getAiOwnerExtrasForFeature(feature)`** — composed append for fact-check secondary prompts.
 - **`getAiOwnerStyleExtra()`** / **`setAiOwnerStyleExtra()`** — legacy helpers for `ai_owner_style` only.
 - **Owner copilot** (`lib/owner-ai-context.ts`): loads `docs/AI_OWNER_CONTEXT.md` into chat system prompt; proposals parsed via `lib/owner-ai-proposal.ts`.
-- Admin panel **Owner AI** tab: edit all settings, copilot chat, **Apply** on proposed patches (`POST /api/admin/owner-ai/apply`).
+- **Production insights** (`lib/owner-ai-insights.ts`): aggregates last-30-day `ai_usage_logs` (2 samples per feature section, truncated audit text), top velocity bank reports, `fetchAiContentCounts()`, and recent `client_error_logs` on `/api/ai/*` routes. Serialized payload capped at ~12k chars for LLM context.
+- **Analyze & suggest** (`POST /api/admin/owner-ai/suggest`): server builds analysis user message via `formatInsightsForAnalysis()`; system prompt adds `buildOwnerAnalysisAddendum()`; same `owner_ai_proposal` Apply flow as chat.
+- Admin panel **Owner AI** tab: edit all settings, copilot chat, **Analyze & suggest**, collapsible production snapshot (`GET /api/admin/owner-ai/insights`), **Apply** on proposed patches (`POST /api/admin/owner-ai/apply`).
 
 ### 6.3 Routes
 
@@ -623,7 +629,7 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | `/settings` | User settings (includes quiz question min/max). |
 | `/admin` | Admin dashboard (guarded; **Settings UI** tab for global copy/typography; **Debug log** / **Owner AI** super-owner only). |
 
-- **Owner AI tab** (`components/admin/OwnerAiTab.tsx`) — super-owner only. **Product context** + **global style** + per-feature instruction textareas (Notes, Quiz, Flashcards, Velocity, Videos); **Save all** → `PATCH /api/admin/owner-ai`. **Copilot chat** uses injected `docs/AI_OWNER_CONTEXT.md` and live settings; assistant may emit `{"type":"owner_ai_proposal","patches":{…},"summary":"…"}` — owner clicks **Apply changes** → `POST /api/admin/owner-ai/apply`. Model id shown read-only from `lib/ai.ts`.
+- **Owner AI tab** (`components/admin/OwnerAiTab.tsx`) — super-owner only. **Product context** + **global style** + per-feature instruction textareas (Notes, Quiz, Flashcards, Velocity, Videos); **Save all** → `PATCH /api/admin/owner-ai`. **Copilot chat** uses injected `docs/AI_OWNER_CONTEXT.md` and live settings; assistant may emit `{"type":"owner_ai_proposal","patches":{…},"summary":"…"}` — owner clicks **Apply changes** → `POST /api/admin/owner-ai/apply`. **Analyze & suggest** → `POST /api/admin/owner-ai/suggest` (shows short user bubble, full data stays server-side). **Production snapshot** (collapsed by default) → `GET /api/admin/owner-ai/insights` for 30-day token totals, content counts, and velocity report count. Model id shown read-only from `lib/ai.ts`.
 
 Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error` (`kind: user`); **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`). Owner feature notes use **`reportDevDebug`** from `lib/dev-debug.ts` → `/api/debug/dev-log`.
 

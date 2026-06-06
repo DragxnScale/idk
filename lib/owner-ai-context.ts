@@ -64,3 +64,14 @@ ${contextDoc}
 ${settingsBlock}
 ${UNTRUSTED_INPUT_GUARD}`;
 }
+
+export function buildOwnerAnalysisAddendum(): string {
+  return `
+
+--- PRODUCTION ANALYSIS MODE ---
+You are reviewing a production data snapshot (usage samples, velocity reports, content counts, client errors).
+1. Summarize findings in 3–6 bullet points (plain language).
+2. Tie recommendations to specific owner-editable keys when possible.
+3. If settings changes are warranted, end with a single-line owner_ai_proposal JSON (full replacement text per key, not diffs).
+4. If data is insufficient, say what is missing rather than inventing issues.`;
+}
