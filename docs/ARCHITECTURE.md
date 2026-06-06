@@ -693,7 +693,7 @@ The panel reads `isDeveloper` from `GET /api/user/session-context` (real JWT ide
 
 ### 7.5 Client-only and dynamic imports
 
-- **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`.
+- **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`. PDF opens at the first selected chapter for chapter goals; for time goals (and when no chapters are selected), opens at chapter 1’s PDF start when `chapterPageRanges` exists, otherwise `1 + pageOffset`.
 - **`app/settings/page.tsx`** — Shows a scroll hint under the title for cards below the fold; **Daily goals** renders quiz min/max number inputs **above** the hint paragraph so admin `SuiText` typography on the hint cannot hide the fields. **Login / exit password** card: forms start **locked** (dashed panel); tap to open a modal, `POST /api/user/verify-login-password`, then show both forms; **Lock** hides them again; a successful save auto-locks and shows a short success line on the locked panel. **Log out button** at the very bottom of the page (centered, subtle bordered style) calls `signOut({ callbackUrl: "/" })` from `next-auth/react` — mirrors the dashboard top-nav button so users have an obvious sign-out path from either place. The legacy **Developer mode** toggle was removed from this page on 2026-06 (admin diagnostics now gate themselves on `isAdmin()` directly, see §7.4c).
 
 ### 7.6 PWA / Offline mode

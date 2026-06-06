@@ -18,6 +18,7 @@ import { pdfClientLoadUrl } from "@/lib/pdf-client-url";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 import { NumberField } from "@/components/forms/NumberField";
 import { validatePositiveInt } from "@/lib/forms/numberField";
+import { firstChapterPdfStart } from "@/lib/toc-editor-utils";
 
 const PdfViewer = dynamic(
   () => import("@/components/study/PdfViewer").then((m) => m.PdfViewer),
@@ -42,6 +43,31 @@ function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function resolveSessionStartPage(
+  selectedDoc: SelectedDocument | null,
+  goalType: GoalType,
+  selectedChapters: string[]
+): number {
+  if (!selectedDoc) return 1;
+
+  if (
+    goalType === "chapter" &&
+    selectedChapters.length > 0 &&
+    selectedDoc.chapterPageRanges
+  ) {
+    const range = selectedDoc.chapterPageRanges[selectedChapters[0]];
+    return range ? range[0] : 1;
+  }
+
+  if (selectedDoc.chapterPageRanges) {
+    const first = firstChapterPdfStart(selectedDoc.chapterPageRanges);
+    if (first != null) return first;
+  }
+
+  if (selectedDoc.pageOffset) return 1 + selectedDoc.pageOffset;
+  return selectedDoc.startPage ?? 1;
 }
 
 type StudyGoalRow = {
@@ -687,17 +713,7 @@ function StudySessionInner() {
         const chosen = setupEntryPageChoice;
         const initialPdfPage =
           chosen ??
-          (goalType === "chapter" &&
-          selectedChapters.length > 0 &&
-          selectedDoc?.chapterPageRanges
-            ? (() => {
-                const first = selectedChapters[0];
-                const range = selectedDoc.chapterPageRanges[first];
-                return range ? range[0] : 1;
-              })()
-            : selectedDoc?.pageOffset
-              ? 1 + selectedDoc.pageOffset
-              : selectedDoc?.startPage ?? 1);
+          resolveSessionStartPage(selectedDoc ?? null, goalType, selectedChapters);
         const tempId = enqueueOfflineSession({
           goalType,
           targetValue,
@@ -776,17 +792,7 @@ function StudySessionInner() {
       setSetupEntryPageChoice(null);
       const initialPdfPage =
         chosenSetup ??
-        (goalType === "chapter" &&
-        selectedChapters.length > 0 &&
-        selectedDoc?.chapterPageRanges
-          ? (() => {
-              const first = selectedChapters[0];
-              const range = selectedDoc.chapterPageRanges[first];
-              return range ? range[0] : 1;
-            })()
-          : selectedDoc?.pageOffset
-            ? 1 + selectedDoc.pageOffset
-            : selectedDoc?.startPage ?? 1);
+        resolveSessionStartPage(selectedDoc ?? null, goalType, selectedChapters);
       lastFlushedPageRef.current = initialPdfPage;
       currentPageRef.current = initialPdfPage;
       lastSavedRef.current = 0;
@@ -805,17 +811,7 @@ function StudySessionInner() {
         const chosen = setupEntryPageChoice;
         const initialPdfPage =
           chosen ??
-          (goalType === "chapter" &&
-          selectedChapters.length > 0 &&
-          selectedDoc?.chapterPageRanges
-            ? (() => {
-                const first = selectedChapters[0];
-                const range = selectedDoc.chapterPageRanges[first];
-                return range ? range[0] : 1;
-              })()
-            : selectedDoc?.pageOffset
-              ? 1 + selectedDoc.pageOffset
-              : selectedDoc?.startPage ?? 1);
+          resolveSessionStartPage(selectedDoc ?? null, goalType, selectedChapters);
         const tempId = enqueueOfflineSession({
           goalType,
           targetValue,
@@ -1009,15 +1005,7 @@ function StudySessionInner() {
   }
 
   function getStartPage(): number {
-    if (goalType === "chapter" && selectedChapters.length > 0 && selectedDoc?.chapterPageRanges) {
-      const firstChapter = selectedChapters[0];
-      const range = selectedDoc.chapterPageRanges[firstChapter];
-      return range ? range[0] : 1;
-    }
-    // For user uploads with a page offset, PDF page 1 maps to book page (1 + offset),
-    // so the "start page" in book terms is (1 + offset).
-    if (selectedDoc?.pageOffset) return 1 + selectedDoc.pageOffset;
-    return selectedDoc?.startPage ?? 1;
+    return resolveSessionStartPage(selectedDoc, goalType, selectedChapters);
   }
 
   function toggleChapter(ch: string) {

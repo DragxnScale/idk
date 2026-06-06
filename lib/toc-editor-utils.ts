@@ -97,6 +97,18 @@ export function finalPdfRanges(
   return tocRowsToRanges(rows, offset);
 }
 
+/** PDF start page of chapter 1 (or earliest chapter if label "1" is absent). */
+export function firstChapterPdfStart(
+  ranges: Record<string, [number, number]>
+): number | null {
+  if (Object.keys(ranges).length === 0) return null;
+  const ch1 = ranges["1"];
+  if (ch1 && ch1[0] > 0) return ch1[0];
+  const sorted = Object.entries(ranges).sort(([, a], [, b]) => a[0] - b[0]);
+  const start = sorted[0]?.[1][0];
+  return start && start > 0 ? start : null;
+}
+
 export function parseTocRangesJson(json: string): Record<string, [number, number]> {
   const parsed = JSON.parse(json) as unknown;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
