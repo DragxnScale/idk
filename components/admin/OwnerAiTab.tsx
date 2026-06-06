@@ -132,6 +132,8 @@ export function OwnerAiTab() {
     messageIndex: number;
   } | null>(null);
   const [applying, setApplying] = useState(false);
+  const [proposalAppliedNotice, setProposalAppliedNotice] = useState(false);
+  const handledProposalIndicesRef = useRef<Set<number>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -165,11 +167,18 @@ export function OwnerAiTab() {
     if (pendingProposal) return;
     const lastIdx = messages.findLastIndex((m) => m.role === "assistant");
     if (lastIdx === -1) return;
+    if (handledProposalIndicesRef.current.has(lastIdx)) return;
     const proposal = parseOwnerAiProposal(messages[lastIdx].content);
     if (proposal) {
       setPendingProposal({ ...proposal, messageIndex: lastIdx });
     }
   }, [messages, pendingProposal]);
+
+  useEffect(() => {
+    if (!proposalAppliedNotice) return;
+    const timer = window.setTimeout(() => setProposalAppliedNotice(false), 3500);
+    return () => window.clearTimeout(timer);
+  }, [proposalAppliedNotice]);
 
   async function saveAll() {
     setSaving(true);
@@ -309,10 +318,18 @@ export function OwnerAiTab() {
     }
   }
 
-  async function applyProposal() {
+  function dismissProposal() {
     if (!pendingProposal) return;
+    handledProposalIndicesRef.current.add(pendingProposal.messageIndex);
+    setPendingProposal(null);
+  }
+
+  async function applyProposal() {
+    if (!pendingProposal || applying) return;
+    const messageIndex = pendingProposal.messageIndex;
     setApplying(true);
     setChatError(null);
+    setProposalAppliedNotice(false);
     try {
       const res = await fetch("/api/admin/owner-ai/apply", {
         method: "POST",
@@ -332,7 +349,9 @@ export function OwnerAiTab() {
           ...snakePatchesToCamel(pendingProposal.patches),
         }));
       }
+      handledProposalIndicesRef.current.add(messageIndex);
       setPendingProposal(null);
+      setProposalAppliedNotice(true);
       setSaveMsg("Copilot proposal applied.");
     } catch {
       setChatError("Network error applying proposal");
@@ -574,7 +593,15 @@ export function OwnerAiTab() {
                 resend valid JSON, or edit the textareas manually.
               </p>
             )}
-          {pendingProposal && (
+          {proposalAppliedNotice && (
+            <div className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 p-3 text-sm">
+              <p className="text-emerald-300 font-medium">Changes applied</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Owner AI settings were updated from the copilot proposal.
+              </p>
+            </div>
+          )}
+          {pendingProposal && !proposalAppliedNotice && (
             <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-sm">
               <p className="text-emerald-300 font-medium mb-2">Proposed settings change</p>
               <p className="text-gray-300 text-xs mb-2">{pendingProposal.summary}</p>
@@ -597,8 +624,9 @@ export function OwnerAiTab() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPendingProposal(null)}
-                  className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200"
+                  onClick={dismissProposal}
+                  disabled={applying}
+                  className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-50"
                 >
                   Dismiss
                 </button>
@@ -638,6 +666,8 @@ export function OwnerAiTab() {
             setMessages([]);
             setChatError(null);
             setPendingProposal(null);
+            setProposalAppliedNotice(false);
+            handledProposalIndicesRef.current.clear();
           }}
           className="mt-2 text-xs text-gray-500 hover:text-gray-400 underline"
         >
