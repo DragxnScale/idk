@@ -1,16 +1,92 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  OWNER_AI_SETTING_KEYS,
+  type OwnerAiSettings,
+} from "@/lib/owner-ai-settings-shared";
+import { parseOwnerAiProposal } from "@/lib/owner-ai-proposal";
 
-type ChatRole = "user" | "assistant" | "system";
+type ChatRole = "user" | "assistant";
 
 interface ChatMessage {
   role: ChatRole;
   content: string;
 }
 
+const EMPTY_SETTINGS: OwnerAiSettings = {
+  aiOwnerStyle: "",
+  aiProductContext: "",
+  aiNotesExtra: "",
+  aiQuizExtra: "",
+  aiFlashcardsExtra: "",
+  aiVelocityExtra: "",
+  aiVideosExtra: "",
+};
+
+const FEATURE_HINTS: { key: keyof OwnerAiSettings; label: string; hint: string }[] = [
+  {
+    key: "aiNotesExtra",
+    label: "Notes",
+    hint: "POST /api/ai/notes",
+  },
+  {
+    key: "aiQuizExtra",
+    label: "Quiz + fact-check",
+    hint: "POST /api/ai/quiz, factCheckQuizQuestions",
+  },
+  {
+    key: "aiFlashcardsExtra",
+    label: "Flashcards",
+    hint: "POST /api/ai/flashcards",
+  },
+  {
+    key: "aiVelocityExtra",
+    label: "Velocity",
+    hint: "POST /api/ai/velocity, complete, factCheckVelocityQuestions",
+  },
+  {
+    key: "aiVideosExtra",
+    label: "Videos",
+    hint: "POST /api/ai/videos",
+  },
+];
+
+const PATCH_KEY_LABELS: Record<string, string> = {
+  [OWNER_AI_SETTING_KEYS.aiProductContext]: "Product context",
+  [OWNER_AI_SETTING_KEYS.aiOwnerStyle]: "Global style",
+  [OWNER_AI_SETTING_KEYS.aiNotesExtra]: "Notes extra",
+  [OWNER_AI_SETTING_KEYS.aiQuizExtra]: "Quiz extra",
+  [OWNER_AI_SETTING_KEYS.aiFlashcardsExtra]: "Flashcards extra",
+  [OWNER_AI_SETTING_KEYS.aiVelocityExtra]: "Velocity extra",
+  [OWNER_AI_SETTING_KEYS.aiVideosExtra]: "Videos extra",
+};
+
+const CAMEL_TO_SNAKE: Record<keyof OwnerAiSettings, string> = {
+  aiOwnerStyle: OWNER_AI_SETTING_KEYS.aiOwnerStyle,
+  aiProductContext: OWNER_AI_SETTING_KEYS.aiProductContext,
+  aiNotesExtra: OWNER_AI_SETTING_KEYS.aiNotesExtra,
+  aiQuizExtra: OWNER_AI_SETTING_KEYS.aiQuizExtra,
+  aiFlashcardsExtra: OWNER_AI_SETTING_KEYS.aiFlashcardsExtra,
+  aiVelocityExtra: OWNER_AI_SETTING_KEYS.aiVelocityExtra,
+  aiVideosExtra: OWNER_AI_SETTING_KEYS.aiVideosExtra,
+};
+
+function snakePatchesToCamel(
+  patches: Record<string, string>
+): Partial<OwnerAiSettings> {
+  const out: Partial<OwnerAiSettings> = {};
+  for (const [key, value] of Object.entries(patches)) {
+    const entry = Object.entries(CAMEL_TO_SNAKE).find(([, snake]) => snake === key);
+    if (entry) {
+      out[entry[0] as keyof OwnerAiSettings] = value;
+    }
+  }
+  return out;
+}
+
 export function OwnerAiTab() {
-  const [noteStyleExtra, setNoteStyleExtra] = useState("");
+  const [settings, setSettings] = useState<OwnerAiSettings>(EMPTY_SETTINGS);
   const [model, setModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -19,6 +95,12 @@ export function OwnerAiTab() {
   const [input, setInput] = useState("");
   const [chatting, setChatting] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [pendingProposal, setPendingProposal] = useState<{
+    patches: Record<string, string>;
+    summary: string;
+    messageIndex: number;
+  } | null>(null);
+  const [applying, setApplying] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -27,7 +109,10 @@ export function OwnerAiTab() {
       const res = await fetch("/api/admin/owner-ai");
       if (!res.ok) return;
       const data = await res.json();
-      setNoteStyleExtra(data.noteStyleExtra ?? "");
+      if (data.settings) setSettings(data.settings);
+      else if (data.noteStyleExtra != null) {
+        setSettings((s) => ({ ...s, aiOwnerStyle: data.noteStyleExtra }));
+      }
       setModel(data.model ?? "");
     } finally {
       setLoading(false);
@@ -40,21 +125,23 @@ export function OwnerAiTab() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, pendingProposal]);
 
-  async function saveStyle() {
+  async function saveAll() {
     setSaving(true);
     setSaveMsg(null);
     try {
       const res = await fetch("/api/admin/owner-ai", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ noteStyleExtra }),
+        body: JSON.stringify({ settings }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setSaveMsg("Saved. New instructions apply to notes, quiz, and video suggestions.");
-        setNoteStyleExtra(data.noteStyleExtra ?? noteStyleExtra);
+        setSettings(data.settings ?? settings);
+        setSaveMsg(
+          "Saved. Applies to notes, quiz, flashcards, velocity, videos, and admin TOC extract."
+        );
       } else {
         setSaveMsg(data.error ?? "Save failed");
       }
@@ -67,6 +154,7 @@ export function OwnerAiTab() {
     const trimmed = input.trim();
     if (!trimmed || chatting) return;
     setChatError(null);
+    setPendingProposal(null);
     const next: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
     setMessages(next);
     setInput("");
@@ -82,14 +170,51 @@ export function OwnerAiTab() {
         setChatError(data.error ?? "Chat request failed");
         return;
       }
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.content ?? "" },
-      ]);
+      const content = data.content ?? "";
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
+      const proposal = parseOwnerAiProposal(content);
+      if (proposal) {
+        setPendingProposal({
+          ...proposal,
+          messageIndex: next.length,
+        });
+      }
     } catch {
       setChatError("Network error");
     } finally {
       setChatting(false);
+    }
+  }
+
+  async function applyProposal() {
+    if (!pendingProposal) return;
+    setApplying(true);
+    setChatError(null);
+    try {
+      const res = await fetch("/api/admin/owner-ai/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patches: pendingProposal.patches }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setChatError(data.error ?? "Apply failed");
+        return;
+      }
+      if (data.settings) {
+        setSettings(data.settings);
+      } else {
+        setSettings((prev) => ({
+          ...prev,
+          ...snakePatchesToCamel(pendingProposal.patches),
+        }));
+      }
+      setPendingProposal(null);
+      setSaveMsg("Copilot proposal applied.");
+    } catch {
+      setChatError("Network error applying proposal");
+    } finally {
+      setApplying(false);
     }
   }
 
@@ -104,51 +229,92 @@ export function OwnerAiTab() {
       <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
         <h2 className="text-sm font-semibold text-white mb-1">AI model</h2>
         <p className="text-xs text-gray-500 mb-3">
-          All Bowl Beacon AI features (notes, quiz, videos, this chat) use this model.
+          All Bowl Beacon AI features use this model (set in code / env).
         </p>
         <code className="text-sm text-emerald-400 bg-gray-950 px-2 py-1 rounded border border-gray-800">
           {model || "—"}
         </code>
       </section>
 
-      <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6">
-        <h2 className="text-sm font-semibold text-white mb-1">Global note-taking &amp; AI style</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          These instructions are appended to the system prompt for AI notes, quizzes, and video
-          suggestions. Use them to set tone (e.g. more formal, more examples, MCAT-style), depth,
-          or formatting preferences.
-        </p>
-        <textarea
-          value={noteStyleExtra}
-          onChange={(e) => setNoteStyleExtra(e.target.value)}
-          rows={8}
-          placeholder="e.g. Prefer short phrases. Always include one real-world example per concept. Use US customary units when the source does."
-          className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none resize-y"
-          maxLength={8000}
-        />
-        <div className="flex items-center gap-3 mt-3">
+      <section className="rounded-xl border border-gray-800 bg-gray-900/50 p-6 space-y-6">
+        <div>
+          <h2 className="text-sm font-semibold text-white mb-1">Product context</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Prepended to every student-facing AI system prompt. Describe what Bowl Beacon is and
+            who it serves.
+          </p>
+          <textarea
+            value={settings.aiProductContext}
+            onChange={(e) =>
+              setSettings((s) => ({ ...s, aiProductContext: e.target.value }))
+            }
+            rows={4}
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none resize-y"
+            maxLength={4000}
+          />
+        </div>
+
+        <div>
+          <h2 className="text-sm font-semibold text-white mb-1">Global AI style</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Appended to all features after the base prompt — tone, depth, formatting.
+          </p>
+          <textarea
+            value={settings.aiOwnerStyle}
+            onChange={(e) => setSettings((s) => ({ ...s, aiOwnerStyle: e.target.value }))}
+            rows={6}
+            placeholder="e.g. Prefer short phrases. Always include one real-world example per concept."
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none resize-y"
+            maxLength={8000}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-white">Per-feature instructions</h2>
+          {FEATURE_HINTS.map(({ key, label, hint }) => (
+            <div key={key}>
+              <label className="text-xs text-gray-400 block mb-1">
+                {label}{" "}
+                <span className="text-gray-600 font-mono">({hint})</span>
+              </label>
+              <textarea
+                value={settings[key]}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, [key]: e.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none resize-y"
+                maxLength={4000}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={saveStyle}
+            onClick={() => void saveAll()}
             disabled={saving}
             className="rounded-lg bg-white text-gray-950 px-4 py-2 text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save style instructions"}
+            {saving ? "Saving…" : "Save all settings"}
           </button>
-          {saveMsg && (
-            <span className="text-xs text-gray-400">{saveMsg}</span>
-          )}
+          {saveMsg && <span className="text-xs text-gray-400">{saveMsg}</span>}
         </div>
       </section>
 
       <section className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-6">
-        <h2 className="text-sm font-semibold text-amber-200 mb-1">Direct OpenAI chat</h2>
+        <h2 className="text-sm font-semibold text-amber-200 mb-1">Owner AI copilot</h2>
         <p className="text-xs text-amber-200/70 mb-4">
-          Owner-only playground using the same API key and model. Messages are not stored on the server.
+          Context-aware assistant with product architecture loaded. Ask how features work or request
+          prompt refinements — proposals can be applied with one click. Messages are not stored.
         </p>
-        <div className="rounded-lg border border-gray-800 bg-gray-950 h-72 overflow-y-auto p-3 space-y-3 mb-3">
+        <div className="rounded-lg border border-gray-800 bg-gray-950 h-80 overflow-y-auto p-3 space-y-3 mb-3">
           {messages.length === 0 && (
-            <p className="text-xs text-gray-600 text-center py-8">Send a message to start.</p>
+            <p className="text-xs text-gray-600 text-center py-8">
+              Try: &quot;How does notes caching work?&quot; or &quot;Tighten quiz distractors for
+              chemistry.&quot;
+            </p>
           )}
           {messages.map((m, i) => (
             <div
@@ -162,20 +328,47 @@ export function OwnerAiTab() {
               {m.content}
             </div>
           ))}
-          {chatting && (
-            <p className="text-xs text-gray-500 animate-pulse">Thinking…</p>
+          {pendingProposal && (
+            <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-sm">
+              <p className="text-emerald-300 font-medium mb-2">Proposed settings change</p>
+              <p className="text-gray-300 text-xs mb-2">{pendingProposal.summary}</p>
+              <ul className="text-xs text-gray-400 mb-3 space-y-1">
+                {Object.keys(pendingProposal.patches).map((k) => (
+                  <li key={k}>
+                    {PATCH_KEY_LABELS[k] ?? k}: {pendingProposal.patches[k].slice(0, 120)}
+                    {pendingProposal.patches[k].length > 120 ? "…" : ""}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void applyProposal()}
+                  disabled={applying}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {applying ? "Applying…" : "Apply changes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingProposal(null)}
+                  className="rounded-md border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
           )}
+          {chatting && <p className="text-xs text-gray-500 animate-pulse">Thinking…</p>}
           <div ref={bottomRef} />
         </div>
-        {chatError && (
-          <p className="text-xs text-red-400 mb-2">{chatError}</p>
-        )}
+        {chatError && <p className="text-xs text-red-400 mb-2">{chatError}</p>}
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendChat())}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendChat())}
             placeholder="Message…"
             className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
             maxLength={4000}
@@ -183,7 +376,7 @@ export function OwnerAiTab() {
           />
           <button
             type="button"
-            onClick={sendChat}
+            onClick={() => void sendChat()}
             disabled={chatting || !input.trim()}
             className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
           >
@@ -195,6 +388,7 @@ export function OwnerAiTab() {
           onClick={() => {
             setMessages([]);
             setChatError(null);
+            setPendingProposal(null);
           }}
           className="mt-2 text-xs text-gray-500 hover:text-gray-400 underline"
         >

@@ -11,7 +11,7 @@ import {
   wrapUntrusted,
   UNTRUSTED_INPUT_GUARD,
 } from "@/lib/ai";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 import { fetchPdf } from "@/lib/storage-backend";
 
@@ -290,7 +290,6 @@ export async function POST(request: Request) {
   }
 
   // ── Call the model ─────────────────────────────────────────────────
-  const ownerExtra = await getAiOwnerStyleExtra();
   let parsed: z.infer<typeof tocSchema>;
   const tocPrompt = `Extract the table of contents from the front matter below. There are ${pagesRead} pages of extracted text (PDF pages 1–${pagesRead}), demarcated by "[Page N]" markers.
 
@@ -299,7 +298,7 @@ ${wrapUntrusted("pdf front matter", pageText.slice(0, TOC_TEXT_CHAR_LIMIT))}`;
     const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: tocSchema,
-      system: appendOwnerStyleToSystem(SYSTEM_PROMPT, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+      system: await buildAiSystemPrompt(SYSTEM_PROMPT, "global"),
       prompt: tocPrompt,
     });
     await recordAiUsage(user.id, "/api/admin/extract-toc", usage, {

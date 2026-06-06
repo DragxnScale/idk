@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted } from "@/lib/ai";
 import { db } from "@/lib/db";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt, getAiOwnerExtrasForFeature } from "@/lib/app-settings";
 import { quizzes, aiNotes, users, documentQuizQuestions } from "@/lib/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
@@ -196,8 +196,6 @@ export async function POST(request: Request) {
     where: (n, { eq }) => eq(n.sessionId, sessionId),
   });
   const notesContext = existingNotes.map((n) => n.content).join("\n\n");
-  const ownerExtra = await getAiOwnerStyleExtra();
-
   const baseSystem = `You are a study assistant creating an end-of-session quiz.
 
 Generate exactly ${targetQ} multiple-choice questions testing comprehension of the reading material.
@@ -331,10 +329,12 @@ PAGE TAGGING: Every page in the reading is demarcated by a "[Page N]" marker (1-
       ? `\n\n${wrapUntrusted("session notes", notesContext.slice(0, 3000))}`
       : ""
   }`;
+  const system = await buildAiSystemPrompt(baseSystem, "quiz");
+  const ownerExtras = await getAiOwnerExtrasForFeature("quiz");
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: questionsSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    system,
     prompt: quizPrompt,
   });
   await recordAiUsage(authUser.id, "/api/ai/quiz", usage, {
@@ -357,7 +357,7 @@ PAGE TAGGING: Every page in the reading is demarcated by a "[Page N]" marker (1-
   } = await factCheckQuizQuestions(
     object.questions,
     verifierSourceText,
-    ownerExtra
+    ownerExtras
   );
   if (verifierUsage) {
     await recordAiUsage(authUser.id, "/api/ai/quiz/factcheck", verifierUsage, {

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { clientErrorLogs, velocityGames } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
@@ -179,7 +179,6 @@ export async function POST(request: Request) {
   const reviewOverBudget = isAiConfigured() ? await assertAiBudget(user.id) : null;
   if (isAiConfigured() && !reviewOverBudget) {
     const wrong = attempts.filter((a) => !a.correct);
-    const ownerExtra = await getAiOwnerStyleExtra();
     const summary = attempts
       .map(
         (a) =>
@@ -205,7 +204,7 @@ Keep everything short and actionable. No filler.`;
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: reviewSchema,
-        system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+        system: await buildAiSystemPrompt(baseSystem, "velocity"),
         prompt: completePrompt,
       });
       await recordAiUsage(user.id, "/api/ai/velocity/complete", usage, {

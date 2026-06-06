@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt, getAiOwnerExtrasForFeature } from "@/lib/app-settings";
 import {
   clientErrorLogs,
   velocityGames,
@@ -517,7 +517,7 @@ export async function POST(request: Request) {
       where: (n, { eq }) => eq(n.sessionId, sessionId),
     });
     const notesContext = notes.map((n) => n.content).join("\n\n");
-    const ownerExtra = await getAiOwnerStyleExtra();
+    const ownerExtras = await getAiOwnerExtrasForFeature("velocity");
 
     // --- AI top-up -----------------------------------------------------------
     let aiQuestions: VelocityQuestion[] = [];
@@ -742,7 +742,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
       const { object, usage } = await generateObject({
         model: openai(MODEL),
         schema: payloadSchema,
-        system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+        system: await buildAiSystemPrompt(baseSystem, "velocity"),
         prompt: velocityPrompt,
       });
       await recordAiUsage(user.id, "/api/ai/velocity", usage, {
@@ -809,7 +809,7 @@ SCHEMA — every field is REQUIRED on EVERY question:
       } = await factCheckVelocityQuestions(
         verifierInput,
         verifierSource,
-        ownerExtra
+        ownerExtras
       );
       if (vUsage) {
         await recordAiUsage(user.id, "/api/ai/velocity/factcheck", vUsage, {

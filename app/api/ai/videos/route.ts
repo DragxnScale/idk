@@ -33,7 +33,7 @@ import {
   wrapUntrusted,
   UNTRUSTED_INPUT_GUARD,
 } from "@/lib/ai";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { db } from "@/lib/db";
 import { studySessions } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
@@ -156,7 +156,6 @@ export async function POST(request: Request) {
   }
 
   // ── 1. Generate topics ────────────────────────────────────────────
-  const ownerExtra = await getAiOwnerStyleExtra();
   const baseTopicSystem = `You help a student decide which YouTube videos to watch alongside a textbook chapter.
 
 Given the reading material, identify the chapter's MAJOR conceptual topics — the things a teacher would put on the unit's outline, not narrow side examples. For a chemistry "gases" chapter that means topics like Ideal Gas Law, Dalton's Law of Partial Pressures, Boyle's / Charles's / Avogadro's Laws, Kinetic Molecular Theory of Gases, Real Gases and the Van der Waals Equation, Effusion / Graham's Law, Gas Stoichiometry — each topic is its own video.
@@ -186,7 +185,7 @@ Rules:
     const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: topicsSchema,
-      system: appendOwnerStyleToSystem(baseTopicSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+      system: await buildAiSystemPrompt(baseTopicSystem, "videos"),
       prompt: videosPrompt,
     });
     await recordAiUsage(user.id, "/api/ai/videos", usage, {

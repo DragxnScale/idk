@@ -3,9 +3,9 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
-import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
+import { openai, MODEL, isAiConfigured, wrapUntrusted } from "@/lib/ai";
 import { db } from "@/lib/db";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { flashcards, aiNotes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 import { resolveDocumentFromSession } from "@/lib/document-ai-cache";
@@ -86,7 +86,6 @@ export async function POST(request: Request) {
       .map((n) => `[Page ${n.pageNumber ?? "?"}]\n${n.content}`)
       .join("\n\n---\n\n");
 
-    const ownerExtra = await getAiOwnerStyleExtra();
     const baseSystem = `You are a study assistant generating reference flashcards from study notes.
 
 These flashcards are NOT a quiz — they are a reference tool for understanding and applying material.
@@ -127,10 +126,11 @@ RULES:
       "study notes",
       notesSummary.slice(0, 12000)
     )}`;
+    const system = await buildAiSystemPrompt(baseSystem, "flashcards");
     const { object, usage } = await generateObject({
       model: openai(MODEL),
       schema: flashcardSchema,
-      system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+      system,
       prompt: flashcardsPrompt,
     });
     await recordAiUsage(user.id, "/api/ai/flashcards", usage, {

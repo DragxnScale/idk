@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
 import { openai, MODEL, isAiConfigured, wrapUntrusted, UNTRUSTED_INPUT_GUARD } from "@/lib/ai";
 import { db } from "@/lib/db";
-import { appendOwnerStyleToSystem, getAiOwnerStyleExtra } from "@/lib/app-settings";
+import { buildAiSystemPrompt } from "@/lib/app-settings";
 import { quizzes } from "@/lib/db/schema";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 
@@ -81,7 +81,6 @@ export async function POST(request: Request) {
   if (overBudget) return overBudget;
 
   // ── Generate targeted review for wrong answers ───────────────────────
-  const ownerExtra = await getAiOwnerStyleExtra();
   const wrongSummary = wrongQuestions
     .map((w, i) => `${i + 1}. "${w.question}"\n   Correct answer: ${w.correctAnswer}\n   Explanation: ${w.explanation}`)
     .join("\n\n");
@@ -99,10 +98,11 @@ Do not add review items for topics the student already demonstrated they underst
     "wrong answers",
     wrongSummary
   )}`;
+  const system = await buildAiSystemPrompt(baseSystem, "quiz");
   const { object, usage } = await generateObject({
     model: openai(MODEL),
     schema: reviewSchema,
-    system: appendOwnerStyleToSystem(baseSystem, ownerExtra) + UNTRUSTED_INPUT_GUARD,
+    system,
     prompt: reviewPrompt,
   });
   await recordAiUsage(user.id, "/api/ai/quiz/review", usage, {

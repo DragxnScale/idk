@@ -95,7 +95,10 @@ High-level map (only meaningful directories and notable files).
 │   ├── ai.ts                     # OpenAI client, MODEL id ("gpt-5.4"), isAiConfigured()
 │   ├── ai-notes-render.ts        # stripLatexForAiNotes(), aiNoteContentToHtml()
 │   ├── document-ai-cache.ts      # resolveDocumentFromSession(), parsePagesFromAccumulatedText(), assertDocumentOwner()
-│   ├── app-settings.ts           # getAiOwnerStyleExtra(), appendOwnerStyleToSystem()
+│   ├── app-settings.ts           # Owner AI settings (app_settings), buildAiSystemPrompt()
+│   ├── owner-ai-context.ts       # loadOwnerAiContextDoc(), buildOwnerChatSystemPrompt() (server)
+│   ├── owner-ai-proposal.ts      # parseOwnerAiProposal() (client + server)
+│   ├── owner-ai-settings-shared.ts # Owner AI setting keys/types (client-safe)
 │   ├── admin.ts                  # requireAdmin(), requireSuperOwner() (Node)
 │   ├── admin-edge.ts             # Admin check for Edge routes
 │   ├── srs.ts                    # FSRS-4.5 wrapper (`scheduleNext`, `previewAllGrades`, `formatInterval`, `isMature`) — only file in the app that imports `ts-fsrs`
@@ -408,8 +411,9 @@ All require admin session. Super-admin / owner routes use `requireSuperOwner()` 
 | GET, POST, DELETE | `/api/admin/banned-emails` | Ban list. |
 | GET | `/api/admin/debug-logs` | **Super-owner:** `userLogs` + `devLogs` (`limit` per list). |
 | POST | `/api/admin/impersonate` | Set/clear admin **view-as** cookie. |
-| GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set `noteStyleExtra` and active `MODEL`. |
-| POST | `/api/admin/owner-ai/chat` | Super-owner: direct chat with OpenAI for debugging. |
+| GET, PATCH | `/api/admin/owner-ai` | Super-owner: get/set all Owner AI `app_settings` (`ai_product_context`, `ai_owner_style`, per-feature `ai_*_extra` keys) + active `MODEL`. Legacy field `noteStyleExtra` aliases `ai_owner_style`. |
+| POST | `/api/admin/owner-ai/apply` | Super-owner: apply copilot proposal patches `{ patches: { ai_owner_style: "…", … } }`; returns updated settings. |
+| POST | `/api/admin/owner-ai/chat` | Super-owner: context-aware copilot (`docs/AI_OWNER_CONTEXT.md` + current settings injected); may return `owner_ai_proposal` JSON for one-click Apply. |
 
 ### 5.13 Spaced repetition (`/review`)
 
@@ -468,11 +472,26 @@ All three helpers are non-fatal: if the verifier itself errors out, callers rece
 
 Schema notes: every verdict is a flat object (no `oneOf`/discriminated union — OpenAI structured outputs reject those). Replacement fields (`fixedQuestion`, `fixedOptions`, `fixedCorrectIndex`, `fixedAnswer`, `fixedExplanation`) are always present; callers ignore them when verdict is `ok` or `drop`.
 
-### 6.2 Owner AI customisation (`lib/app-settings.ts`)
+### 6.2 Owner AI customisation (`lib/app-settings.ts`, `docs/AI_OWNER_CONTEXT.md`)
 
-- **`getAiOwnerStyleExtra()`** / **`setAiOwnerStyleExtra()`**: reads/writes the `app_settings` row with key `"ai_note_style_extra"`.
-- **`appendOwnerStyleToSystem(system, extra)`**: appends the owner's custom instructions to the base system prompt if non-empty.
-- Accessible to the super-owner via the admin panel's **Owner AI** tab.
+**`app_settings` keys** (owner-editable at runtime, no deploy):
+
+| Key | Purpose |
+|-----|---------|
+| `ai_product_context` | Prepended to all student-facing AI system prompts |
+| `ai_owner_style` | Global style append on all features |
+| `ai_notes_extra` | Notes (`/api/ai/notes`) |
+| `ai_quiz_extra` | Quiz + fact-check |
+| `ai_flashcards_extra` | Flashcards |
+| `ai_velocity_extra` | Velocity generate, complete, fact-check |
+| `ai_videos_extra` | Video topic selection |
+
+- **`getOwnerAiSettings()`** / **`patchOwnerAiSettings()`** / **`patchOwnerAiSettingsFromFields()`** — read/write all keys.
+- **`buildAiSystemPrompt(base, feature)`** — composes product context + base + global style + feature extra + `UNTRUSTED_INPUT_GUARD`. Used by all `app/api/ai/**` routes and admin extract-toc.
+- **`getAiOwnerExtrasForFeature(feature)`** — composed append for fact-check secondary prompts.
+- **`getAiOwnerStyleExtra()`** / **`setAiOwnerStyleExtra()`** — legacy helpers for `ai_owner_style` only.
+- **Owner copilot** (`lib/owner-ai-context.ts`): loads `docs/AI_OWNER_CONTEXT.md` into chat system prompt; proposals parsed via `lib/owner-ai-proposal.ts`.
+- Admin panel **Owner AI** tab: edit all settings, copilot chat, **Apply** on proposed patches (`POST /api/admin/owner-ai/apply`).
 
 ### 6.3 Routes
 
@@ -603,6 +622,8 @@ Both velocity routes wrap the AI call in try/catch and insert a `kind: "dev"` ro
 | `/study/history` | Past sessions list. |
 | `/settings` | User settings (includes quiz question min/max). |
 | `/admin` | Admin dashboard (guarded; **Settings UI** tab for global copy/typography; **Debug log** / **Owner AI** super-owner only). |
+
+- **Owner AI tab** (`components/admin/OwnerAiTab.tsx`) — super-owner only. **Product context** + **global style** + per-feature instruction textareas (Notes, Quiz, Flashcards, Velocity, Videos); **Save all** → `PATCH /api/admin/owner-ai`. **Copilot chat** uses injected `docs/AI_OWNER_CONTEXT.md` and live settings; assistant may emit `{"type":"owner_ai_proposal","patches":{…},"summary":"…"}` — owner clicks **Apply changes** → `POST /api/admin/owner-ai/apply`. Model id shown read-only from `lib/ai.ts`.
 
 Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.onerror` / `unhandledrejection` to `/api/debug/client-error` (`kind: user`); **`ImpersonationBanner`** shows when an admin is viewing as another user (`GET /api/user/session-context`). Owner feature notes use **`reportDevDebug`** from `lib/dev-debug.ts` → `/api/debug/dev-log`.
 
