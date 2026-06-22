@@ -313,6 +313,23 @@ export default function AdminPage() {
    */
   const [isDeveloperMode, setIsDeveloperMode] = useState(false);
 
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (
+      t === "users" ||
+      t === "aiContent" ||
+      t === "appUi" ||
+      t === "upload" ||
+      t === "catalog" ||
+      t === "messages" ||
+      t === "storage" ||
+      t === "debug" ||
+      t === "owner"
+    ) {
+      setTab(t);
+    }
+  }, []);
+
   // auth check on first load; owner tab only for super-owner (see lib/admin.ts)
   useEffect(() => {
     Promise.all([

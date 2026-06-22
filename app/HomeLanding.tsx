@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
+import { SuiImage } from "@/components/ui-copy/SuiImage";
 
 /**
  * Marketing landing page for unauthenticated visitors. The server-side
@@ -50,8 +51,13 @@ export default function HomeLanding() {
       <header className="border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/favicon.png" alt="" className="w-7 h-7 rounded-md" />
+            <SuiImage
+              page="home"
+              k="nav.favicon"
+              defSrc="/favicon.png"
+              alt=""
+              className="w-7 h-7 rounded-md"
+            />
             <SuiText page="home" k="nav.brand" def="Bowl Beacon" as="span" />
           </Link>
           <nav className="flex items-center gap-3">

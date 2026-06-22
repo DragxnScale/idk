@@ -8,6 +8,7 @@ import { THEMES, getThemeById, getCustomThemes, saveCustomThemes, buildCustomThe
 import { loadPlaylist, savePlaylist, resolveYouTubeTitle, isYouTubeUrl, type MusicTrack } from "@/lib/music";
 import { LAYOUTS, resolveLayoutStateKey } from "@/lib/types/settings-layout";
 import { SuiText, useUiCopy } from "@/components/ui-copy/UiCopyProvider";
+import { SuiImage } from "@/components/ui-copy/SuiImage";
 import { NumberField } from "@/components/forms/NumberField";
 import { validatePositiveInt } from "@/lib/forms/numberField";
 
@@ -21,9 +22,10 @@ const ZOOM_PRESETS = [
 function EasterEggDog() {
   const { getText } = useUiCopy();
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src="/easter-egg-dog.png"
+    <SuiImage
+      page="settings"
+      k="dog-photo"
+      defSrc="/easter-egg-dog.png"
       alt={getText("settings", "dog-photo.alt", "A very good boy")}
       className="w-full object-cover rounded-2xl block"
     />
@@ -1559,9 +1561,10 @@ export default function SettingsPage() {
 
             "logo": (
               <section key="logo" className="rounded-2xl overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/logo-gap-fill.png"
+                <SuiImage
+                  page="settings"
+                  k="logo"
+                  defSrc="/logo-gap-fill.png"
                   alt="Bowl Beacon"
                   className="w-full h-auto object-contain rounded-2xl block"
                 />

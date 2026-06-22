@@ -50,6 +50,7 @@ flowchart LR
 | PDF | `react-pdf` + pdf.js (worker from unpkg) on the client; `unpdf` (`getDocumentProxy` + `getTextContent`) on the server for the admin TOC auto-extractor — ships a serverless-friendly build of PDF.js that works in Node Lambda functions without `canvas` or worker setup. |
 | Storage | Cloudflare R2 (S3-compatible). Reads bypass Vercel by 302-redirecting from `/api/blob/serve` to either the public r2.dev URL (admin textbooks under `public/`) or a 1-h presigned GET URL (private user uploads under `<userId>/`). Uploads go browser → R2 directly via presigned PUT or S3 multipart. The `lib/storage-backend.ts` adapter is the single dispatch layer. The previous Vercel Blob branch was removed on 2026-06-01 once the migration script reported zero leftover `blob.vercel-storage.com` URLs in the DB. |
 | Compression | `fflate` (ZIP import on drive) |
+| UI image crop | `react-easy-crop` (admin in-context image editor) |
 
 **Build / config**
 
@@ -245,7 +246,7 @@ Drizzle **SQLite** tables (conceptual grouping):
 
 **App config**
 
-- `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra, **`app_ui_copy_json`** for global UI copy v2, legacy **`settings_ui_json`** merged into `pages.settings` on read).
+- `app_settings` — key/value store for owner-configurable settings (e.g. AI note style extra, **`app_ui_copy_json`** for global UI copy v2, legacy **`settings_ui_json`** merged into `pages.settings` on read, **`app_ui_images_json`** for in-page image overrides).
 
 **Operations**
 
@@ -282,8 +283,13 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | POST | `/api/admin/impersonate` | Admin: set or clear `sf.view-as-user` cookie (`{ userId: string \| null }`). |
 | GET | `/api/user/session-context` | Returns JWT user vs effective user, whether impersonation is active, **`isSuperOwner`** (real JWT email) for owner-only client diagnostics that must ignore view-as, and **`isDeveloper`** (real JWT account's admin status, surfaced under the legacy field name so existing clients keep working — equivalent to `isAdmin()` as of 2026-06) so admin-only diagnostic UI can gate itself the same way regardless of impersonation. |
 | GET | `/api/app/ui-copy` | Public JSON: `{ version: 2, pages }` — global app UI copy/typography overrides per screen (`home`, `dashboard`, `session`, `settings`) stored in `app_settings` (`app_ui_copy_json`). Legacy `{ version: 1, elements }` in `settings_ui_json` is merged into `pages.settings` on read for missing keys. |
+| GET | `/api/app/ui-images` | Public JSON: `{ version: 1, images }` — per-page image overrides (`home`, `dashboard`, `session`, `settings`) stored in `app_settings` (`app_ui_images_json`). Slots defined in `lib/ui-images-shared.ts` (in-page only: home nav favicon, settings dog photo, settings logo). |
 | GET | `/api/admin/ui-copy` | **Admin:** same merged payload as `/api/app/ui-copy`. |
 | PUT | `/api/admin/ui-copy` | **Admin:** replace full `{ version: 2, pages }` for app-wide UI strings/styles. |
+| PATCH | `/api/admin/ui-copy/item` | **Admin:** merge one `{ page, k, element }` into stored UI copy (per-edit save from in-context editor). |
+| GET | `/api/admin/ui-images` | **Admin:** same payload as `/api/app/ui-images`. |
+| PATCH | `/api/admin/ui-images/item` | **Admin:** merge one `{ page, k, element: { src } }` image override. |
+| POST | `/api/admin/ui-images/upload-url` | **Admin:** presigned R2 PUT for cropped UI asset (`ui-assets/{page}/{k}/…`). |
 
 ### 5.2 Study sessions and progress
 
@@ -695,14 +701,21 @@ In `app/admin/page.tsx` → `UsersTab` → session detail, immediately under **P
 
 The panel reads `isDeveloper` from `GET /api/user/session-context` (real JWT identity, ignores admin view-as) and renders when that flag is true. As of 2026-06 `isDeveloper` is equivalent to `isAdmin` — the separate per-user **Developer mode** toggle in Settings was removed (the whole admin console is already admin-gated, so a second opt-in was redundant; admins just see the panel automatically now). The `users.is_developer` column and the `isDeveloper` JSON field are kept for backwards compat with older clients and tests.
 
-### 7.5 Client-only and dynamic imports
+### 7.5b In-context UI editor (admin)
+
+- **`/admin/ui-edit`** — Full-screen editor (`requireAdmin()` server gate). **`UiEditShell`** renders the real Home, Dashboard, Session start, and Settings page components inside **`UiEditProvider`** (edit mode only; no batch draft).
+- **Developer Panel → App UI** — Launch button only (`AppUiEditorTab`); static previews removed.
+- **`SuiText`** — When edit mode is active, right-click opens **`TextEditPanel`**; **Enter** → **`ConfirmModal`** → `PATCH /api/admin/ui-copy/item` (live per edit).
+- **`SuiImage`** + **`UiImagesProvider`** — Right-click in-page images; **`ImageEditFlow`** (upload, `react-easy-crop`, confirm) → R2 upload → `PATCH /api/admin/ui-images/item`. Registry in **`lib/ui-images-shared.ts`**.
+- **`components/ui-copy/UiCopyProvider.tsx`** + **`UiImagesProvider`** (wrapped in **`app/layout.tsx`**) — Fetch public UI copy/images once; **`SuiText`** / **`SuiImage`** on Home, Dashboard, Session start, Settings. Pure helpers: **`lib/ui-copy-shared.ts`**, **`lib/ui-images-shared.ts`**.
+
+### 7.6 Client-only and dynamic imports
 
 - **`app/study/session/page.tsx`** dynamically imports `PdfViewer` and `DocumentPicker` with `ssr: false`. PDF opens at the first selected chapter for chapter goals; for time goals (and when no chapters are selected), opens at chapter 1’s PDF start when `chapterPageRanges` exists, otherwise `1 + pageOffset`.
 - **`app/settings/page.tsx`** — Shows a scroll hint under the title for cards below the fold; **Daily goals** renders quiz min/max number inputs **above** the hint paragraph so admin `SuiText` typography on the hint cannot hide the fields. **Exit protection** card: **Boss Beacons** on/off toggle (always visible); **login password** form starts **locked** (dashed panel); tap to open a modal, `POST /api/user/verify-login-password`, then show the form; **Lock** hides it again. **Log out button** at the very bottom of the page (centered, subtle bordered style) calls `signOut({ callbackUrl: "/" })` from `next-auth/react` — mirrors the dashboard top-nav button so users have an obvious sign-out path from either place. The legacy **Developer mode** toggle was removed from this page on 2026-06 (admin diagnostics now gate themselves on `isAdmin()` directly, see §7.4c).
 
-### 7.6 PWA / Offline mode
+### 7.7 PWA / Offline mode
 
-- **`components/ui-copy/UiCopyProvider.tsx`** (wrapped in **`app/layout.tsx`**) — Fetches `GET /api/app/ui-copy` once and applies per-key text + inline styles via **`SuiText`** (`page` + `k`) on the Home page, Dashboard, Session start screen, and Settings (including credits and dog-photo alt). Admins edit in **Developer Panel → App UI**: four tabs (Home, Dashboard, Session start, Settings) with scrollable previews; right-click text, **Apply globally** → `PUT /api/admin/ui-copy`. Pure helpers live in **`lib/ui-copy-shared.ts`** so client bundles do not import `lib/db`.
 - **`public/sw.js`** — Service worker (cache version bumps wipe old buckets) with three caching strategies:
   - **Cache-first**: `/api/proxy/pdf`, **`/api/blob/serve`** (the 302 redirect itself, served once per session), direct R2 endpoint URLs (`*.r2.cloudflarestorage.com`), and direct r2.dev public URLs (`*.r2.dev`) — PDFs load from cache after first fetch; pdf.js uses many **Range** requests per file, so eviction and the "cached PDFs" counter use **distinct URLs** (one logical book), not raw Cache API entry counts. User uploads that load via **`GET /api/documents/[id]/file`** redirect to the stored R2 URL; that follow-up request is cached under the R2-host rule.
   - Turning **off** offline PDF cache in Settings runs `setPdfCacheEnabled: false` in the SW (which **`waitUntil`** deletes the PDF bucket) **and** `clearAllPdfCachesClient()` from the page so all `bowlbeacon-pdf-*` caches are removed on that device.

@@ -100,3 +100,18 @@ export async function setUiCopyPayload(payload: UiCopyPayload): Promise<void> {
     await db.insert(appSettings).values({ key: UI_COPY_KEY, value, updatedAt: now });
   }
 }
+
+export async function patchUiCopyElement(
+  page: (typeof UI_PAGE_IDS)[number],
+  k: string,
+  element: UiCopyElement
+): Promise<UiCopyPayload> {
+  const payload = await getUiCopyPayload();
+  const nextPages = { ...payload.pages };
+  const pageBlock = { ...(nextPages[page] ?? {}) };
+  pageBlock[k] = element;
+  nextPages[page] = pageBlock;
+  const next: UiCopyPayload = { version: 2, pages: nextPages };
+  await setUiCopyPayload(next);
+  return next;
+}

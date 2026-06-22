@@ -11,12 +11,14 @@ import {
   type ReactNode,
 } from "react";
 import type { UiCopyElement, UiPageId } from "@/lib/ui-copy-shared";
+import { useUiEdit } from "@/components/ui-edit/UiEditContext";
 
 type Ctx = {
   pages: Record<UiPageId, Record<string, UiCopyElement>>;
   loading: boolean;
   getText: (page: UiPageId, k: string, def: string) => string;
   getElement: (page: UiPageId, k: string) => UiCopyElement | undefined;
+  patchElement: (page: UiPageId, k: string, element: UiCopyElement) => void;
 };
 
 const UiCopyContext = createContext<Ctx | null>(null);
@@ -62,9 +64,16 @@ export function UiCopyProvider({ children }: { children: ReactNode }) {
     [pages]
   );
 
+  const patchElement = useCallback((page: UiPageId, k: string, element: UiCopyElement) => {
+    setPagesState((prev) => ({
+      ...prev,
+      [page]: { ...prev[page], [k]: element },
+    }));
+  }, []);
+
   const value = useMemo(
-    () => ({ pages, loading, getText, getElement }),
-    [pages, loading, getText, getElement]
+    () => ({ pages, loading, getText, getElement, patchElement }),
+    [pages, loading, getText, getElement, patchElement]
   );
 
   return <UiCopyContext.Provider value={value}>{children}</UiCopyContext.Provider>;
@@ -81,6 +90,7 @@ export function useUiCopy() {
       loading: true,
       getText: (_page: UiPageId, _k: string, def: string) => def,
       getElement: () => undefined as UiCopyElement | undefined,
+      patchElement: () => {},
     };
   }
   return ctx;
@@ -115,11 +125,30 @@ export function SuiText({
   children?: ReactNode;
 }) {
   const ctx = useUiCopy();
+  const uiEdit = useUiEdit();
   const el = ctx.getElement(page, k);
   const style = styleFromEl(el);
   const text = el?.text ?? def;
+
+  const editable = uiEdit?.editMode;
+  const editClass = editable
+    ? " cursor-context-menu rounded px-0.5 decoration-inherit hover:ring-1 hover:ring-blue-500/40"
+    : "";
+
   return (
-    <Tag className={className} style={style}>
+    <Tag
+      className={`${className ?? ""}${editClass}`}
+      style={style}
+      onContextMenu={
+        editable
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              uiEdit.openTextEditor(page, k, def, { x: e.clientX, y: e.clientY });
+            }
+          : undefined
+      }
+    >
       {text}
       {children}
     </Tag>

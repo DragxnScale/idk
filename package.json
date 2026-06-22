@@ -1,6 +1,6 @@
 {
   "name": "bowl-beacon",
-  "version": "3.70",
+  "version": "3.72",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -27,6 +27,7 @@
     "next-auth": "^4.24.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^6.0.2",
     "react-pdf": "^10.4.1",
     "ts-fsrs": "^5.4.1",
     "unpdf": "^1.6.2",
