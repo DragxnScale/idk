@@ -588,20 +588,17 @@ export function AppUiEditorTab() {
 
             <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
               <h3 className="text-base font-semibold mb-1">
-                <Editable suiKey="exit-password.title" def="Passwords" />
+                <Editable suiKey="exit-password.title" def="Exit protection" />
               </h3>
               <p className="text-sm text-slate-400 mb-4">
                 <Editable
                   suiKey="exit-password.desc"
-                  def="Required to end a study session early. Defaults to your login password if not changed."
+                  def="When enabled, ending a session early runs Boss Beacons — cooldown, boss fights, typed phrase fallback."
                 />
               </p>
-              <div className="space-y-2 mb-4">
-                <div className="h-9 rounded-lg border border-slate-600 bg-slate-800" />
-                <div className="h-9 rounded-lg border border-slate-600 bg-slate-800" />
-              </div>
-              <div className="rounded-lg bg-blue-600 py-2.5 text-center text-sm font-medium text-white">
-                <Editable suiKey="exit-password.save" def="Save exit password" />
+              <div className="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 mb-4">
+                <span className="text-sm">Boss Beacons</span>
+                <span className="text-xs text-slate-400">toggle</span>
               </div>
             </section>
           </div>

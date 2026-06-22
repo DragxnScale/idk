@@ -414,6 +414,9 @@ export default function SettingsPage() {
         if (data.pomodoroBreakMin) setPomodoroBreak(String(data.pomodoroBreakMin));
         if (data.pomodoroLongBreakMin) setPomodoroLong(String(data.pomodoroLongBreakMin));
         if (data.pomodoroCycles) setPomodoroCycles(String(data.pomodoroCycles));
+        if (typeof data.exitBossBeaconsEnabled === "boolean") {
+          setExitBossBeaconsEnabled(data.exitBossBeaconsEnabled);
+        }
       });
   }, []);
 
@@ -529,11 +532,10 @@ export default function SettingsPage() {
     }
   }
 
-  // ── Exit password + login password ─────────────────────────────────
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newExitPassword, setNewExitPassword] = useState("");
-  const [pwStatus, setPwStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [pwMessage, setPwMessage] = useState<string | null>(null);
+  // ── Exit protection + login password ─────────────────────────────
+  const [exitBossBeaconsEnabled, setExitBossBeaconsEnabled] = useState(true);
+  const [exitBossStatus, setExitBossStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [exitBossMessage, setExitBossMessage] = useState<string | null>(null);
 
   const [loginCurrentPassword, setLoginCurrentPassword] = useState("");
   const [loginNewPassword, setLoginNewPassword] = useState("");
@@ -541,7 +543,7 @@ export default function SettingsPage() {
   const [loginPwStatus, setLoginPwStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [loginPwMessage, setLoginPwMessage] = useState<string | null>(null);
 
-  /** Login + exit password forms stay hidden until the user verifies their login password. */
+  /** Login password form stays hidden until the user verifies their login password. */
   const [passwordFormsUnlocked, setPasswordFormsUnlocked] = useState(false);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState("");
@@ -552,15 +554,36 @@ export default function SettingsPage() {
 
   function lockPasswordForms() {
     setPasswordFormsUnlocked(false);
-    setCurrentPassword("");
-    setNewExitPassword("");
     setLoginCurrentPassword("");
     setLoginNewPassword("");
     setLoginConfirmPassword("");
-    setPwMessage(null);
     setLoginPwMessage(null);
-    setPwStatus("idle");
     setLoginPwStatus("idle");
+  }
+
+  async function handleExitBossToggle(enabled: boolean) {
+    setExitBossBeaconsEnabled(enabled);
+    setExitBossStatus("loading");
+    setExitBossMessage(null);
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exitBossBeaconsEnabled: enabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setExitBossStatus("idle");
+      } else {
+        setExitBossBeaconsEnabled(!enabled);
+        setExitBossStatus("error");
+        setExitBossMessage(data.error ?? "Could not save setting.");
+      }
+    } catch {
+      setExitBossBeaconsEnabled(!enabled);
+      setExitBossStatus("error");
+      setExitBossMessage("Network error. Please try again.");
+    }
   }
 
   useEffect(() => {
@@ -650,35 +673,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function handlePasswordSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setPwMessage(null);
-    if (newExitPassword.length < 4) {
-      setPwStatus("error");
-      setPwMessage("Exit password must be at least 4 characters.");
-      return;
-    }
-    setPwStatus("loading");
-    try {
-      const res = await fetch("/api/user/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword, newExitPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setPasswordSectionFlash("Exit password updated.");
-        lockPasswordForms();
-      } else {
-        setPwStatus("error");
-        setPwMessage(data.error ?? "Something went wrong.");
-      }
-    } catch {
-      setPwStatus("error");
-      setPwMessage("Network error. Please try again.");
-    }
-  }
-
   // ── Layout state — pick one of 4 hardcoded layouts based on current toggles ─
   const activeStateKey = resolveLayoutStateKey(pdfCacheEnabled, pomodoroEnabled);
   const layoutSpec = LAYOUTS[activeStateKey];
@@ -712,7 +706,7 @@ export default function SettingsPage() {
           </h1>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">
-          Scroll down for session defaults, study breaks, PDF cache, exit password, theme, music, and more.
+          Scroll down for session defaults, study breaks, PDF cache, exit protection, theme, music, and more.
         </p>
 
         {/* Hardcoded per-state layout: TOP full-width → 2-col LEFT+RIGHT → BOTTOM full-width */}
@@ -1194,10 +1188,36 @@ export default function SettingsPage() {
 
             "exit-password": (
               <section key="exit-password" style={{ ...cardGridCol("exit-password"), ...cardStyle("exit-password") }} className={CS}>
+                <h2 className={titleClass("exit-password", "mb-1")}>
+                  <SuiText page="settings" k="exit-password.title" def="Exit protection" as="span" />
+                </h2>
+                <p className={descClass("exit-password", "mb-4")}>
+                  <SuiText
+                    page="settings"
+                    k="exit-password.desc"
+                    def="When enabled, ending a session early runs Boss Beacons — a short cooldown, distraction-boss fights from pages you read, then a typed phrase if needed. Completing your timer or chapter goal still ends without a fight."
+                    as="span"
+                  />
+                </p>
+
+                <label className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50 mb-5">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    Boss Beacons when ending a session
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={exitBossBeaconsEnabled}
+                    disabled={exitBossStatus === "loading"}
+                    onChange={(e) => handleExitBossToggle(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                </label>
+                {exitBossMessage && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mb-4">{exitBossMessage}</p>
+                )}
+
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h2 className={titleClass("exit-password", "mb-0")}>
-                    <SuiText page="settings" k="exit-password.title" def="Passwords" as="span" />
-                  </h2>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Login password</h3>
                   {passwordFormsUnlocked && (
                     <button
                       type="button"
@@ -1219,103 +1239,78 @@ export default function SettingsPage() {
                       <p className="mb-3 text-sm font-medium text-green-600 dark:text-green-400">{passwordSectionFlash}</p>
                     )}
                     <button
-                    type="button"
-                    onClick={() => {
-                      setShowUnlockModal(true);
-                      setUnlockError(null);
-                    }}
-                    className="mt-3 w-full rounded-xl border border-dashed border-gray-300 bg-gray-50/50 p-6 text-center transition hover:border-gray-400 hover:bg-gray-100/80 dark:border-gray-600 dark:bg-gray-900/40 dark:hover:border-gray-500 dark:hover:bg-gray-800/50"
-                  >
-                    <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                      </svg>
-                    </div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Password settings are locked</p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Click here and enter your login password to change your login or exit password.
-                    </p>
-                  </button>
+                      type="button"
+                      onClick={() => {
+                        setShowUnlockModal(true);
+                        setUnlockError(null);
+                      }}
+                      className="mt-2 w-full rounded-xl border border-dashed border-gray-300 bg-gray-50/50 p-6 text-center transition hover:border-gray-400 hover:bg-gray-100/80 dark:border-gray-600 dark:bg-gray-900/40 dark:hover:border-gray-500 dark:hover:bg-gray-800/50"
+                    >
+                      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Login password is locked</p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Click here and enter your login password to change it.
+                      </p>
+                    </button>
                   </>
                 ) : (
-                  <>
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/50 mb-5">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Change login password</h3>
-                      <form onSubmit={handleLoginPasswordSubmit} className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current password</label>
-                          <input
-                            type="password"
-                            value={loginCurrentPassword}
-                            onChange={(e) => setLoginCurrentPassword(e.target.value)}
-                            required
-                            autoComplete="current-password"
-                            placeholder="Your current login password"
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New password</label>
-                          <input
-                            type="password"
-                            value={loginNewPassword}
-                            onChange={(e) => setLoginNewPassword(e.target.value)}
-                            required
-                            autoComplete="new-password"
-                            placeholder="At least 6 characters"
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new password</label>
-                          <input
-                            type="password"
-                            value={loginConfirmPassword}
-                            onChange={(e) => setLoginConfirmPassword(e.target.value)}
-                            required
-                            autoComplete="new-password"
-                            placeholder="Repeat new password"
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
-                          />
-                        </div>
-                        {loginPwMessage && (
-                          <p className={`text-sm ${loginPwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                            {loginPwMessage}
-                          </p>
-                        )}
-                        <button
-                          type="submit"
-                          disabled={loginPwStatus === "loading"}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-50"
-                        >
-                          {loginPwStatus === "loading" ? "Updating…" : "Update login password"}
-                        </button>
-                      </form>
-                    </div>
-
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Exit session password</h3>
-                    <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <form onSubmit={handleLoginPasswordSubmit} className="space-y-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current login password</label>
-                        <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoComplete="current-password" placeholder="Your login password" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Current password</label>
+                        <input
+                          type="password"
+                          value={loginCurrentPassword}
+                          onChange={(e) => setLoginCurrentPassword(e.target.value)}
+                          required
+                          autoComplete="current-password"
+                          placeholder="Your current login password"
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                        />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New exit password</label>
-                        <input type="password" value={newExitPassword} onChange={(e) => setNewExitPassword(e.target.value)} required autoComplete="new-password" placeholder="At least 4 characters" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">New password</label>
+                        <input
+                          type="password"
+                          value={loginNewPassword}
+                          onChange={(e) => setLoginNewPassword(e.target.value)}
+                          required
+                          autoComplete="new-password"
+                          placeholder="At least 6 characters"
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                        />
                       </div>
-                      {pwMessage && (
-                        <p className={`text-sm ${pwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{pwMessage}</p>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Confirm new password</label>
+                        <input
+                          type="password"
+                          value={loginConfirmPassword}
+                          onChange={(e) => setLoginConfirmPassword(e.target.value)}
+                          required
+                          autoComplete="new-password"
+                          placeholder="Repeat new password"
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800"
+                        />
+                      </div>
+                      {loginPwMessage && (
+                        <p className={`text-sm ${loginPwStatus === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                          {loginPwMessage}
+                        </p>
                       )}
-                      <button type="submit" disabled={pwStatus === "loading"} className="btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
-                        {pwStatus === "loading" ? (
-                          "Saving…"
-                        ) : (
-                          <SuiText page="settings" k="exit-password.save" def="Save exit password" as="span" />
-                        )}
+                      <button
+                        type="submit"
+                        disabled={loginPwStatus === "loading"}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-50"
+                      >
+                        {loginPwStatus === "loading" ? "Updating…" : "Update login password"}
                       </button>
                     </form>
-                  </>
+                  </div>
                 )}
 
                 {showUnlockModal && (

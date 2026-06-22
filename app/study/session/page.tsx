@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Timer, type GoalType } from "@/components/study/Timer";
 import { VisibilityGuard } from "@/components/focus/VisibilityGuard";
-import { OverrideFlow } from "@/components/focus/OverrideFlow";
+import { ExitGateFlow } from "@/components/focus/ExitGateFlow";
+import type { ExitMethod } from "@/lib/exit-bosses";
 import dynamic from "next/dynamic";
 import type { SelectedDocument } from "@/components/study/DocumentPicker";
 import { AiNotesPanel } from "@/components/study/AiNotesPanel";
@@ -120,6 +121,7 @@ function StudySessionInner() {
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
   const [inactivityTimeout, setInactivityTimeout] = useState(3); // default 3 min
   const [pomodoroEnabled, setPomodoroEnabled] = useState(false);
+  const [exitBossBeaconsEnabled, setExitBossBeaconsEnabled] = useState(true);
   const [pomodoroFocus, setPomodoroFocus] = useState(25);
   const [pomodoroBreak, setPomodoroBreak] = useState(5);
   const [pomodoroLongBreak, setPomodoroLongBreak] = useState(15);
@@ -227,6 +229,9 @@ function StudySessionInner() {
         if (data.pomodoroBreakMin) setPomodoroBreak(data.pomodoroBreakMin);
         if (data.pomodoroLongBreakMin) setPomodoroLongBreak(data.pomodoroLongBreakMin);
         if (data.pomodoroCycles) setPomodoroCyclesBeforeLong(data.pomodoroCycles);
+        if (typeof data.exitBossBeaconsEnabled === "boolean") {
+          setExitBossBeaconsEnabled(data.exitBossBeaconsEnabled);
+        }
       })
       .catch(() => {});
   // Only run once on mount — intentional
@@ -888,9 +893,10 @@ function StudySessionInner() {
     [sessionId]
   );
 
-  const handleEnd = useCallback(async () => {
+  const handleEnd = useCallback(async (exitMethod: ExitMethod = "goal_reached") => {
     if (!sessionId) return;
     sessionEndingRef.current = true;
+    const resolvedExitMethod: ExitMethod = isOfflineId(sessionId) ? "offline" : exitMethod;
     if (document.fullscreenElement) {
       try { await document.exitFullscreen(); } catch {}
     }
@@ -913,6 +919,7 @@ function StudySessionInner() {
         pagesVisited: visitedPagesRef.current.size,
         visitedPagesList: Array.from(visitedPagesRef.current),
       });
+      // exitMethod persisted when session syncs online
       // Try to sync immediately (may succeed if connection came back)
       const synced = await syncOfflineSessions().catch(() => 0);
       if (synced > 0) {
@@ -937,6 +944,7 @@ function StudySessionInner() {
           lastPageIndex: currentPageRef.current,
           pagesVisited: visitedPagesRef.current.size,
           visitedPagesList: Array.from(visitedPagesRef.current),
+          exitMethod: resolvedExitMethod,
         }),
       });
     } finally {
@@ -1093,7 +1101,7 @@ function StudySessionInner() {
             )}
           </p>
           <p className="text-sm text-amber-600 dark:text-amber-500 mb-5">
-            Resume opens your session. To end it, open the session and finish with End session (exit password).
+            Resume opens your session. To end it, open the session and use End session (Boss Beacons if enabled).
           </p>
           <button
             type="button"
@@ -1600,12 +1608,15 @@ function StudySessionInner() {
                 Pause & leave
               </button>
             )}
-            <OverrideFlow
+            {sessionId && (
+            <ExitGateFlow
+              sessionId={sessionId}
+              enabled={exitBossBeaconsEnabled && !isOfflineId(sessionId)}
               onConfirmEnd={handleEnd}
               locked
               sessionEndingRef={sessionEndingRef}
-              requireExitPassword={!isOfflineId(sessionId ?? "")}
             />
+            )}
           </div>
         </header>
 

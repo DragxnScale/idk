@@ -365,7 +365,7 @@ export default function DashboardPage() {
                   )}
                 </p>
                 <p className="text-xs text-amber-600/90 dark:text-amber-500/90 mt-1 max-w-md">
-                  Ending a session requires opening it and using End session (exit password).
+                  Ending a session requires opening it and using End session (Boss Beacons if enabled).
                 </p>
               </div>
               <button

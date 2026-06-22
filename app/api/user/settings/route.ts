@@ -38,6 +38,7 @@ export async function GET() {
     /** Spaced-repetition pacing caps (Anki-style). null = use defaults. */
     srsNewPerDay: row.srsNewPerDay ?? null,
     srsReviewsPerDay: row.srsReviewsPerDay ?? null,
+    exitBossBeaconsEnabled: row.exitBossBeaconsEnabled ?? true,
   });
 }
 
@@ -49,8 +50,6 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
   const {
-    currentPassword,
-    newExitPassword,
     currentLoginPassword,
     newLoginPassword,
     confirmLoginPassword,
@@ -70,6 +69,7 @@ export async function PATCH(request: Request) {
     pomodoroCycles,
     srsNewPerDay,
     srsReviewsPerDay,
+    exitBossBeaconsEnabled,
   } = body;
 
   const row = await db.query.users.findFirst({
@@ -102,27 +102,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── Exit password change ──────────────────────────────────────────
-  if (currentPassword !== undefined && newExitPassword !== undefined) {
-    if (newExitPassword.length < 4) {
-      return NextResponse.json(
-        { error: "Exit password must be at least 4 characters" },
-        { status: 400 }
-      );
-    }
-    if (!row.passwordHash) {
-      return NextResponse.json({ error: "No login password set" }, { status: 400 });
-    }
-    const valid = await verifyPassword(currentPassword, row.passwordHash);
-    if (!valid) {
-      return NextResponse.json({ error: "Incorrect login password" }, { status: 401 });
-    }
-    const exitPasswordHash = await hashPassword(newExitPassword);
-    await db.update(users).set({ exitPasswordHash }).where(eq(users.id, authUser.id));
-    return NextResponse.json({ ok: true });
-  }
-
-  // ── Daily goals / settings update ────────────────────────────────
+  // ── Theme ───────────────────────────────────────────────────────
   if (themeId !== undefined) {
     await db.update(users).set({ themeId: themeId || null }).where(eq(users.id, authUser.id));
     return NextResponse.json({ ok: true });
@@ -135,7 +115,7 @@ export async function PATCH(request: Request) {
   // from this endpoint are no longer accepted — stale clients that
   // still POST `isDeveloper` get silently ignored.
 
-  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined || srsNewPerDay !== undefined || srsReviewsPerDay !== undefined) {
+  if (dailyMinutesGoal !== undefined || dailySessionsGoal !== undefined || inactivityTimeout !== undefined || quizMinQuestions !== undefined || quizMaxQuestions !== undefined || defaultGoalType !== undefined || defaultTargetValue !== undefined || name !== undefined || pomodoroEnabled !== undefined || pomodoroFocusMin !== undefined || pomodoroBreakMin !== undefined || pomodoroLongBreakMin !== undefined || pomodoroCycles !== undefined || srsNewPerDay !== undefined || srsReviewsPerDay !== undefined || exitBossBeaconsEnabled !== undefined) {
     const update: Partial<typeof users.$inferInsert> = {};
 
     if (name !== undefined) {
@@ -200,6 +180,9 @@ export async function PATCH(request: Request) {
     if (srsReviewsPerDay !== undefined) {
       const v = Math.round(Number(srsReviewsPerDay));
       update.srsReviewsPerDay = Number.isFinite(v) && v >= 1 && v <= 9999 ? v : null;
+    }
+    if (exitBossBeaconsEnabled !== undefined) {
+      update.exitBossBeaconsEnabled = !!exitBossBeaconsEnabled;
     }
 
     await db.update(users).set(update).where(eq(users.id, authUser.id));

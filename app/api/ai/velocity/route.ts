@@ -13,6 +13,15 @@ import {
   velocityQuestionBank,
 } from "@/lib/db/schema";
 import type { VelocityQuestion } from "@/lib/velocity-match";
+import {
+  BAD_QUESTION_REPORT_THRESHOLD,
+  fuzzyStemKey,
+  parseBankQuestion,
+  questionIsTextbookDatapoint,
+  shuffleInPlace,
+  sourceKeyFromDocJson,
+  stemIsContextDependent,
+} from "@/lib/velocity-bank";
 import { assertAiBudget, recordAiUsage } from "@/lib/ai-usage";
 import {
   factCheckVelocityQuestions,
@@ -70,7 +79,6 @@ const DEFAULT_Q = PAIR_COUNT * 2;
  * keeps the question out of rotation; admins can still inspect the row
  * and either fix the AI prompt or hard-delete it.
  */
-const BAD_QUESTION_REPORT_THRESHOLD = 1;
 /** Absolute cap on total questions in a single velocity_games row
  *  (initial batch + one continuation). */
 const MAX_TOTAL_Q = DEFAULT_Q * 2;
@@ -183,169 +191,6 @@ function parseReadingPages(accumulated: string): number[] {
     if (Number.isFinite(n) && n > 0) set.add(n);
   }
   return Array.from(set).sort((a, b) => a - b);
-}
-
-/** Stable identifier for a reading source, used as the bank partition key. */
-function sourceKeyFromDocJson(documentJson: string | null | undefined): string | null {
-  if (!documentJson) return null;
-  try {
-    const doc = JSON.parse(documentJson) as { type?: string; documentId?: string };
-    if (!doc.documentId) return null;
-    if (doc.type === "textbook") return `textbook:${doc.documentId}`;
-    return `doc:${doc.documentId}`;
-  } catch {
-    return null;
-  }
-}
-
-function shuffleInPlace<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-/** Re-hydrate a question row from the bank into a VelocityQuestion; null on corruption. */
-function parseBankQuestion(questionJson: string): VelocityQuestion | null {
-  try {
-    const q = JSON.parse(questionJson) as VelocityQuestion;
-    if (!q || !q.type || !q.question) return null;
-    return q;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Server-side guardrail: drop any question that references the source text
- * meta-contextually ("the example", "the passage", "as mentioned above", etc.)
- * or uses an unbound demonstrative/pronoun that only resolves with the reading
- * in front of you. Matches are case-insensitive and word-boundary aware.
- *
- * This is a hard filter because the prompt rules can still slip through — we
- * want to guarantee the user never sees a context-dependent question.
- */
-const BANNED_STEM_PATTERNS: RegExp[] = [
-  // Meta references to the source text
-  /\b(?:the|this|that)\s+(?:example|passage|text|reading|book|chapter|section|article|paper|author|figure|diagram|table|graph|image|illustration|photograph|experiment|scenario|problem|case)\b/i,
-  // "as mentioned / as described / as discussed / as shown / as noted / as stated / as explained / as given / as seen / as above / as below"
-  /\bas\s+(?:mentioned|described|discussed|shown|noted|stated|explained|given|seen)\b/i,
-  /\b(?:mentioned|described|discussed|shown|noted|stated|explained)\s+(?:above|below|in\s+the\s+text|in\s+the\s+reading|previously)\b/i,
-  // "the two X named" / "the three Y listed" — textbook-listy phrasing
-  /\bthe\s+\w+\s+(?:ideas|points|reasons|factors|steps|stages|types|kinds|categories|examples|principles|laws|properties|features|characteristics)\s+(?:named|listed|mentioned|given|described|discussed|shown)\b/i,
-  // "X example" used as an unqualified reference (e.g. "the battery example")
-  /\bthe\s+\w+\s+example\b/i,
-  // Bare "above" / "below" as text locators
-  /\b(?:above|below)\b.*\b(?:mentioned|listed|described|discussed|shown|given|stated|defined)\b/i,
-];
-
-function stemIsContextDependent(stem: string): boolean {
-  const s = stem.trim();
-  if (!s) return true;
-  return BANNED_STEM_PATTERNS.some((re) => re.test(s));
-}
-
-/**
- * Reject questions that read as "look at the graph / table / experiment and
- * tell me the exact number". The combination of a time/concentration/rate
- * reference in the stem with a specific-value-shaped canonical answer is the
- * tell. We keep this narrow to avoid false-positives on legitimate universal-
- * constant questions like "How many chromosomes …" or "What is c in m/s?".
- */
-const TEXTBOOK_DATAPOINT_STEM_PATTERNS: RegExp[] = [
-  // "at t = 50", "at t=50"
-  /\bat\s+t\s*=\s*\d/i,
-  // "At 250 s, ...", "at 100 seconds", "at 60s what is …" — any reference to
-  // a specific time in seconds/minutes/hours as a precondition of the question.
-  /\bat\s+\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|ms)\b/i,
-  /\bafter\s+\d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|ms)\b/i,
-  // "obtained / measured / reached / found at 100"
-  /\b(?:obtained|measured|reached|found|calculated|determined)\s+at\s+\d/i,
-  // "in this experiment", "for the reaction shown"
-  /\bin\s+this\s+(?:experiment|reaction|trial|run|study)\b/i,
-  /\bfor\s+the\s+(?:reaction|experiment|graph|curve|plot|table|data\s*set)\s+(?:shown|given|above|below|presented|described)\b/i,
-  // "slope of the tangent to the X curve/plot/graph"
-  /\bslope\s+of\s+the\s+tangent\s+(?:to|at|on|for)\b/i,
-  // "what instantaneous / initial / average rate"
-  /\bwhat\s+(?:instantaneous|initial|average)\s+rate\b/i,
-  // "rate of <species> (?:disappearance|appearance|production|consumption|formation)"
-  // when paired with a numeric or "at <time>" context — handled by the
-  // time-based filters above; this one catches bare "rate of disappearance of
-  // NO2" which almost always means a data-point read.
-  /\brate\s+of\s+(?:disappearance|appearance|production|consumption|formation)\s+of\b/i,
-  // "the rate/concentration/pH of Solution A/B/…"
-  /\b(?:rate|concentration|pH|temperature|pressure|volume|mass|yield|equilibrium\s+constant)\s+of\s+(?:solution|sample|reaction|compound|mixture)\s+[A-Z]\b/i,
-  // "the equilibrium/rate constant for this reaction/system"
-  /\b(?:equilibrium\s+constant|rate\s+constant|k\s+value|Ka|Kb|Kc|Kp|Ksp)\s+(?:for|of)\s+(?:this|the)\s+(?:reaction|system|experiment|trial)\b/i,
-];
-
-/** Shape of a "specific textbook measurement" answer:
- *  scientific notation with rate-style units ("4.2 × 10^-5 mol/L·s", "2.1e-6 M/s"),
- *  or plain decimals with chem rate units. */
-const TEXTBOOK_DATAPOINT_ANSWER = /^\s*[-+]?\d+(?:\.\d+)?\s*(?:[×x*eE]\s*10?\s*\^?\s*[-+]?\d+)?\s*(?:mol\/L·s|mol\/L\*s|mol\/L\s*s|mol\s*\/\s*L·s|mol\/L|M\/s|\/s|s\^?-?1)\s*$/i;
-
-/** Cheap scientific-notation detector — true for strings like
- *  "4.2 × 10^-5 mol/L·s", "2.3e-6", "5 × 10⁻⁴ M/s". Used to flag MC
- *  questions where every distractor is a read-off-the-graph value. */
-const SCI_NOTATION_SHAPE = /\d(?:\.\d+)?\s*(?:[×x*eE]\s*10?\s*\^?\s*[-+]?\d|e[-+]?\d)/i;
-
-function looksLikeTextbookMeasurement(value: string): boolean {
-  const v = value.trim();
-  if (!v) return false;
-  if (TEXTBOOK_DATAPOINT_ANSWER.test(v)) return true;
-  // Scientific notation with any rate-style unit → textbook data.
-  if (SCI_NOTATION_SHAPE.test(v) && /(?:mol|M|s|L|\/)/.test(v)) return true;
-  return false;
-}
-
-function questionIsTextbookDatapoint(
-  stem: string,
-  canonicalAnswer: string | undefined,
-  mcOptions?: readonly string[]
-): boolean {
-  const s = stem.trim();
-  if (!s) return false;
-  if (TEXTBOOK_DATAPOINT_STEM_PATTERNS.some((re) => re.test(s))) return true;
-  // SA with a rate-unit canonical answer is almost certainly a read-off-the-
-  // graph value, regardless of stem phrasing.
-  if (canonicalAnswer && looksLikeTextbookMeasurement(canonicalAnswer)) {
-    return true;
-  }
-  // MC where 2+ of the 4 distractors look like rate-unit measurements — the
-  // question is asking the user to pick a specific experimental value.
-  if (mcOptions && mcOptions.length > 0) {
-    const measurementOptions = mcOptions.filter(looksLikeTextbookMeasurement).length;
-    if (measurementOptions >= 2) return true;
-  }
-  return false;
-}
-
-/**
- * Build an aggressive content-only fingerprint of a question stem for fuzzy
- * dedupe. Strips punctuation, lowercases, drops stopwords and short tokens,
- * and sorts what's left. Two stems with the same set of significant content
- * words collapse to the same key — catches "At 250 s, what is the slope…"
- * vs "What is the slope of the tangent at 250s…" even though the exact
- * strings differ.
- */
-function fuzzyStemKey(stem: string): string {
-  const STOP = new Set([
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "of", "in", "on", "at", "to", "from", "by", "for", "with", "as",
-    "and", "or", "but", "so", "than", "then", "that", "this", "these",
-    "those", "it", "its", "what", "which", "who", "whom", "whose", "when",
-    "where", "why", "how", "do", "does", "did", "can", "could", "would",
-    "should", "will", "shall", "may", "might", "must", "about", "above",
-    "below", "into", "onto", "over", "under", "up", "out", "off",
-  ]);
-  return stem
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]+/g, " ")
-    .split(/\s+/)
-    .filter((tok) => tok.length >= 3 && !STOP.has(tok))
-    .sort()
-    .join(" ");
 }
 
 export async function GET(request: Request) {

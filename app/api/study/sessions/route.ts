@@ -215,6 +215,9 @@ export async function PATCH(request: Request) {
   if (body.sessionState === "live" || body.sessionState === "paused") {
     updates.sessionState = body.sessionState;
   }
+  if (typeof body.exitMethod === "string" && body.exitMethod.trim()) {
+    updates.exitMethod = body.exitMethod.trim().slice(0, 32);
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json(existing);

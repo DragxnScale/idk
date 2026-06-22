@@ -55,6 +55,8 @@ export const users = sqliteTable("users", {
    */
   srsNewPerDay: integer("srs_new_per_day").default(20),
   srsReviewsPerDay: integer("srs_reviews_per_day").default(200),
+  /** When true, manual session end runs Boss Beacons (cooldown + boss MC fights). */
+  exitBossBeaconsEnabled: integer("exit_boss_beacons_enabled", { mode: "boolean" }).default(true),
   createdAt: integer("created_at", { mode: "timestamp" }),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
 });
@@ -145,6 +147,8 @@ export const studySessions = sqliteTable("study_sessions", {
   }),
   videosJson: text("videos_json"), // JSON: { title, searchQuery, reason }[]
   documentJson: text("document_json"), // JSON: serialized SelectedDocument for resume
+  /** How the session ended: goal_reached | boss_cleared | phrase_fallback | gate_off | offline */
+  exitMethod: text("exit_method"),
   createdAt: integer("created_at", { mode: "timestamp" }),
 });
 
