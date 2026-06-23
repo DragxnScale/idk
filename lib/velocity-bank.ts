@@ -2,7 +2,7 @@
  * Shared velocity question bank helpers — used by Velocity generation and
  * Boss Beacons exit gate.
  */
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   documentQuizQuestions,
@@ -160,8 +160,130 @@ export interface McQuestionPick {
   explanation?: string;
 }
 
+function addMcPick(
+  seen: Set<string>,
+  pool: McQuestionPick[],
+  pick: McQuestionPick
+): void {
+  const key = pick.question.trim().toLowerCase();
+  const fuzzy = fuzzyStemKey(pick.question);
+  if (seen.has(key) || (fuzzy && seen.has(fuzzy))) return;
+  seen.add(key);
+  if (fuzzy) seen.add(fuzzy);
+  pool.push(pick);
+}
+
+function mcPickFromQuizRow(r: { id: string; questionJson: string }): McQuestionPick | null {
+  try {
+    const raw = JSON.parse(r.questionJson) as {
+      question?: string;
+      options?: string[];
+      correctIndex?: number;
+      explanation?: string;
+    };
+    if (
+      !raw.question ||
+      !Array.isArray(raw.options) ||
+      raw.options.length !== 4 ||
+      typeof raw.correctIndex !== "number" ||
+      raw.correctIndex < 0 ||
+      raw.correctIndex > 3
+    ) {
+      return null;
+    }
+    const q: VelocityQuestion = {
+      type: "mc",
+      roundType: "tossup",
+      pairId: "quiz",
+      question: raw.question,
+      options: raw.options as [string, string, string, string],
+      correctIndex: raw.correctIndex as 0 | 1 | 2 | 3,
+      topic: "",
+      explanation: raw.explanation,
+    };
+    if (!passesBankFilters(q)) return null;
+    return {
+      bankRowId: `quiz:${r.id}`,
+      question: q.question,
+      options: q.options,
+      correctIndex: q.correctIndex,
+      explanation: q.explanation,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function collectVelocityMc(
+  sourceKey: string,
+  pageFilter: { exact: number[] } | { upTo: number },
+  seen: Set<string>,
+  pool: McQuestionPick[],
+  limit: number
+): Promise<void> {
+  if (pool.length >= limit) return;
+
+  const pageWhere =
+    "exact" in pageFilter
+      ? inArray(velocityQuestionBank.pageIndex, pageFilter.exact)
+      : lte(velocityQuestionBank.pageIndex, pageFilter.upTo);
+
+  const rows = await db.query.velocityQuestionBank.findMany({
+    where: and(
+      eq(velocityQuestionBank.sourceKey, sourceKey),
+      pageWhere,
+      eq(velocityQuestionBank.type, "mc"),
+      lt(velocityQuestionBank.reportCount, BAD_QUESTION_REPORT_THRESHOLD)
+    ),
+    limit: 400,
+  });
+
+  for (const r of rows) {
+    if (pool.length >= limit) break;
+    const q = parseBankQuestion(r.questionJson);
+    if (!q || q.type !== "mc" || !passesBankFilters(q)) continue;
+    addMcPick(seen, pool, {
+      bankRowId: `velocity:${r.id}`,
+      question: q.question,
+      options: q.options,
+      correctIndex: q.correctIndex,
+      explanation: q.explanation,
+    });
+  }
+}
+
+async function collectQuizMc(
+  documentId: string,
+  pageFilter: { exact: number[] } | { upTo: number },
+  seen: Set<string>,
+  pool: McQuestionPick[],
+  limit: number
+): Promise<void> {
+  if (pool.length >= limit) return;
+
+  const pageWhere =
+    "exact" in pageFilter
+      ? inArray(documentQuizQuestions.pageIndex, pageFilter.exact)
+      : lte(documentQuizQuestions.pageIndex, pageFilter.upTo);
+
+  const quizRows = await db.query.documentQuizQuestions.findMany({
+    where: and(eq(documentQuizQuestions.documentId, documentId), pageWhere),
+    limit: 200,
+  });
+
+  for (const r of quizRows) {
+    if (pool.length >= limit) break;
+    const pick = mcPickFromQuizRow(r);
+    if (pick) addMcPick(seen, pool, pick);
+  }
+}
+
 /**
  * Pull MC questions from velocity bank + document quiz bank for visited pages.
+ *
+ * Fallback strategy: if visited pages have no hits, widen to any page ≤ the
+ * highest visited page — covering material the user could have already read
+ * while avoiding questions from chapters ahead of them.
  */
 export async function queryMcQuestionsForPages(opts: {
   sourceKey: string | null;
@@ -174,87 +296,23 @@ export async function queryMcQuestionsForPages(opts: {
 
   const seen = new Set<string>();
   const pool: McQuestionPick[] = [];
+  const exactFilter = { exact: pageIndexes };
 
   if (sourceKey) {
-    const rows = await db.query.velocityQuestionBank.findMany({
-      where: and(
-        eq(velocityQuestionBank.sourceKey, sourceKey),
-        inArray(velocityQuestionBank.pageIndex, pageIndexes),
-        eq(velocityQuestionBank.type, "mc"),
-        lt(velocityQuestionBank.reportCount, BAD_QUESTION_REPORT_THRESHOLD)
-      ),
-      limit: 400,
-    });
-
-    for (const r of rows) {
-      const q = parseBankQuestion(r.questionJson);
-      if (!q || q.type !== "mc" || !passesBankFilters(q)) continue;
-      const key = q.question.trim().toLowerCase();
-      const fuzzy = fuzzyStemKey(q.question);
-      if (seen.has(key) || (fuzzy && seen.has(fuzzy))) continue;
-      seen.add(key);
-      if (fuzzy) seen.add(fuzzy);
-      pool.push({
-        bankRowId: `velocity:${r.id}`,
-        question: q.question,
-        options: q.options,
-        correctIndex: q.correctIndex,
-        explanation: q.explanation,
-      });
-    }
+    await collectVelocityMc(sourceKey, exactFilter, seen, pool, limit);
+  }
+  if (documentId) {
+    await collectQuizMc(documentId, exactFilter, seen, pool, limit);
   }
 
-  if (documentId && pool.length < limit) {
-    const quizRows = await db.query.documentQuizQuestions.findMany({
-      where: and(
-        eq(documentQuizQuestions.documentId, documentId),
-        inArray(documentQuizQuestions.pageIndex, pageIndexes)
-      ),
-      limit: 200,
-    });
-
-    for (const r of quizRows) {
-      try {
-        const raw = JSON.parse(r.questionJson) as {
-          question?: string;
-          options?: string[];
-          correctIndex?: number;
-          explanation?: string;
-        };
-        if (
-          !raw.question ||
-          !Array.isArray(raw.options) ||
-          raw.options.length !== 4 ||
-          typeof raw.correctIndex !== "number" ||
-          raw.correctIndex < 0 ||
-          raw.correctIndex > 3
-        ) {
-          continue;
-        }
-        const q: VelocityQuestion = {
-          type: "mc",
-          roundType: "tossup",
-          pairId: "quiz",
-          question: raw.question,
-          options: raw.options as [string, string, string, string],
-          correctIndex: raw.correctIndex as 0 | 1 | 2 | 3,
-          topic: "",
-          explanation: raw.explanation,
-        };
-        if (!passesBankFilters(q)) continue;
-        const key = q.question.trim().toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        pool.push({
-          bankRowId: `quiz:${r.id}`,
-          question: q.question,
-          options: q.options,
-          correctIndex: q.correctIndex,
-          explanation: q.explanation,
-        });
-      } catch {
-        /* skip corrupt row */
-      }
+  if (pool.length < limit) {
+    const maxVisited = Math.max(...pageIndexes);
+    const upToFilter = { upTo: maxVisited };
+    if (sourceKey) {
+      await collectVelocityMc(sourceKey, upToFilter, seen, pool, limit);
+    }
+    if (documentId) {
+      await collectQuizMc(documentId, upToFilter, seen, pool, limit);
     }
   }
 

@@ -298,7 +298,7 @@ All paths are relative to `/api`. User-scoped handlers use **`getAppUser()`** fr
 | GET | `/api/study/sessions` | List current user's sessions (recent). |
 | POST | `/api/study/sessions` | Start session; **auto-closes only other `live` open sessions** (paused sessions stay open); accepts `documentJson`; optional **`newMultiSessionGoal: { targetTotalMinutes }`** (creates `study_goals` + links session) or **`continueStudyGoalId`** (resume cumulative goal). Response may include **`studyGoalId`**. |
 | PATCH | `/api/study/sessions` | Update session fields: `totalFocusedMinutes`, `endedAt`, `pagesVisited`, `visitedPagesList`, **`sessionState`** (`live`|`paused`), optional **`exitMethod`**. Ending a session (`endedAt`) recomputes linked **`study_goals`** completion when sum of ended-session minutes reaches `target_value`. |
-| GET | `/api/study/sessions/[id]/exit-bosses` | Boss Beacons prep: up to 3 MC bosses from question banks for visited pages; HMAC `bossId` tokens + `phraseChallenge` fallback. |
+| GET | `/api/study/sessions/[id]/exit-bosses` | Boss Beacons prep: up to 3 MC bosses from question banks for visited pages (`?pages=1,2,3` merges client pages with DB); falls back to any page on the same document when visited-page hits are empty; HMAC `bossId` tokens + `phraseChallenge` (random mixed-case phrase) fallback. |
 | POST | `/api/study/sessions/[id]/exit-bosses/grade` | Body `{ bossId, selectedIndex }` — grade one boss attack. |
 | POST | `/api/study/sessions/[id]/exit-phrase` | Body `{ token, phrase }` — verify typed unlock phrase. |
 | GET | `/api/study/goals` | Active cumulative goals with progress (`completedMinutes` from ended sessions only). |

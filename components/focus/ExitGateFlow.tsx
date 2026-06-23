@@ -27,6 +27,10 @@ interface ExitGateFlowProps {
   onConfirmEnd: (exitMethod: ExitMethod) => void;
   locked?: boolean;
   sessionEndingRef?: React.RefObject<boolean>;
+  /** Live visited pages from the session UI (may be ahead of the DB). */
+  getVisitedPages?: () => number[];
+  /** Flush progress to the server before loading bosses. */
+  onSyncBeforeBosses?: () => Promise<void>;
 }
 
 export function ExitGateFlow({
@@ -35,6 +39,8 @@ export function ExitGateFlow({
   onConfirmEnd,
   locked = false,
   sessionEndingRef,
+  getVisitedPages,
+  onSyncBeforeBosses,
 }: ExitGateFlowProps) {
   const [phase, setPhase] = useState<Phase>("closed");
   const [bosses, setBosses] = useState<BossFightData[]>([]);
@@ -66,7 +72,13 @@ export function ExitGateFlow({
   const loadBosses = useCallback(async () => {
     setPhase("loading");
     try {
-      const res = await fetch(`/api/study/sessions/${sessionId}/exit-bosses`);
+      await onSyncBeforeBosses?.();
+      const pages = getVisitedPages?.() ?? [];
+      const qs =
+        pages.length > 0
+          ? `?pages=${pages.map((p) => encodeURIComponent(String(p))).join(",")}`
+          : "";
+      const res = await fetch(`/api/study/sessions/${sessionId}/exit-bosses${qs}`);
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setPhraseChallenge(data.phraseChallenge ?? null);
@@ -83,7 +95,7 @@ export function ExitGateFlow({
       setPendingExitMethod("phrase_fallback");
       setPhase("phrase");
     }
-  }, [sessionId]);
+  }, [sessionId, getVisitedPages, onSyncBeforeBosses]);
 
   const openGate = useCallback(() => {
     if (!enabled) {

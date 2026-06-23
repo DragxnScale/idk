@@ -37,6 +37,19 @@ async function visitedPagesForSession(sessionId: string, visitedPagesList: strin
   return pages;
 }
 
+function parseClientPagesParam(raw: string | null): number[] {
+  if (!raw?.trim()) return [];
+  const nums = raw
+    .split(/[,\s]+/)
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return Array.from(new Set(nums));
+}
+
+function mergePageIndexes(...lists: number[][]): number[] {
+  return Array.from(new Set(lists.flat().filter((n) => n > 0)));
+}
+
 function shuffleMcOptions<T extends { options: [string, string, string, string]; correctIndex: 0 | 1 | 2 | 3 }>(
   pick: T
 ): T & { options: [string, string, string, string]; correctIndex: 0 | 1 | 2 | 3 } {
@@ -48,7 +61,7 @@ function shuffleMcOptions<T extends { options: [string, string, string, string];
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   const user = await getAppUser();
@@ -69,7 +82,10 @@ export async function GET(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const pages = await visitedPagesForSession(sessionId, session.visitedPagesList);
+  const pages = mergePageIndexes(
+    parseClientPagesParam(new URL(request.url).searchParams.get("pages")),
+    await visitedPagesForSession(sessionId, session.visitedPagesList)
+  );
   const sourceKey = sourceKeyFromDocJson(session.documentJson);
   const documentId = documentIdFromDocJson(session.documentJson);
 

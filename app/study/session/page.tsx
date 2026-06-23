@@ -893,6 +893,36 @@ function StudySessionInner() {
     [sessionId]
   );
 
+  const getExitGateVisitedPages = useCallback(() => {
+    const pages = Array.from(visitedPagesRef.current);
+    const cur = currentPageRef.current;
+    if (cur > 0 && !pages.includes(cur)) pages.push(cur);
+    return pages;
+  }, []);
+
+  const flushSessionStateForExitGate = useCallback(async () => {
+    if (!sessionId || isOfflineId(sessionId)) return;
+    const page = currentPageRef.current;
+    const pages = getExitGateVisitedPages();
+    try {
+      await fetch("/api/study/sessions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          totalFocusedMinutes: focusedMinutesRef.current,
+          lastPageIndex: page,
+          pagesVisited: pages.length,
+          visitedPagesList: pages,
+        }),
+      });
+      lastFlushedPageRef.current = page;
+      lastSavedRef.current = focusedMinutesRef.current;
+    } catch {
+      // exit-bosses still receives client pages via query string
+    }
+  }, [sessionId, getExitGateVisitedPages]);
+
   const handleEnd = useCallback(async (exitMethod: ExitMethod = "goal_reached") => {
     if (!sessionId) return;
     sessionEndingRef.current = true;
@@ -1615,6 +1645,8 @@ function StudySessionInner() {
               onConfirmEnd={handleEnd}
               locked
               sessionEndingRef={sessionEndingRef}
+              getVisitedPages={getExitGateVisitedPages}
+              onSyncBeforeBosses={flushSessionStateForExitGate}
             />
             )}
           </div>

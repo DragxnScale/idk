@@ -112,6 +112,17 @@ const PHRASE_WORDS = [
   "cobalt", "frost", "ember", "quartz", "nova", "prism",
 ];
 
+/** Randomize per-letter case so autofill can't match a predictable pattern. */
+function randomizeLetterCase(word: string): string {
+  return word
+    .split("")
+    .map((ch) => {
+      if (!/[a-z]/i.test(ch)) return ch;
+      return Math.random() < 0.5 ? ch.toUpperCase() : ch.toLowerCase();
+    })
+    .join("");
+}
+
 export function generateExitPhrase(): string {
   const w1 = PHRASE_WORDS[Math.floor(Math.random() * PHRASE_WORDS.length)];
   let w2 = PHRASE_WORDS[Math.floor(Math.random() * PHRASE_WORDS.length)];
@@ -119,7 +130,7 @@ export function generateExitPhrase(): string {
     w2 = PHRASE_WORDS[Math.floor(Math.random() * PHRASE_WORDS.length)];
   }
   const num = Math.floor(Math.random() * 90) + 10;
-  return `${w1}-${w2}-${num}`;
+  return `${randomizeLetterCase(w1)}-${randomizeLetterCase(w2)}-${num}`;
 }
 
 export function signPhraseToken(opts: {

@@ -48,7 +48,7 @@ export function ExitPhraseGate({
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Type this phrase exactly to unlock the exit (browsers won&apos;t autofill this).
+        Type this phrase exactly — including capitalization — to unlock the exit.
       </p>
       <p className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-center font-mono text-sm font-semibold select-all">
         {phrase}

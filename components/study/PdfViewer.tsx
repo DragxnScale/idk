@@ -238,6 +238,7 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
 
   const visitedPagesRef = useRef<Set<number>>(new Set([initialPage]));
   const pageNumberRef = useRef(initialPage);
+  const initialPageSyncedRef = useRef(false);
 
   // Page visit tracking
   // `focusedAccumMs` accumulates the closed (paused-bracketed) intervals
@@ -332,6 +333,15 @@ export function PdfViewer({ url, initialPage = 1, jumpToPage, documentId, sessio
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Notify parent of the starting page once the PDF is ready
+  useEffect(() => {
+    if (numPages <= 0 || initialPageSyncedRef.current) return;
+    initialPageSyncedRef.current = true;
+    const page = pageNumberRef.current;
+    visitedPagesRef.current.add(page);
+    onPageChange?.(page);
+  }, [numPages, onPageChange]);
 
   // Periodic flush every 30s
   useEffect(() => {
