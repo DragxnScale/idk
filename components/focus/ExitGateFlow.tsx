@@ -48,6 +48,8 @@ export function ExitGateFlow({
   const [hitQuestions, setHitQuestions] = useState<BossFightData[]>([]);
   const [phraseChallenge, setPhraseChallenge] = useState<PhraseChallenge | null>(null);
   const [pendingExitMethod, setPendingExitMethod] = useState<ExitMethod>("boss_cleared");
+  /** True when phrase gate is shown because no boss questions were available (not because of a failed fight). */
+  const [phraseNoQuestions, setPhraseNoQuestions] = useState(false);
   const selfEndingRef = useRef(false);
   /** All bossId tokens shown in this session — sent back so the server can serve fresh questions. */
   const seenBossIdsRef = useRef<string[]>([]);
@@ -96,13 +98,16 @@ export function ExitGateFlow({
       });
       setHitQuestions(list);
       if (list.length > 0) {
+        setPhraseNoQuestions(false);
         setPhase("boss");
       } else {
         setPendingExitMethod("phrase_fallback");
+        setPhraseNoQuestions(true);
         setPhase("phrase");
       }
     } catch {
       setPendingExitMethod("phrase_fallback");
+      setPhraseNoQuestions(true);
       setPhase("phrase");
     }
   }, [sessionId, getVisitedPages, onSyncBeforeBosses]);
@@ -134,6 +139,7 @@ export function ExitGateFlow({
 
   function onRequirePhrase() {
     setPendingExitMethod("phrase_fallback");
+    setPhraseNoQuestions(false);
     setPhase("phrase");
   }
 
@@ -216,8 +222,17 @@ export function ExitGateFlow({
             {phase === "phrase" && phraseChallenge && (
               <>
                 <h2 className="text-base font-semibold mb-1">
-                  <SuiText page="exit-boss" k="phrase.heading" def="Unlock the exit" as="span" />
+                  {phraseNoQuestions ? (
+                    <SuiText page="exit-boss" k="boss.heading" def="Boss Beacon" as="span" />
+                  ) : (
+                    <SuiText page="exit-boss" k="phrase.heading" def="Unlock the exit" as="span" />
+                  )}
                 </h2>
+                {phraseNoQuestions && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    <SuiText page="exit-boss" k="phrase.no-questions" def="No content challenges available — type the phrase to exit." as="span" />
+                  </p>
+                )}
                 <ExitPhraseGate
                   phrase={phraseChallenge.phrase}
                   token={phraseChallenge.token}

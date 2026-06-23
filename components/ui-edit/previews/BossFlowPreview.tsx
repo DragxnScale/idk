@@ -124,8 +124,8 @@ export function BossFlowPreview() {
           </button>
         </PhaseCard>
 
-        {/* ── Phrase gate ── */}
-        <PhaseCard title="Phrase gate">
+        {/* ── Phrase gate (after failed boss fight) ── */}
+        <PhaseCard title="Phrase gate (after boss fight)">
           <h2 className="text-base font-semibold mb-1">
             <SuiText page="exit-boss" k="phrase.heading" def="Unlock the exit" as="span" />
           </h2>
@@ -157,6 +157,22 @@ export function BossFlowPreview() {
               <SuiText page="exit-boss" k="phrase.btn.checking" def="Checking…" as="span" />
             </button>
           </div>
+        </PhaseCard>
+
+        {/* ── Phrase gate (no questions fallback) ── */}
+        <PhaseCard title="Phrase gate (no questions)">
+          <h2 className="text-base font-semibold mb-1">
+            <SuiText page="exit-boss" k="boss.heading" def="Boss Beacon" as="span" />
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <SuiText page="exit-boss" k="phrase.no-questions" def="No content challenges available — type the phrase to exit." as="span" />
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            <SuiText page="exit-boss" k="phrase.instructions" def="Type this phrase exactly — including capitalization — to unlock the exit." as="span" />
+          </p>
+          <p className="mt-3 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-center font-mono text-sm font-semibold select-all">
+            focus unlocks potential
+          </p>
         </PhaseCard>
 
         {/* ── Victory ── */}

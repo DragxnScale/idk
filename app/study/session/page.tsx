@@ -53,6 +53,7 @@ function resolveSessionStartPage(
 ): number {
   if (!selectedDoc) return 1;
 
+  // Chapter goal: navigate to the first selected chapter's start page.
   if (
     goalType === "chapter" &&
     selectedChapters.length > 0 &&
@@ -62,13 +63,19 @@ function resolveSessionStartPage(
     return range ? range[0] : 1;
   }
 
+  // Explicit start page set by the picker (e.g. user chose "Ch. 10" for a
+  // time/pages goal). Must be checked BEFORE firstChapterPdfStart so that
+  // a specific chapter selection isn't silently overridden with Chapter 1.
+  if (selectedDoc.startPage != null) return selectedDoc.startPage;
+
+  // No explicit page: start at the beginning of chapter content.
   if (selectedDoc.chapterPageRanges) {
     const first = firstChapterPdfStart(selectedDoc.chapterPageRanges);
     if (first != null) return first;
   }
 
   if (selectedDoc.pageOffset) return 1 + selectedDoc.pageOffset;
-  return selectedDoc.startPage ?? 1;
+  return 1;
 }
 
 type StudyGoalRow = {
