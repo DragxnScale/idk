@@ -180,11 +180,17 @@ export function applyThemeCssVars(t: ThemeColors) {
   el.style.setProperty("--theme-accent", t.accent);
   el.style.setProperty("--background", t.bg);
   el.style.setProperty("--foreground", t.text);
+  el.style.setProperty("--surface", t.card);
+  el.style.setProperty("--surface-border", t.cardBorder);
+  el.style.setProperty("--text-muted", t.textMuted);
 }
 
 /** Remove inline CSS vars (used when switching away from a custom theme). */
 export function clearThemeCssVars() {
   const el = document.documentElement;
-  ["--theme-primary", "--theme-primary-fg", "--theme-accent", "--background", "--foreground"]
-    .forEach((v) => el.style.removeProperty(v));
+  [
+    "--theme-primary", "--theme-primary-fg", "--theme-accent",
+    "--background", "--foreground",
+    "--surface", "--surface-border", "--text-muted",
+  ].forEach((v) => el.style.removeProperty(v));
 }

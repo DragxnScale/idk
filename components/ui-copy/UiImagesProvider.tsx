@@ -27,6 +27,8 @@ export function UiImagesProvider({ children }: { children: ReactNode }) {
     dashboard: {},
     session: {},
     settings: {},
+    "session-active": {},
+    "exit-boss": {},
   });
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +38,7 @@ export function UiImagesProvider({ children }: { children: ReactNode }) {
       .then((d: { images?: Record<string, Record<string, UiImageElement>> }) => {
         const p = d.images;
         if (!p || typeof p !== "object") {
-          setImages({ home: {}, dashboard: {}, session: {}, settings: {} });
+          setImages({ home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} });
           return;
         }
         setImages({
@@ -44,10 +46,12 @@ export function UiImagesProvider({ children }: { children: ReactNode }) {
           dashboard: p.dashboard ?? {},
           session: p.session ?? {},
           settings: p.settings ?? {},
+          "session-active": p["session-active"] ?? {},
+          "exit-boss": p["exit-boss"] ?? {},
         });
       })
       .catch(() =>
-        setImages({ home: {}, dashboard: {}, session: {}, settings: {} })
+        setImages({ home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} })
       )
       .finally(() => setLoading(false));
   }, []);
@@ -76,7 +80,7 @@ export function useUiImages() {
   const ctx = useContext(UiImagesContext);
   if (!ctx) {
     return {
-      images: { home: {}, dashboard: {}, session: {}, settings: {} } as Record<
+      images: { home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} } as Record<
         UiPageId,
         Record<string, UiImageElement>
       >,

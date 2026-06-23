@@ -9,7 +9,14 @@ export type UiCopyElement = {
   textDecoration?: string;
 };
 
-export const UI_PAGE_IDS = ["home", "dashboard", "session", "settings"] as const;
+export const UI_PAGE_IDS = [
+  "home",
+  "dashboard",
+  "session",
+  "settings",
+  "session-active",
+  "exit-boss",
+] as const;
 export type UiPageId = (typeof UI_PAGE_IDS)[number];
 
 export type UiCopyPayload = {
@@ -18,7 +25,14 @@ export type UiCopyPayload = {
 };
 
 export function emptyPages(): Record<UiPageId, Record<string, UiCopyElement>> {
-  return { home: {}, dashboard: {}, session: {}, settings: {} };
+  return {
+    home: {},
+    dashboard: {},
+    session: {},
+    settings: {},
+    "session-active": {},
+    "exit-boss": {},
+  };
 }
 
 export function emptyPayload(): UiCopyPayload {
@@ -37,6 +51,8 @@ export function ensureAllPages(
     dashboard: partial.dashboard ?? {},
     session: partial.session ?? {},
     settings: partial.settings ?? {},
+    "session-active": partial["session-active"] ?? {},
+    "exit-boss": partial["exit-boss"] ?? {},
   };
 }
 

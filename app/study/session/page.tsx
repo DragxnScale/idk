@@ -1049,7 +1049,14 @@ function StudySessionInner() {
   const toggleChapter = useCallback((ch: string) => {
     setSelectedChapters((prev) => {
       if (prev.includes(ch)) return prev.filter((c) => c !== ch);
-      if (prev.length >= targetValue) return prev;
+      if (prev.length >= targetValue) {
+        // For single-chapter mode: swap (replace the existing selection with the
+        // new chapter). Without this, once the sort puts Chapter 1 at index 0 and
+        // the count is trimmed to 1, every other chapter is disabled and the user
+        // can never escape Chapter 1.
+        if (targetValue <= 1) return [ch];
+        return prev;
+      }
       return [...prev, ch].sort((a, b) => Number(a) - Number(b));
     });
   }, [targetValue]);
@@ -1105,13 +1112,13 @@ function StudySessionInner() {
       <main className="relative z-10 min-h-screen px-6 py-10 md:px-10 max-w-lg mx-auto flex flex-col items-center justify-center">
         <div className="relative z-10 rounded-xl border border-amber-300 bg-amber-50 p-6 w-full dark:border-amber-700 dark:bg-amber-900/20 shadow-lg">
           <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
-            You have an unfinished session
+            <SuiText page="session-active" k="gate.title" def="You have an unfinished session" as="span" />
           </h2>
           <p className="text-sm text-amber-700 dark:text-amber-400 mb-1">
             {(activeSession.sessionState ?? "live") === "paused" ? (
               <>
                 <span className="font-medium text-amber-900 dark:text-amber-200">
-                  Paused — pick up where you left off.
+                  <SuiText page="session-active" k="gate.paused" def="Paused — pick up where you left off." as="span" />
                 </span>{" "}
                 {activeSession.goalType === "time"
                   ? `${activeSession.targetValue} min this sitting`
@@ -1131,7 +1138,7 @@ function StudySessionInner() {
             )}
           </p>
           <p className="text-sm text-amber-600 dark:text-amber-500 mb-5">
-            Resume opens your session. To end it, open the session and use End session (Boss Beacons if enabled).
+            <SuiText page="session-active" k="gate.hint" def="Resume opens your session. To end it, open the session and use End session (Boss Beacons if enabled)." as="span" />
           </p>
           <button
             type="button"
@@ -1140,12 +1147,12 @@ function StudySessionInner() {
               router.push(`/study/session?resume=${encodeURIComponent(activeSession.id)}`)
             }
           >
-            Resume session
+            <SuiText page="session-active" k="gate.btn.resume" def="Resume session" as="span" />
           </button>
         </div>
 
         <Link href="/dashboard" className="relative z-10 mt-6 text-sm underline underline-offset-4 text-gray-500">
-          Back to dashboard
+          <SuiText page="session-active" k="gate.link.dashboard" def="Back to dashboard" as="span" />
         </Link>
       </main>
     );
@@ -1458,7 +1465,9 @@ function StudySessionInner() {
                     <div className="flex flex-wrap gap-2">
                       {selectedDoc!.availableChapters!.map((ch) => {
                         const isSelected = selectedChapters.includes(ch);
-                        const isFull = selectedChapters.length >= targetValue && !isSelected;
+                        // In single-chapter mode (targetValue <= 1) a click swaps the
+                        // selection, so never disable unselected chapters.
+                        const isFull = selectedChapters.length >= targetValue && !isSelected && targetValue > 1;
                         const range = selectedDoc!.chapterPageRanges?.[ch];
                         return (
                           <button
@@ -1537,19 +1546,19 @@ function StudySessionInner() {
         {!isOnline && (
           <div className="flex-shrink-0 flex items-center justify-center gap-2 bg-amber-900/80 px-4 py-1.5 text-xs font-medium text-amber-200">
             <span>⚡</span>
-            <span>You&apos;re offline — your session is being saved locally and will sync when you reconnect.</span>
-            {isOfflineId(sessionId ?? "") && <span className="text-amber-400">· AI features unavailable offline</span>}
+            <span><SuiText page="session-active" k="offline.banner" def="You're offline — your session is being saved locally and will sync when you reconnect." as="span" /></span>
+            {isOfflineId(sessionId ?? "") && <span className="text-amber-400"><SuiText page="session-active" k="offline.ai-unavailable" def="· AI features unavailable offline" as="span" /></span>}
           </div>
         )}
         {/* Top bar */}
         <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2 sm:px-6 sm:py-3 sm:gap-4 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <h1 className="text-sm font-semibold">
-              {selectedDoc?.title ?? "Study session"}
+              {selectedDoc?.title ?? <SuiText page="session-active" k="header.title" def="Study session" as="span" />}
             </h1>
             {isPaused && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                Paused
+                <SuiText page="session-active" k="header.paused-badge" def="Paused" as="span" />
               </span>
             )}
           </div>
@@ -1626,7 +1635,11 @@ function StudySessionInner() {
                   : "border-gray-300 dark:border-gray-600"
               } disabled:opacity-40 disabled:cursor-not-allowed`}
             >
-              {showNotes ? "Hide Notes" : "AI Notes"}
+              {showNotes ? (
+                <SuiText page="session-active" k="btn.hide-notes" def="Hide Notes" as="span" />
+              ) : (
+                <SuiText page="session-active" k="btn.ai-notes" def="AI Notes" as="span" />
+              )}
             </button>
             {!isOfflineId(sessionId ?? "") && (
               <button
@@ -1635,7 +1648,7 @@ function StudySessionInner() {
                 className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-800 transition"
                 title="Save progress, pause the session, and return to the dashboard"
               >
-                Pause & leave
+                <SuiText page="session-active" k="btn.pause-leave" def="Pause & leave" as="span" />
               </button>
             )}
             {sessionId && (
@@ -1698,7 +1711,7 @@ function StudySessionInner() {
               </div>
             )}
             <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-              <p>Pages visited: {visitedPageCount}</p>
+              <p><SuiText page="session-active" k="sidebar.pages-visited" def="Pages visited:" as="span" /> {visitedPageCount}</p>
               {goalType === "chapter" && selectedChapters.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1719,9 +1732,11 @@ function StudySessionInner() {
                 </div>
               )}
               {!docReady && !isPaused && (
-                <p className="text-amber-600 dark:text-amber-400 animate-pulse">Loading document…</p>
+                <p className="text-amber-600 dark:text-amber-400 animate-pulse">
+                  <SuiText page="session-active" k="sidebar.loading-doc" def="Loading document…" as="span" />
+                </p>
               )}
-              <p>Stay on this tab to keep the timer running.</p>
+              <p><SuiText page="session-active" k="sidebar.stay-on-tab" def="Stay on this tab to keep the timer running." as="span" /></p>
             </div>
 
             {/* YouTube player — direct iframe embed, no API script needed */}

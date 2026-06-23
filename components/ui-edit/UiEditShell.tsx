@@ -8,12 +8,16 @@ import HomeLanding from "@/app/HomeLanding";
 import DashboardPage from "@/app/dashboard/page";
 import StudySessionPage from "@/app/study/session/page";
 import SettingsPage from "@/app/settings/page";
+import { SessionActivePreview } from "./previews/SessionActivePreview";
+import { BossFlowPreview } from "./previews/BossFlowPreview";
 
 const PAGE_LABEL: Record<UiPageId, string> = {
   home: "Home",
   dashboard: "Dashboard",
   session: "Session start",
   settings: "Settings",
+  "session-active": "Session (live)",
+  "exit-boss": "Boss Beacons",
 };
 
 const PAGE_COMPONENT: Record<UiPageId, React.ComponentType> = {
@@ -21,6 +25,8 @@ const PAGE_COMPONENT: Record<UiPageId, React.ComponentType> = {
   dashboard: DashboardPage,
   session: StudySessionPage,
   settings: SettingsPage,
+  "session-active": SessionActivePreview,
+  "exit-boss": BossFlowPreview,
 };
 
 export function UiEditShell() {

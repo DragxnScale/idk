@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 import dynamic from "next/dynamic";
 import { HeatmapCalendar } from "@/components/dashboard/HeatmapCalendar";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
+import { ScrollReveal } from "@/components/ScrollReveal";
 
 const PageViewerModal = dynamic(() => import("./PageViewerModal"), { ssr: false });
 
@@ -384,7 +385,8 @@ export default function DashboardPage() {
         )}
 
         {/* Today's stats */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mb-4">
+        <ScrollReveal className="mb-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             label="Today"
             value={
@@ -398,9 +400,11 @@ export default function DashboardPage() {
           <StatCard label="Pages Today" value={String(stats.todayPages)} />
           <StatCard label="Reading Speed" value={stats.pagesPerHour > 0 ? `${stats.pagesPerHour} pg/hr` : "—"} />
         </div>
+        </ScrollReveal>
 
         {/* Streak card */}
-        <div className={`rounded-xl border p-5 mb-8 flex items-center gap-4 ${
+        <ScrollReveal className="mb-8">
+        <div className={`rounded-xl border p-5 flex items-center gap-4 ${
           stats.streak > 0
             ? stats.todaySessions === 0
               ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20"
@@ -450,6 +454,7 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+        </ScrollReveal>
 
         {/* Spaced-repetition "Due today" card. Hidden entirely when
             there are no cards to review AND no untouched new cards
@@ -460,6 +465,7 @@ export default function DashboardPage() {
           (srsStats.dueNow > 0 ||
             srsStats.newAvailable > 0 ||
             srsStats.learningCount > 0) && (
+          <ScrollReveal className="mb-8">
           <Link
             href="/review"
             className="mb-8 flex items-center gap-4 rounded-xl border border-indigo-200 bg-indigo-50 p-5 transition hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30"
@@ -494,11 +500,13 @@ export default function DashboardPage() {
               </p>
             </div>
           </Link>
+          </ScrollReveal>
         )}
 
         {/* Daily goal progress */}
         {(stats.dailyMinutesGoal || stats.dailySessionsGoal) && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+          <ScrollReveal className="mb-8">
+          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold">
                 <SuiText page="dashboard" k="goals.title" def="Today's Goals" as="span" />
@@ -529,10 +537,12 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+          </ScrollReveal>
         )}
 
         {/* Weekly chart */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+        <ScrollReveal className="mb-8">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <h2 className="text-sm font-semibold mb-4">
             <SuiText page="dashboard" k="week.title" def="This Week" as="span" />
           </h2>
@@ -583,19 +593,23 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
+        </ScrollReveal>
 
         {/* Activity heatmap */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+        <ScrollReveal className="mb-8">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-baseline justify-between mb-4">
             <h2 className="text-sm font-semibold">Activity</h2>
             <span className="text-[10px] text-gray-400 dark:text-gray-500">Tap to browse months</span>
           </div>
           <HeatmapCalendar />
         </div>
+        </ScrollReveal>
 
         {/* AI token usage */}
         {aiUsage && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+          <ScrollReveal className="mb-8">
+          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-baseline justify-between gap-4 mb-3">
               <h2 className="text-sm font-semibold">AI usage</h2>
               <span
@@ -683,11 +697,13 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          </ScrollReveal>
         )}
 
         {/* Textbook progress */}
         {textbookProgress.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 mb-8 dark:border-gray-800 dark:bg-gray-900">
+          <ScrollReveal className="mb-8">
+          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
             <h2 className="text-sm font-semibold mb-4">Your Textbooks</h2>
             <ul className="space-y-4">
               {textbookProgress.map((book) => (
@@ -723,9 +739,11 @@ export default function DashboardPage() {
               ))}
             </ul>
           </div>
+          </ScrollReveal>
         )}
 
         {/* Recent sessions */}
+        <ScrollReveal>
         <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Recent Sessions</h2>
@@ -801,9 +819,11 @@ export default function DashboardPage() {
             </ul>
           )}
         </div>
+        </ScrollReveal>
 
         {/* Exam Countdowns */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+        <ScrollReveal className="mt-8">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Exam Countdowns</h2>
             <button onClick={() => setShowAddCountdown(true)} className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">+ Add</button>
@@ -842,9 +862,11 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+        </ScrollReveal>
 
         {/* Study Planner */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+        <ScrollReveal className="mt-8">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold">Weekly Study Planner</h2>
             <button onClick={() => setShowAddPlan(true)} className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">+ Add block</button>
@@ -880,6 +902,7 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+        </ScrollReveal>
 
         {/* Add Plan Modal */}
         {showAddPlan && (
@@ -899,7 +922,8 @@ export default function DashboardPage() {
 
         {/* Saved Pages */}
         {savedItems.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 mt-8 dark:border-gray-800 dark:bg-gray-900">
+          <ScrollReveal className="mt-8">
+          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="text-sm font-semibold">Saved Pages &amp; Highlights</h2>
               <div className="flex gap-1 flex-wrap">
@@ -986,6 +1010,7 @@ export default function DashboardPage() {
               ))}
             </ul>
           </div>
+          </ScrollReveal>
         )}
 
         {/* Page Viewer Modal */}

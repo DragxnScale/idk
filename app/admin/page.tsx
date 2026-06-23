@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { uploadPdfToStorage } from "@/lib/upload-client";
 import Link from "next/link";
 import { OwnerAiTab } from "@/components/admin/OwnerAiTab";
@@ -10,6 +11,15 @@ import { AdminStudyCalendar } from "@/components/admin/AdminStudyCalendar";
 import { UserAiUsageLog } from "@/components/admin/UserAiUsageLog";
 import { TocEditor } from "@/components/TocEditor";
 import { rangesToTocRows, tocRowsToRanges, type TocRow } from "@/lib/toc-editor-utils";
+import type { StudyTimeChartDay } from "@/components/admin/StudyTimeChartModal";
+
+const StudyTimeChartModal = dynamic(
+  () =>
+    import("@/components/admin/StudyTimeChartModal").then(
+      (m) => m.StudyTimeChartModal
+    ),
+  { ssr: false }
+);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -480,6 +490,10 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState<string | null>(null);
+  const [showStudyTimeChart, setShowStudyTimeChart] = useState(false);
+  const [chartDays, setChartDays] = useState<7 | 30 | 90>(30);
+  const [chartData, setChartData] = useState<StudyTimeChartDay[] | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
 
   useEffect(() => {
     setReadingTimeView("path");
@@ -498,6 +512,25 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
     setStudyCalendarYear(t.getUTCFullYear());
     setStudyCalendarMonth(t.getUTCMonth() + 1);
   }, [studyChartRange]);
+
+  const loadStudyTimeChart = useCallback(async (d: 7 | 30 | 90) => {
+    setChartLoading(true);
+    try {
+      const res = await fetch(`/api/admin/study-time-chart?days=${d}`);
+      if (res.ok) {
+        const json = await res.json();
+        setChartData(json.days as StudyTimeChartDay[]);
+      }
+    } finally {
+      setChartLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showStudyTimeChart) {
+      void loadStudyTimeChart(chartDays);
+    }
+  }, [showStudyTimeChart, chartDays, loadStudyTimeChart]);
 
   async function viewAsUser(user: UserRow) {
     setViewAsLoading(user.id);
@@ -1791,13 +1824,22 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
         {[
           { label: "Total Accounts", value: users?.length ?? "—" },
           { label: "Total Sessions", value: totalSessions },
-          { label: "Total Study Time", value: fmtMinutes(totalMins) },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-center">
             <p className="text-xl font-bold">{s.value}</p>
             <p className="text-xs text-gray-500 mt-1">{s.label}</p>
           </div>
         ))}
+        <button
+          type="button"
+          onClick={() => setShowStudyTimeChart(true)}
+          className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-center cursor-pointer hover:border-gray-600 hover:ring-1 hover:ring-gray-600 transition group"
+        >
+          <p className="text-xl font-bold">{fmtMinutes(totalMins)}</p>
+          <p className="text-xs text-gray-500 mt-1 group-hover:text-gray-400 transition">
+            Total Study Time ↗
+          </p>
+        </button>
       </div>
 
       <input
@@ -1971,6 +2013,16 @@ function UsersTab({ isDeveloperMode }: { isDeveloperMode: boolean }) {
 
       {confirmBan && (
         <BanModal user={confirmBan} banning={banning} banBlacklist={banBlacklist} setBanBlacklist={setBanBlacklist} onCancel={() => { setConfirmBan(null); setBanBlacklist(true); }} onConfirm={() => banUser(confirmBan)} />
+      )}
+
+      {showStudyTimeChart && (
+        <StudyTimeChartModal
+          days={chartDays}
+          onDaysChange={(d) => setChartDays(d)}
+          data={chartData}
+          loading={chartLoading}
+          onClose={() => setShowStudyTimeChart(false)}
+        />
       )}
     </>
   );

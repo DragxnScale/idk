@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 interface ExitCooldownProps {
   seconds: number;
@@ -29,7 +30,7 @@ export function ExitCooldown({ seconds, onDone, onCancel }: ExitCooldownProps) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Exit runway charging… take a breath before you go.
+        <SuiText page="exit-boss" k="cooldown.text" def="Exit runway charging… take a breath before you go." as="span" />
       </p>
       <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
         <div
@@ -45,7 +46,7 @@ export function ExitCooldown({ seconds, onDone, onCancel }: ExitCooldownProps) {
         onClick={onCancel}
         className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600"
       >
-        Keep studying
+        <SuiText page="exit-boss" k="btn.keep-studying" def="Keep studying" as="span" />
       </button>
     </div>
   );

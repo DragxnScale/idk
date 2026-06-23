@@ -5,6 +5,9 @@
 :root {
   --foreground: #0a0a0a;
   --background: #fafafa;
+  --surface: #ffffff;
+  --surface-border: #e5e7eb;
+  --text-muted: #6b7280;
   --theme-primary: #000000;
   --theme-primary-fg: #ffffff;
   --theme-accent: #3b82f6;
@@ -14,17 +17,48 @@
   :root {
     --foreground: #ededed;
     --background: #0a0a0a;
+    --surface: #111827;
+    --surface-border: #1f2937;
+    --text-muted: #9ca3af;
   }
 }
 
-/* Theme overrides */
-[data-theme="ocean"] { --theme-primary: #0ea5e9; --theme-primary-fg: #ffffff; --theme-accent: #06b6d4; }
-[data-theme="forest"] { --theme-primary: #16a34a; --theme-primary-fg: #ffffff; --theme-accent: #22c55e; }
-[data-theme="sunset"] { --theme-primary: #ea580c; --theme-primary-fg: #ffffff; --theme-accent: #f97316; }
-[data-theme="lavender"] { --theme-primary: #7c3aed; --theme-primary-fg: #ffffff; --theme-accent: #8b5cf6; }
-[data-theme="rose"] { --theme-primary: #e11d48; --theme-primary-fg: #ffffff; --theme-accent: #fb7185; }
-[data-theme="midnight"] { --theme-primary: #e2e8f0; --theme-primary-fg: #0f172a; --theme-accent: #60a5fa; --foreground: #e2e8f0; --background: #0f172a; }
-[data-theme="sepia"] { --theme-primary: #92400e; --theme-primary-fg: #fefce8; --theme-accent: #b45309; --background: #fefce8; }
+/* Theme overrides — full color set so themed backgrounds and surfaces are consistent */
+[data-theme="ocean"] {
+  --theme-primary: #0ea5e9; --theme-primary-fg: #ffffff; --theme-accent: #06b6d4;
+  --background: #f0f9ff; --foreground: #0c4a6e;
+  --surface: #ffffff; --surface-border: #bae6fd; --text-muted: #0369a1;
+}
+[data-theme="forest"] {
+  --theme-primary: #16a34a; --theme-primary-fg: #ffffff; --theme-accent: #22c55e;
+  --background: #f0fdf4; --foreground: #14532d;
+  --surface: #ffffff; --surface-border: #bbf7d0; --text-muted: #166534;
+}
+[data-theme="sunset"] {
+  --theme-primary: #ea580c; --theme-primary-fg: #ffffff; --theme-accent: #f97316;
+  --background: #fff7ed; --foreground: #7c2d12;
+  --surface: #ffffff; --surface-border: #fed7aa; --text-muted: #9a3412;
+}
+[data-theme="lavender"] {
+  --theme-primary: #7c3aed; --theme-primary-fg: #ffffff; --theme-accent: #8b5cf6;
+  --background: #f5f3ff; --foreground: #3b0764;
+  --surface: #ffffff; --surface-border: #ddd6fe; --text-muted: #5b21b6;
+}
+[data-theme="rose"] {
+  --theme-primary: #e11d48; --theme-primary-fg: #ffffff; --theme-accent: #fb7185;
+  --background: #fff1f2; --foreground: #881337;
+  --surface: #ffffff; --surface-border: #fecdd3; --text-muted: #be123c;
+}
+[data-theme="midnight"] {
+  --theme-primary: #e2e8f0; --theme-primary-fg: #0f172a; --theme-accent: #60a5fa;
+  --foreground: #e2e8f0; --background: #0f172a;
+  --surface: #1e293b; --surface-border: #334155; --text-muted: #94a3b8;
+}
+[data-theme="sepia"] {
+  --theme-primary: #92400e; --theme-primary-fg: #fefce8; --theme-accent: #b45309;
+  --background: #fefce8; --foreground: #451a03;
+  --surface: #fffbeb; --surface-border: #fde68a; --text-muted: #78350f;
+}
 
 body {
   color: var(--foreground);
@@ -119,11 +153,51 @@ body {
   border-color: var(--theme-accent);
 }
 
-/* Override dark mode defaults when theme is active */
+/* Landing page — theme-adaptive button glow (wraps btn-primary) */
+.btn-primary-glow {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--theme-accent) 40%, transparent);
+}
+.btn-primary-glow:hover {
+  box-shadow: 0 0 36px color-mix(in srgb, var(--theme-accent) 55%, transparent);
+  filter: brightness(1.1);
+}
+.btn-primary-glow:active {
+  transform: scale(0.95);
+}
+
+/* Landing page — feature card hover glow using theme accent */
+.feature-card-hover:hover {
+  border-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
+  box-shadow: 0 0 32px color-mix(in srgb, var(--theme-accent) 20%, transparent);
+  transform: translateY(-4px);
+}
+
+/* Landing page — CTA card ambient glow */
+.cta-card-glow {
+  box-shadow: 0 0 80px color-mix(in srgb, var(--theme-accent) 10%, transparent);
+}
+
+/* Surface utilities — card/panel backgrounds that follow the active theme */
+.bg-surface {
+  background-color: var(--surface);
+}
+
+.border-surface {
+  border-color: var(--surface-border);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Override dark mode defaults when a light theme is active in system dark mode */
 @media (prefers-color-scheme: dark) {
   [data-theme]:not([data-theme="default"]):not([data-theme="midnight"]) {
     --foreground: #ededed;
     --background: #0a0a0a;
+    --surface: #111827;
+    --surface-border: #1f2937;
+    --text-muted: #9ca3af;
   }
 }
 

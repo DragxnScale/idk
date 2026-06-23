@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 export interface BossFightData {
   bossId: string;
@@ -22,6 +23,9 @@ interface ExitBossFightProps {
   sessionId: string;
 }
 
+type AttackPhase = "idle" | "raising" | "firing" | "blocked";
+type AttackStyle = "scribble" | "ink" | "eraser";
+
 /** Distribute 100 HP into `hits` random chunks, each at least 10. */
 function randomDamageChunks(hits: number): number[] {
   const MIN = 10;
@@ -35,6 +39,305 @@ function randomDamageChunks(hits: number): number[] {
   return damages;
 }
 
+// ── CSS-drawn student sprite ──────────────────────────────────────────────────
+function PlayerSprite({
+  wandRaised,
+  playerShake,
+}: {
+  wandRaised: boolean;
+  playerShake: boolean;
+}) {
+  return (
+    <div className={playerShake ? "animate-player-shake" : ""}>
+      <div style={{ position: "relative", width: 54, height: 82 }}>
+        {/* Head */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 17,
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            background: "#c8956c",
+            overflow: "hidden",
+          }}
+        >
+          {/* Hair */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 11,
+              background: "#2d1b0e",
+              borderRadius: "50% 50% 0 0",
+            }}
+          />
+          {/* Left eye */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 4,
+              width: 3,
+              height: 3,
+              borderRadius: "50%",
+              background: "#1a1a1a",
+            }}
+          />
+          {/* Right eye */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 4,
+              width: 3,
+              height: 3,
+              borderRadius: "50%",
+              background: "#1a1a1a",
+            }}
+          />
+        </div>
+
+        {/* Body / shirt */}
+        <div
+          style={{
+            position: "absolute",
+            top: 22,
+            left: 18,
+            width: 18,
+            height: 24,
+            background: "#1e40af",
+            borderRadius: "3px 3px 0 0",
+          }}
+        >
+          {/* Collar */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 5,
+              width: 8,
+              height: 5,
+              background: "#f1f5f9",
+              borderRadius: "0 0 50% 50%",
+            }}
+          />
+        </div>
+
+        {/* Left arm — passive */}
+        <div
+          style={{
+            position: "absolute",
+            top: 25,
+            left: 10,
+            width: 7,
+            height: 17,
+            background: "#c8956c",
+            borderRadius: 4,
+            transform: "rotate(12deg)",
+            transformOrigin: "top center",
+          }}
+        />
+
+        {/* Right arm — wand arm, raises on attack */}
+        <div
+          style={{
+            position: "absolute",
+            top: 23,
+            right: 8,
+            width: 7,
+            height: 17,
+            background: "#c8956c",
+            borderRadius: 4,
+            transform: wandRaised ? "rotate(-75deg)" : "rotate(-18deg)",
+            transformOrigin: "top center",
+            transition: "transform 0.22s cubic-bezier(0.34,1.56,0.64,1)",
+          }}
+        >
+          {/* Pencil wand extending from hand */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: -20,
+              left: 1,
+              width: 5,
+              height: 22,
+              background: "linear-gradient(180deg,#fde68a 0%,#fbbf24 100%)",
+              borderRadius: "2px 2px 0 0",
+            }}
+          >
+            {/* Pink eraser cap */}
+            <div
+              style={{
+                position: "absolute",
+                top: -5,
+                left: 0,
+                width: 5,
+                height: 5,
+                background: "#fda4af",
+                borderRadius: "2px 2px 0 0",
+              }}
+            />
+            {/* Pencil tip (triangle via border trick) */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: -6,
+                left: 0,
+                right: 0,
+                margin: "0 auto",
+                width: 0,
+                height: 0,
+                borderLeft: "2.5px solid transparent",
+                borderRight: "2.5px solid transparent",
+                borderTop: "6px solid #fbbf24",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Legs */}
+        <div
+          style={{
+            position: "absolute",
+            top: 46,
+            left: 15,
+            display: "flex",
+            gap: 4,
+          }}
+        >
+          {([0, 1] as const).map((i) => (
+            <div
+              key={i}
+              style={{
+                position: "relative",
+                width: 8,
+                height: 24,
+                background: "#1e3a8a",
+                borderRadius: "2px 2px 4px 4px",
+              }}
+            >
+              {/* Shoe */}
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: -4,
+                  left: -1,
+                  width: 10,
+                  height: 5,
+                  background: "#111827",
+                  borderRadius: "0 0 4px 4px",
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Projectile visuals ────────────────────────────────────────────────────────
+function ScribbleBolt() {
+  return (
+    <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+      {/* Main bolt body — gold hexagon/pointed shape */}
+      <div
+        style={{
+          width: 62,
+          height: 10,
+          background: "linear-gradient(to right, #fef08a, #f59e0b)",
+          clipPath:
+            "polygon(0% 50%, 12% 0%, 88% 0%, 100% 50%, 88% 100%, 12% 100%)",
+          filter: "drop-shadow(0 0 5px #fbbf24)",
+        }}
+      />
+      {/* Spark dot above */}
+      <div
+        style={{
+          position: "absolute",
+          top: -4,
+          left: "38%",
+          width: 4,
+          height: 4,
+          borderRadius: "50%",
+          background: "#fef08a",
+          opacity: 0.8,
+        }}
+      />
+      {/* Spark dot below */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: -4,
+          left: "58%",
+          width: 3,
+          height: 3,
+          borderRadius: "50%",
+          background: "#fef08a",
+          opacity: 0.8,
+        }}
+      />
+    </div>
+  );
+}
+
+function InkSplash() {
+  return (
+    <div
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle at 38% 35%, #e879f9 0%, #7c3aed 65%, #4c1d95 100%)",
+        boxShadow: "0 0 10px #a855f7, 0 0 22px rgba(168,85,247,0.45)",
+      }}
+    />
+  );
+}
+
+function EraserSmash() {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: 30,
+        height: 15,
+        background: "linear-gradient(135deg, #fecdd3, #fda4af)",
+        borderRadius: 3,
+        border: "1.5px solid #f472b6",
+        boxShadow: "0 2px 8px rgba(244,114,182,0.55)",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 4,
+          left: 3,
+          right: 3,
+          height: 1,
+          background: "rgba(244,114,182,0.6)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 3,
+          right: 3,
+          height: 1,
+          background: "rgba(244,114,182,0.6)",
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export function ExitBossFight({
   hitQuestions,
   onDefeated,
@@ -50,21 +353,25 @@ export function ExitBossFight({
   const [feedbackType, setFeedbackType] = useState<"success" | "error">("error");
   const [bossShake, setBossShake] = useState(false);
   const [playerShake, setPlayerShake] = useState(false);
-  const [playerAttack, setPlayerAttack] = useState(false);
+  const [attackPhase, setAttackPhase] = useState<AttackPhase>("idle");
   const [hpFlash, setHpFlash] = useState(false);
   const [grading, setGrading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [transitioning, setTransitioning] = useState(false);
 
-  // Randomly decide 2–4 hits and assign random damage per hit — stable for lifetime.
-  const { activeQuestions, damageChunks } = useMemo(() => {
+  // Randomly decide 2–4 hits, assign random damage, and pick attack style —
+  // all stable for the lifetime of this fight.
+  const { activeQuestions, damageChunks, attackStyle } = useMemo(() => {
     const n = Math.min(
       hitQuestions.length,
       2 + Math.floor(Math.random() * 3) // 2, 3, or 4
     );
+    const styles: AttackStyle[] = ["scribble", "ink", "eraser"];
+    const style = styles[Math.floor(Math.random() * styles.length)];
     return {
       activeQuestions: hitQuestions.slice(0, n),
       damageChunks: randomDamageChunks(n),
+      attackStyle: style,
     };
   }, [hitQuestions]);
 
@@ -77,11 +384,17 @@ export function ExitBossFight({
   const hpColor =
     hpPercent > 55 ? "bg-green-400" : hpPercent > 25 ? "bg-yellow-400" : "bg-red-500";
 
+  const wandRaised = attackPhase !== "idle";
+
   async function attack(selectedIndex: number) {
-    if (grading || transitioning) return;
+    if (grading || transitioning || attackPhase !== "idle") return;
     setGrading(true);
     setSelected(selectedIndex);
     setFeedback(null);
+
+    // Immediately raise the wand arm
+    setAttackPhase("raising");
+
     try {
       const res = await fetch(
         `/api/study/sessions/${sessionId}/exit-bosses/grade`,
@@ -98,25 +411,27 @@ export function ExitBossFight({
         setHitsLanded(newHitsLanded);
         setTransitioning(true);
 
-        // Animate player lunging forward
-        setPlayerAttack(true);
-        setTimeout(() => setPlayerAttack(false), 600);
+        // Fire the projectile
+        setTimeout(() => setAttackPhase("firing"), 220);
 
-        // Delay boss reaction slightly so player reaches first
+        // Boss takes the hit
         setTimeout(() => {
           setBossShake(true);
           setHpFlash(true);
           const newHp = Math.max(0, hpPercent - damageChunks[hitIndex]);
           setHpPercent(newHp);
           setTimeout(() => setBossShake(false), 600);
-        }, 280);
+        }, 560);
+
+        // Return to idle
+        setTimeout(() => setAttackPhase("idle"), 1050);
 
         if (newHitsLanded >= totalHits) {
           setFeedbackType("success");
           setFeedback(
             data.explanation ? `⚡ ${data.explanation}` : "⚡ Final blow! Boss defeated!"
           );
-          setTimeout(() => onDefeated(), 1200);
+          setTimeout(() => onDefeated(), 1300);
         } else {
           setFeedbackType("success");
           setFeedback(
@@ -131,19 +446,27 @@ export function ExitBossFight({
             setSelected(null);
             setHpFlash(false);
             setTransitioning(false);
-          }, 1100);
+          }, 1200);
         }
       } else {
         const nextAttempts = attempts + 1;
         setAttempts(nextAttempts);
-        setPlayerShake(true);
-        setTimeout(() => setPlayerShake(false), 500);
+
+        // Launch the blocked bolt — flies right then bounces back
+        setTimeout(() => setAttackPhase("blocked"), 220);
+
+        // Player recoil shake after bolt returns
+        setTimeout(() => {
+          setAttackPhase("idle");
+          setPlayerShake(true);
+          setTimeout(() => setPlayerShake(false), 500);
+        }, 980);
 
         if (nextAttempts >= 2) {
           setFeedbackType("error");
           setFeedback("The boss shields the exit. Type the unlock phrase instead.");
           setTransitioning(true);
-          setTimeout(() => onRequirePhrase(), 1200);
+          setTimeout(() => onRequirePhrase(), 1300);
         } else {
           setFeedbackType("error");
           setFeedback(
@@ -155,12 +478,23 @@ export function ExitBossFight({
         }
       }
     } catch {
+      setAttackPhase("idle");
       setFeedbackType("error");
       setFeedback("Something went wrong. Try again.");
     } finally {
       setGrading(false);
     }
   }
+
+  // Which Tailwind animation class to apply to the projectile
+  const projectileAnimClass =
+    attackPhase === "firing"
+      ? attackStyle === "scribble"
+        ? "animate-bolt-fly"
+        : attackStyle === "ink"
+        ? "animate-ink-fly"
+        : "animate-eraser-bounce"
+      : "animate-bolt-blocked"; // "blocked" phase
 
   return (
     <div className="space-y-4">
@@ -172,39 +506,30 @@ export function ExitBossFight({
         {/* Dark atmospheric overlay */}
         <div className="pointer-events-none absolute inset-0 bg-black/30" />
 
+        {/* ── Projectile ── */}
+        {(attackPhase === "firing" || attackPhase === "blocked") && (
+          <div
+            className={projectileAnimClass}
+            style={{
+              position: "absolute",
+              left: 88,
+              top: "27%",
+              zIndex: 20,
+            }}
+          >
+            {attackStyle === "scribble" && <ScribbleBolt />}
+            {attackStyle === "ink" && <InkSplash />}
+            {attackStyle === "eraser" && <EraserSmash />}
+          </div>
+        )}
+
         <div className="relative z-10 flex items-end justify-between px-5 pb-4 pt-5">
           {/* ── Player sprite (left) ── */}
-          <div
-            className={`flex flex-col items-center gap-1 select-none ${playerAttack ? "animate-player-scribble" : ""} ${playerShake ? "animate-player-shake" : ""}`}
-          >
-            {/* Student character holding a pencil */}
-            <div className="relative" style={{ width: 48, height: 58 }}>
-              {/* Student body */}
-              <span
-                style={{ fontSize: "2.4rem", lineHeight: 1, display: "block", textAlign: "center" }}
-                role="img"
-                aria-label="student"
-              >
-                🧑‍🎓
-              </span>
-              {/* Pencil held at a writing angle */}
-              <span
-                style={{
-                  fontSize: "1.1rem",
-                  position: "absolute",
-                  bottom: 0,
-                  right: -2,
-                  transform: "rotate(-40deg)",
-                  display: "block",
-                  lineHeight: 1,
-                }}
-                role="img"
-                aria-label="pencil"
-              >
-                ✏️
-              </span>
-            </div>
-            <span className="text-white/60 text-[9px] font-bold tracking-widest uppercase">You</span>
+          <div className="flex flex-col items-center gap-1 select-none">
+            <PlayerSprite wandRaised={wandRaised} playerShake={playerShake} />
+            <span className="text-white/60 text-[9px] font-bold tracking-widest uppercase">
+              You
+            </span>
           </div>
 
           {/* ── Boss sprite (right) ── */}
@@ -231,7 +556,7 @@ export function ExitBossFight({
         {/* HP bar — full-width at bottom of card */}
         <div className="relative z-10 px-5 pb-4">
           <div className="mb-1 flex justify-between text-[10px] font-bold text-white/80">
-            <span>BOSS HP</span>
+            <span><SuiText page="exit-boss" k="boss.hp-label" def="BOSS HP" as="span" /></span>
             <span className={hpFlash ? "animate-hp-flash" : ""}>{hpPercent}%</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-black/50">
@@ -253,7 +578,7 @@ export function ExitBossFight({
             <button
               key={i}
               type="button"
-              disabled={grading || transitioning}
+              disabled={grading || transitioning || attackPhase !== "idle"}
               onClick={() => attack(i)}
               className={`rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-all ${
                 selected === i
@@ -287,7 +612,7 @@ export function ExitBossFight({
         onClick={onCancel}
         className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-500 dark:border-gray-600 dark:text-gray-400"
       >
-        Keep studying
+        <SuiText page="exit-boss" k="btn.keep-studying" def="Keep studying" as="span" />
       </button>
     </div>
   );

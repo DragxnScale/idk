@@ -29,6 +29,8 @@ export function UiCopyProvider({ children }: { children: ReactNode }) {
     dashboard: {},
     session: {},
     settings: {},
+    "session-active": {},
+    "exit-boss": {},
   });
   const [loading, setLoading] = useState(true);
 
@@ -38,7 +40,7 @@ export function UiCopyProvider({ children }: { children: ReactNode }) {
       .then((d: { pages?: Record<string, Record<string, UiCopyElement>> }) => {
         const p = d.pages;
         if (!p || typeof p !== "object") {
-          setPagesState({ home: {}, dashboard: {}, session: {}, settings: {} });
+          setPagesState({ home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} });
           return;
         }
         setPagesState({
@@ -46,10 +48,12 @@ export function UiCopyProvider({ children }: { children: ReactNode }) {
           dashboard: p.dashboard ?? {},
           session: p.session ?? {},
           settings: p.settings ?? {},
+          "session-active": p["session-active"] ?? {},
+          "exit-boss": p["exit-boss"] ?? {},
         });
       })
       .catch(() =>
-        setPagesState({ home: {}, dashboard: {}, session: {}, settings: {} })
+        setPagesState({ home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} })
       )
       .finally(() => setLoading(false));
   }, []);

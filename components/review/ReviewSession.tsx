@@ -371,14 +371,15 @@ export function ReviewSession({
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <p className="text-sm text-gray-500">Loading queue…</p>
+        <p className="text-sm text-muted">Loading queue…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="mx-auto max-w-md p-8 text-center">
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="mx-auto max-w-md p-8 text-center">
         <h1 className="text-xl font-semibold mb-2">Review unavailable</h1>
         <p className="text-sm text-red-500 mb-4">{error}</p>
         <button
@@ -387,38 +388,41 @@ export function ReviewSession({
         >
           Retry
         </button>
+        </div>
       </div>
     );
   }
 
   if (done || !current) {
     return (
-      <div className="mx-auto max-w-md p-8 text-center">
-        <h1 className="text-2xl font-semibold mb-3">
-          {reviewedCount === 0
-            ? "Nothing matches that filter"
-            : `Reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"} — nice work`}
-        </h1>
-        <p className="text-sm text-gray-500 mb-6">
-          {reviewedCount === 0
-            ? "Try a different filter or come back tomorrow."
-            : "Your next cards will surface as they come due."}
-        </p>
-        <div className="flex justify-center gap-3">
-          {onExit && (
-            <button
-              onClick={onExit}
-              className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-400 dark:border-gray-600 dark:text-gray-200"
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="mx-auto max-w-md p-8 text-center">
+          <h1 className="text-2xl font-semibold mb-3">
+            {reviewedCount === 0
+              ? "Nothing matches that filter"
+              : `Reviewed ${reviewedCount} card${reviewedCount === 1 ? "" : "s"} — nice work`}
+          </h1>
+          <p className="text-sm text-muted mb-6">
+            {reviewedCount === 0
+              ? "Try a different filter or come back tomorrow."
+              : "Your next cards will surface as they come due."}
+          </p>
+          <div className="flex justify-center gap-3">
+            {onExit && (
+              <button
+                onClick={onExit}
+                className="rounded-lg border border-surface px-5 py-2.5 text-sm font-medium text-muted hover:opacity-80"
+              >
+                Change filters
+              </button>
+            )}
+            <Link
+              href="/dashboard"
+              className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
             >
-              Change filters
-            </button>
-          )}
-          <Link
-            href="/dashboard"
-            className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
-          >
-            Dashboard
-          </Link>
+              Dashboard
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -430,30 +434,30 @@ export function ReviewSession({
     : 0;
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50 dark:bg-gray-900">
-      <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+    <div className="flex min-h-screen flex-col">
+      <div className="border-b border-surface bg-surface px-4 py-3">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           {onExit ? (
             <button
               onClick={onExit}
-              className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+              className="text-sm text-muted hover:opacity-80"
             >
               ← Exit
             </button>
           ) : (
             <Link
               href="/dashboard"
-              className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+              className="text-sm text-muted hover:opacity-80"
             >
               ← Exit
             </Link>
           )}
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             {reviewedCount} reviewed · {queue.length} remaining
           </p>
         </div>
         <div className="mx-auto mt-2 max-w-2xl">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--surface-border)]">
             <div
               className="h-full bg-accent transition-all"
               style={{ width: `${progressPct}%` }}
@@ -464,7 +468,7 @@ export function ReviewSession({
 
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-2xl">
-          <p className="mb-3 text-center text-xs text-gray-500">
+          <p className="mb-3 text-center text-xs text-muted">
             {current.deckTitle}
             {current.pageNumber != null && ` · p. ${current.pageNumber}`}
           </p>
@@ -501,22 +505,22 @@ export function ReviewSession({
             >
               {/* Front face */}
               <div
-                className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-12"
+                className="rounded-2xl border border-surface bg-surface p-8 shadow-sm sm:p-12"
                 style={{
                   backfaceVisibility: "hidden",
                   WebkitBackfaceVisibility: "hidden",
                   minHeight: "320px",
                 }}
               >
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">
                   Front
                 </p>
                 <p className="mt-4 text-xl font-semibold leading-snug">
                   {current.front}
                 </p>
-                <p className="mt-8 text-center text-xs text-gray-400">
+                <p className="mt-8 text-center text-xs text-muted">
                   Tap or press{" "}
-                  <kbd className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] dark:bg-gray-700">
+                  <kbd className="rounded bg-[var(--surface-border)] px-1.5 py-0.5 text-[10px]">
                     Space
                   </kbd>{" "}
                   to reveal
@@ -525,7 +529,7 @@ export function ReviewSession({
 
               {/* Back face */}
               <div
-                className="absolute inset-0 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-12"
+                className="absolute inset-0 rounded-2xl border border-surface bg-surface p-8 shadow-sm sm:p-12"
                 style={{
                   backfaceVisibility: "hidden",
                   WebkitBackfaceVisibility: "hidden",
@@ -537,13 +541,13 @@ export function ReviewSession({
                   overflowY: "auto",
                 }}
               >
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">
                   Front
                 </p>
-                <p className="mt-2 text-base font-medium leading-snug text-gray-700 dark:text-gray-300">
+                <p className="mt-2 text-base font-medium leading-snug text-muted">
                   {current.front}
                 </p>
-                <hr className="my-6 border-gray-200 dark:border-gray-700" />
+                <hr className="my-6 border-[var(--surface-border)]" />
                 <p className="text-xs font-medium uppercase tracking-wide text-accent">
                   Back
                 </p>
@@ -556,7 +560,7 @@ export function ReviewSession({
         </div>
       </div>
 
-      <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+      <div className="border-t border-surface bg-surface p-3">
         <div className="mx-auto max-w-2xl">
           {revealed ? (
             <div className="grid grid-cols-4 gap-2">

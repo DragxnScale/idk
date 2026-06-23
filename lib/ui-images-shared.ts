@@ -57,7 +57,7 @@ export function getImageSlot(page: UiPageId, k: string): UiImageSlot | undefined
 }
 
 export function emptyImages(): Record<UiPageId, Record<string, UiImageElement>> {
-  return { home: {}, dashboard: {}, session: {}, settings: {} };
+  return { home: {}, dashboard: {}, session: {}, settings: {}, "session-active": {}, "exit-boss": {} };
 }
 
 export function emptyImagesPayload(): UiImagesPayload {

@@ -3,6 +3,7 @@ import "./globals.css";
 import { AppChrome } from "@/components/AppChrome";
 import { UiCopyProvider } from "@/components/ui-copy/UiCopyProvider";
 import { UiImagesProvider } from "@/components/ui-copy/UiImagesProvider";
+import { CursorGlow } from "@/components/CursorGlow";
 
 export const metadata: Metadata = {
   title: "Bowl Beacon",
@@ -39,7 +40,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("bowlbeacon-theme");if(t&&t!=="default")document.documentElement.setAttribute("data-theme",t);if(t&&t.startsWith("custom-")){var ct=JSON.parse(localStorage.getItem("bowlbeacon-custom-themes")||"[]").find(function(c){return c.id===t});if(ct){var el=document.documentElement;el.style.setProperty("--theme-primary",ct.primary);el.style.setProperty("--theme-primary-fg",ct.primaryFg);el.style.setProperty("--theme-accent",ct.accent);el.style.setProperty("--background",ct.bg);el.style.setProperty("--foreground",ct.text)}}}catch(e){}`,
+            __html: `try{var t=localStorage.getItem("bowlbeacon-theme");if(t&&t!=="default")document.documentElement.setAttribute("data-theme",t);if(t&&t.startsWith("custom-")){var ct=JSON.parse(localStorage.getItem("bowlbeacon-custom-themes")||"[]").find(function(c){return c.id===t});if(ct){var el=document.documentElement;el.style.setProperty("--theme-primary",ct.primary);el.style.setProperty("--theme-primary-fg",ct.primaryFg);el.style.setProperty("--theme-accent",ct.accent);el.style.setProperty("--background",ct.bg);el.style.setProperty("--foreground",ct.text);el.style.setProperty("--surface",ct.card);el.style.setProperty("--surface-border",ct.cardBorder);el.style.setProperty("--text-muted",ct.textMuted)}}}catch(e){}`,
           }}
         />
         <script
@@ -51,6 +52,7 @@ export default function RootLayout({
       <body className="antialiased min-h-screen">
         <UiCopyProvider>
           <UiImagesProvider>
+            <CursorGlow />
             <AppChrome />
             {children}
           </UiImagesProvider>

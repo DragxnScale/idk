@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ScrollReveal } from "@/components/ScrollReveal";
 
 interface StudySession {
   id: string;
@@ -85,6 +86,7 @@ export default function HistoryPage() {
           <ul className="space-y-3">
             {sessions.map((s) => (
               <li key={s.id}>
+                <ScrollReveal>
                 <Link
                   href={`/study/session/${s.id}/summary`}
                   className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-400 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-600"
@@ -122,6 +124,7 @@ export default function HistoryPage() {
                     </p>
                   </div>
                 </Link>
+                </ScrollReveal>
               </li>
             ))}
           </ul>

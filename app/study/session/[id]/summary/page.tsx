@@ -682,7 +682,7 @@ export default function SessionSummaryPage() {
               <div className="flex justify-end">
                 <button
                   onClick={copyNotes}
-                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium transition hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-800"
+                  className="rounded-lg border border-surface px-3 py-1.5 text-xs font-medium transition hover:opacity-80"
                 >
                   {copied ? "Copied!" : "Copy all notes"}
                 </button>
@@ -690,11 +690,11 @@ export default function SessionSummaryPage() {
             )}
 
             {notes.length === 0 && (
-              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
-                <p className="text-gray-500 dark:text-gray-400">
+              <div className="rounded-xl border border-surface bg-surface p-8 text-center">
+                <p className="text-muted">
                   No AI notes were generated during this session.
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-muted mt-2">
                   Use the &quot;AI Notes&quot; button during a session to generate notes as you read.
                 </p>
               </div>
@@ -703,9 +703,9 @@ export default function SessionSummaryPage() {
             {notes.map((note) => (
               <div
                 key={note.id}
-                className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+                className="rounded-xl border border-surface bg-surface p-5"
               >
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">
+                <p className="text-xs font-medium text-muted mb-3">
                   Page {note.pageNumber}
                 </p>
                 <div
@@ -724,11 +724,11 @@ export default function SessionSummaryPage() {
           <>
             {questions.length > 0 ? (
               score != null ? (
-                <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
+                <div className="rounded-xl border border-surface bg-surface p-8 text-center">
                   <p className="text-5xl font-bold mb-2">
                     {Math.round((score / questions.length) * 100)}%
                   </p>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="text-muted">
                     You scored <strong>{score}</strong> out of{" "}
                     <strong>{questions.length}</strong>
                   </p>
@@ -736,7 +736,7 @@ export default function SessionSummaryPage() {
                     onClick={() => {
                       setScore(null);
                     }}
-                    className="mt-4 text-sm underline underline-offset-4 text-gray-500"
+                    className="mt-4 text-sm underline underline-offset-4 text-muted"
                   >
                     Retake quiz
                   </button>
@@ -745,8 +745,8 @@ export default function SessionSummaryPage() {
               <QuizView questions={questions} onComplete={handleQuizComplete} />
               )
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
-                <p className="text-gray-500 dark:text-gray-400 mb-4">
+              <div className="rounded-xl border border-surface bg-surface p-8 text-center">
+                <p className="text-muted mb-4">
                   No quiz available yet.
                 </p>
                 <button
@@ -768,9 +768,9 @@ export default function SessionSummaryPage() {
         {tab === "review" && (
           <>
             {reviewLoading ? (
-              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900 space-y-3">
-                <div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-black animate-spin mx-auto dark:border-gray-600 dark:border-t-white" />
-                <p className="text-sm text-gray-500">Generating your personalised review…</p>
+              <div className="rounded-xl border border-surface bg-surface p-8 text-center space-y-3">
+                <div className="spinner mx-auto" />
+                <p className="text-sm text-muted">Generating your personalised review…</p>
               </div>
             ) : review ? (
               <ReviewPanel
@@ -779,8 +779,8 @@ export default function SessionSummaryPage() {
                 totalQuestions={questions.length}
               />
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
-                <p className="text-gray-500 dark:text-gray-400">
+              <div className="rounded-xl border border-surface bg-surface p-8 text-center">
+                <p className="text-muted">
                   Complete the quiz first to see your personalised review.
                 </p>
               </div>
@@ -790,12 +790,12 @@ export default function SessionSummaryPage() {
 
         {/* ── Flashcards tab ──────────────────────────────────────── */}
         {tab === "flashcards" && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+          <div className="rounded-xl border border-surface bg-surface p-6">
             {flashcardList.length > 0 ? (
               <FlashcardView cards={flashcardList} />
             ) : (
               <div className="text-center py-6 space-y-4">
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                <p className="text-muted text-sm">
                   No flashcards yet. Generate them from your AI notes.
                 </p>
                 {flashcardsError && (
@@ -848,11 +848,11 @@ export default function SessionSummaryPage() {
                 onContinueBatch={continueVelocityBatch}
               />
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-gray-900">
+              <div className="rounded-xl border border-surface bg-surface p-8 text-center">
                 <h3 className="text-lg font-bold">Velocity</h3>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                <p className="mt-1 text-sm text-muted max-w-md mx-auto">
                   A rapid-fire reaction quiz on what you just read. Questions type out at your chosen speed — buzz in with{" "}
-                  <kbd className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono dark:bg-gray-800">Space</kbd>{" "}
+                  <kbd className="rounded bg-[var(--surface-border)] px-1 py-0.5 text-[10px] font-mono">Space</kbd>{" "}
                   the moment you know the answer.
                 </p>
                 <button
@@ -871,7 +871,7 @@ export default function SessionSummaryPage() {
         )}
 
         {/* Bottom nav */}
-        <div className="mt-10 flex flex-wrap gap-4 text-sm border-t border-gray-200 pt-6 dark:border-gray-800">
+        <div className="mt-10 flex flex-wrap gap-4 text-sm border-t border-surface pt-6">
           <Link
             href="/study/session"
             className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
@@ -880,20 +880,20 @@ export default function SessionSummaryPage() {
           </Link>
           <Link
             href="/study/history"
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600"
+            className="rounded-lg border border-surface px-4 py-2 text-sm font-medium hover:opacity-80"
           >
             History
           </Link>
           <Link
             href="/dashboard"
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600"
+            className="rounded-lg border border-surface px-4 py-2 text-sm font-medium hover:opacity-80"
           >
             Dashboard
           </Link>
           <button
             type="button"
             onClick={handleExport}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="rounded-lg border border-surface px-4 py-2 text-sm font-medium hover:opacity-80"
           >
             Export as Markdown
           </button>
@@ -905,9 +905,9 @@ export default function SessionSummaryPage() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 text-center dark:border-gray-800 dark:bg-gray-900">
+    <div className="rounded-xl border border-surface bg-surface p-4 text-center">
       <p className="text-2xl font-bold">{value}</p>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+      <p className="text-xs text-muted mt-1">{label}</p>
     </div>
   );
 }

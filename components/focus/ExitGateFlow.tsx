@@ -6,6 +6,7 @@ import { EXIT_COOLDOWN_SEC } from "@/lib/exit-bosses";
 import { ExitBossFight, type BossFightData } from "@/components/focus/ExitBossFight";
 import { ExitCooldown } from "@/components/focus/ExitCooldown";
 import { ExitPhraseGate } from "@/components/focus/ExitPhraseGate";
+import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 type Phase =
   | "closed"
@@ -145,7 +146,7 @@ export function ExitGateFlow({
         onClick={openGate}
         className="rounded border border-red-500/40 px-3 py-1.5 text-sm text-red-600 dark:text-red-400"
       >
-        End Session
+        <SuiText page="exit-boss" k="btn.end-session" def="End Session" as="span" />
       </button>
 
       {showModal && (
@@ -153,9 +154,11 @@ export function ExitGateFlow({
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900 max-h-[90vh] overflow-y-auto">
             {phase === "confirm_off" && (
               <>
-                <h2 className="text-base font-semibold mb-1">End session?</h2>
+                <h2 className="text-base font-semibold mb-1">
+                  <SuiText page="exit-boss" k="confirm.title" def="End session?" as="span" />
+                </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  Progress will be saved.
+                  <SuiText page="exit-boss" k="confirm.subtitle" def="Progress will be saved." as="span" />
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -163,14 +166,14 @@ export function ExitGateFlow({
                     onClick={cancel}
                     className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-600"
                   >
-                    Keep studying
+                    <SuiText page="exit-boss" k="btn.keep-studying" def="Keep studying" as="span" />
                   </button>
                   <button
                     type="button"
                     onClick={() => finishExit("gate_off")}
                     className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white"
                   >
-                    End session
+                    <SuiText page="exit-boss" k="btn.end-session-confirm" def="End session" as="span" />
                   </button>
                 </div>
               </>
@@ -178,7 +181,9 @@ export function ExitGateFlow({
 
             {phase === "cooldown" && (
               <>
-                <h2 className="text-base font-semibold mb-3">Boss Beacons</h2>
+                <h2 className="text-base font-semibold mb-3">
+                  <SuiText page="exit-boss" k="cooldown.heading" def="Boss Beacons" as="span" />
+                </h2>
                 <ExitCooldown
                   seconds={EXIT_COOLDOWN_SEC}
                   onDone={loadBosses}
@@ -189,13 +194,15 @@ export function ExitGateFlow({
 
             {phase === "loading" && (
               <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse py-8 text-center">
-                Summoning distraction sprites…
+                <SuiText page="exit-boss" k="loading.text" def="Summoning distraction sprites…" as="span" />
               </p>
             )}
 
             {phase === "boss" && hitQuestions.length > 0 && (
               <>
-                <h2 className="text-base font-semibold mb-3">Boss Beacon</h2>
+                <h2 className="text-base font-semibold mb-3">
+                  <SuiText page="exit-boss" k="boss.heading" def="Boss Beacon" as="span" />
+                </h2>
                 <ExitBossFight
                   hitQuestions={hitQuestions}
                   onDefeated={onBossDefeated}
@@ -208,7 +215,9 @@ export function ExitGateFlow({
 
             {phase === "phrase" && phraseChallenge && (
               <>
-                <h2 className="text-base font-semibold mb-1">Unlock the exit</h2>
+                <h2 className="text-base font-semibold mb-1">
+                  <SuiText page="exit-boss" k="phrase.heading" def="Unlock the exit" as="span" />
+                </h2>
                 <ExitPhraseGate
                   phrase={phraseChallenge.phrase}
                   token={phraseChallenge.token}
@@ -227,10 +236,10 @@ export function ExitGateFlow({
               <div className="text-center py-6">
                 <p className="text-4xl mb-2">✨</p>
                 <h2 className="text-lg font-bold text-green-600 dark:text-green-400">
-                  Beacon secured!
+                  <SuiText page="exit-boss" k="victory.title" def="Beacon secured!" as="span" />
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  Landing the session…
+                  <SuiText page="exit-boss" k="victory.subtitle" def="Landing the session…" as="span" />
                 </p>
               </div>
             )}

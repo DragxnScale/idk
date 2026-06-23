@@ -279,55 +279,59 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <p className="text-sm text-gray-500">Loading your decks…</p>
+        <p className="text-sm text-muted">Loading your decks…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="mx-auto max-w-md p-8 text-center">
-        <h1 className="mb-2 text-xl font-semibold">Couldn&apos;t load decks</h1>
-        <p className="mb-4 text-sm text-red-500">{error}</p>
-        <Link
-          href="/dashboard"
-          className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
-        >
-          Back to dashboard
-        </Link>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="mx-auto max-w-md p-8 text-center">
+          <h1 className="mb-2 text-xl font-semibold">Couldn&apos;t load decks</h1>
+          <p className="mb-4 text-sm text-red-500">{error}</p>
+          <Link
+            href="/dashboard"
+            className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
+          >
+            Back to dashboard
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (!data || data.totalCards === 0) {
     return (
-      <div className="mx-auto max-w-md p-8 text-center">
-        <h1 className="mb-2 text-2xl font-semibold">No flashcards yet</h1>
-        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-          Generate flashcards from the AI tab on any study session
-          summary, then come back here to review them.
-        </p>
-        <Link
-          href="/dashboard"
-          className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
-        >
-          Back to dashboard
-        </Link>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="mx-auto max-w-md p-8 text-center">
+          <h1 className="mb-2 text-2xl font-semibold">No flashcards yet</h1>
+          <p className="mb-6 text-sm text-muted">
+            Generate flashcards from the AI tab on any study session
+            summary, then come back here to review them.
+          </p>
+          <Link
+            href="/dashboard"
+            className="inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white"
+          >
+            Back to dashboard
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+    <div className="min-h-screen">
+      <div className="border-b border-surface bg-surface px-4 py-3">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <Link
             href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
+            className="text-sm text-muted hover:opacity-80"
           >
             ← Dashboard
           </Link>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             {data.totalCards} card{data.totalCards === 1 ? "" : "s"} ·{" "}
             {data.totalDue} due
             {oldestLabel ? ` · since ${oldestLabel}` : ""}
@@ -338,13 +342,13 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
       <form onSubmit={handleStart} className="mx-auto max-w-2xl space-y-6 px-4 py-8">
         <div>
           <h1 className="text-2xl font-semibold">Review flashcards</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <p className="mt-1 text-sm text-muted">
             Pick what you want to study, then start.
           </p>
         </div>
 
         {/* What cards to feature */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <section className="rounded-2xl border border-surface bg-surface p-5">
           <h2 className="mb-3 text-sm font-semibold">What to feature</h2>
           <div className="grid gap-2">
             {MODE_OPTIONS.map((opt) => (
@@ -353,7 +357,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                 className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
                   mode === opt.value
                     ? "border-accent bg-accent/5"
-                    : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                    : "border-surface hover:opacity-80"
                 }`}
               >
                 <input
@@ -366,7 +370,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                 />
                 <div>
                   <p className="text-sm font-medium">{opt.label}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-muted">
                     {opt.description}
                   </p>
                 </div>
@@ -376,7 +380,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
         </section>
 
         {/* Decks */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <section className="rounded-2xl border border-surface bg-surface p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Subjects / PDFs</h2>
             <button
@@ -411,7 +415,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                   className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
                     checked
                       ? "border-accent bg-accent/5"
-                      : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                      : "border-surface hover:opacity-80"
                   }`}
                 >
                   <input
@@ -443,7 +447,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                           autoFocus
                           maxLength={200}
                           disabled={renameSaving}
-                          className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 disabled:opacity-50"
+                          className="w-full rounded-md border border-surface bg-surface px-2 py-1 text-sm disabled:opacity-50"
                           placeholder="Deck name"
                         />
                         {renameError && (
@@ -462,7 +466,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                             type="button"
                             onClick={cancelRename}
                             disabled={renameSaving}
-                            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-600 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
+                            className="rounded-md border border-surface px-3 py-1 text-xs font-medium text-muted disabled:opacity-50"
                           >
                             Cancel
                           </button>
@@ -478,7 +482,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                             <button
                               type="button"
                               onClick={() => startRename(deck.deckKey, deck.deckTitle)}
-                              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                              className="shrink-0 rounded p-1 text-muted hover:opacity-80"
                               title="Rename deck"
                               aria-label={`Rename ${deck.deckTitle}`}
                             >
@@ -506,7 +510,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                             </span>
                           ) : null}
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-xs text-muted">
                           {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}
                           {deck.dueCount > 0 && ` · ${deck.dueCount} due`}
                           {deck.newCount > 0 && ` · ${deck.newCount} new`}
@@ -521,9 +525,9 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
         </section>
 
         {/* Maximum age */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <section className="rounded-2xl border border-surface bg-surface p-5">
           <h2 className="mb-1 text-sm font-semibold">Maximum age</h2>
-          <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mb-3 text-xs text-muted">
             Only include cards added within this window.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -535,7 +539,7 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                 className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                   maxAgeDays === opt.value
                     ? "border-accent bg-accent text-white"
-                    : "border-gray-300 text-gray-700 hover:border-gray-400 dark:border-gray-600 dark:text-gray-200"
+                    : "border-surface text-muted hover:opacity-80"
                 }`}
               >
                 {opt.label}
@@ -545,9 +549,9 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
         </section>
 
         {/* Limit */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <section className="rounded-2xl border border-surface bg-surface p-5">
           <h2 className="mb-1 text-sm font-semibold">Limit</h2>
-          <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mb-3 text-xs text-muted">
             Cap this session at a fixed number of cards. Default is no
             limit so you keep going until the queue empties.
           </p>
@@ -578,9 +582,9 @@ export function ReviewHome({ onStart }: ReviewHomeProps) {
                   setLimitValue(e.target.value);
                   if (limitMode !== "custom") setLimitMode("custom");
                 }}
-                className="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
+                className="w-20 rounded-lg border border-surface bg-[var(--background)] px-2 py-1 text-sm"
               />
-              <span className="text-sm text-gray-500">cards</span>
+              <span className="text-sm text-muted">cards</span>
             </label>
           </div>
         </section>
