@@ -385,8 +385,7 @@ export default function DashboardPage() {
         )}
 
         {/* Today's stats */}
-        <ScrollReveal className="mb-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mb-4">
           <StatCard
             label="Today"
             value={
@@ -400,7 +399,6 @@ export default function DashboardPage() {
           <StatCard label="Pages Today" value={String(stats.todayPages)} />
           <StatCard label="Reading Speed" value={stats.pagesPerHour > 0 ? `${stats.pagesPerHour} pg/hr` : "—"} />
         </div>
-        </ScrollReveal>
 
         {/* Streak card */}
         <ScrollReveal className="mb-8">
@@ -1202,10 +1200,12 @@ function AddCountdownModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900 card-themed transition">
-      <p className="text-2xl font-bold">{value}</p>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
-    </div>
+    <ScrollReveal>
+      <div className="rounded-xl border border-gray-200 bg-white p-5 text-center dark:border-gray-800 dark:bg-gray-900 card-themed transition">
+        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{label}</p>
+      </div>
+    </ScrollReveal>
   );
 }
 

@@ -1,38 +1,51 @@
 "use client";
 
-import { useRef, useState, useEffect, ReactNode } from "react";
+import { useRef, useState, useEffect, useLayoutEffect, type ReactNode } from "react";
 
 interface ScrollRevealProps {
   children: ReactNode;
   /** Extra Tailwind classes applied to the wrapper (e.g. margins). */
   className?: string;
-  /** Optional delay in ms — use to stagger sibling reveals. */
-  delay?: number;
+}
+
+function calcP(el: HTMLElement, buf = 100) {
+  const { top, bottom } = el.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const enterP = Math.min(1, Math.max(0, (vh - buf - top) / buf));
+  const exitP  = Math.min(1, Math.max(0, (bottom - buf) / buf));
+  return Math.min(enterP, exitP);
 }
 
 /**
- * One-way scroll reveal: fades + slides a child into view the first time
- * it enters the viewport, then stays visible. Suitable for app pages where
- * content should appear progressively but not disappear on scroll-back.
+ * Scroll-position-driven reveal for app pages.
+ * Fades + slides in as the element enters the viewport at a speed that
+ * matches scroll velocity (same technique as landing page feature cards).
+ * Once fully in view the element locks visible and the listener is removed,
+ * so content never disappears on scroll-back.
  */
-export function ScrollReveal({ children, className = "", delay = 0 }: ScrollRevealProps) {
+export function ScrollReveal({ children, className = "" }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  // Set initial progress before first paint to avoid a flash of invisible
+  // content for elements that are already in the viewport on page load.
+  useLayoutEffect(() => {
+    if (ref.current) setProgress(calcP(ref.current));
+  }, []);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.05, rootMargin: "0px 0px -40px 0px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (ref.current) setProgress(calcP(ref.current));
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
@@ -40,9 +53,8 @@ export function ScrollReveal({ children, className = "", delay = 0 }: ScrollReve
       ref={ref}
       className={className}
       style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0)" : "translateY(18px)",
-        transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ease ${delay}ms`,
+        opacity: progress,
+        transform: `translateY(${(1 - progress) * 18}px)`,
         willChange: "opacity, transform",
       }}
     >

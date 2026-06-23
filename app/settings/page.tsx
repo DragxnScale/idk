@@ -11,6 +11,7 @@ import { SuiText, useUiCopy } from "@/components/ui-copy/UiCopyProvider";
 import { SuiImage } from "@/components/ui-copy/SuiImage";
 import { NumberField } from "@/components/forms/NumberField";
 import { validatePositiveInt } from "@/lib/forms/numberField";
+import { ScrollReveal } from "@/components/ScrollReveal";
 
 const ZOOM_PRESETS = [
   { label: "Small", value: 0.75 },
@@ -1585,7 +1586,12 @@ export default function SettingsPage() {
             ),
           };
 
-          const renderRegion = (ids: string[]) => ids.map((id) => cardSectionMap[id] ?? null);
+          const renderRegion = (ids: string[]) =>
+            ids.map((id) =>
+              cardSectionMap[id] ? (
+                <ScrollReveal key={id}>{cardSectionMap[id]}</ScrollReveal>
+              ) : null
+            );
 
           return (
             <>
