@@ -8,6 +8,7 @@ import {
   generateExitPhrase,
   signBossToken,
   signPhraseToken,
+  verifyBossToken,
 } from "@/lib/exit-phrase-challenge";
 import {
   documentIdFromDocJson,
@@ -89,11 +90,24 @@ export async function GET(
   const sourceKey = sourceKeyFromDocJson(session.documentJson);
   const documentId = documentIdFromDocJson(session.documentJson);
 
+  // Decode previously-seen bossId tokens so the bank can deprioritise them.
+  const seenParam = new URL(request.url).searchParams.get("seen") ?? "";
+  const excludeRowIds = new Set<string>();
+  if (seenParam) {
+    for (const tok of seenParam.split(",")) {
+      const t = tok.trim();
+      if (!t) continue;
+      const payload = verifyBossToken(t, sessionId);
+      if (payload?.bankRowId) excludeRowIds.add(payload.bankRowId);
+    }
+  }
+
   const picks = await queryMcQuestionsForPages({
     sourceKey,
     documentId,
     pageIndexes: pages,
     limit: EXIT_BOSS_COUNT,
+    excludeRowIds: excludeRowIds.size > 0 ? excludeRowIds : undefined,
   });
 
   const phrase = generateExitPhrase();

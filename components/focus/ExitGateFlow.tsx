@@ -48,6 +48,8 @@ export function ExitGateFlow({
   const [phraseChallenge, setPhraseChallenge] = useState<PhraseChallenge | null>(null);
   const [pendingExitMethod, setPendingExitMethod] = useState<ExitMethod>("boss_cleared");
   const selfEndingRef = useRef(false);
+  /** All bossId tokens shown in this session — sent back so the server can serve fresh questions. */
+  const seenBossIdsRef = useRef<string[]>([]);
 
   const enterFullscreen = useCallback(async () => {
     try {
@@ -74,15 +76,23 @@ export function ExitGateFlow({
     try {
       await onSyncBeforeBosses?.();
       const pages = getVisitedPages?.() ?? [];
-      const qs =
-        pages.length > 0
-          ? `?pages=${pages.map((p) => encodeURIComponent(String(p))).join(",")}`
-          : "";
+      const params = new URLSearchParams();
+      if (pages.length > 0) params.set("pages", pages.join(","));
+      if (seenBossIdsRef.current.length > 0) {
+        params.set("seen", seenBossIdsRef.current.join(","));
+      }
+      const qs = params.toString() ? `?${params.toString()}` : "";
       const res = await fetch(`/api/study/sessions/${sessionId}/exit-bosses${qs}`);
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setPhraseChallenge(data.phraseChallenge ?? null);
       const list = (data.bosses ?? []) as BossFightData[];
+      // Record these bossIds so the next fight attempt gets fresh questions.
+      list.forEach((b) => {
+        if (!seenBossIdsRef.current.includes(b.bossId)) {
+          seenBossIdsRef.current.push(b.bossId);
+        }
+      });
       setHitQuestions(list);
       if (list.length > 0) {
         setPhase("boss");

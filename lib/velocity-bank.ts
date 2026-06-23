@@ -281,43 +281,64 @@ async function collectQuizMc(
 /**
  * Pull MC questions from velocity bank + document quiz bank for visited pages.
  *
- * Fallback strategy: if visited pages have no hits, widen to any page ≤ the
- * highest visited page — covering material the user could have already read
- * while avoiding questions from chapters ahead of them.
+ * Priority:
+ *  1. Questions on exactly-visited pages, excluding already-seen bankRowIds.
+ *  2. Widen to any page ≤ max visited, still excluding already-seen.
+ *  3. Pad with already-seen questions (visited pages first, then wider) only
+ *     when the bank is exhausted — so repeats are a last resort.
  */
 export async function queryMcQuestionsForPages(opts: {
   sourceKey: string | null;
   documentId: string | null;
   pageIndexes: number[];
   limit?: number;
+  /** bankRowIds already shown this session — deprioritised to the end. */
+  excludeRowIds?: Set<string>;
 }): Promise<McQuestionPick[]> {
-  const { sourceKey, documentId, pageIndexes, limit = EXIT_BOSS_COUNT } = opts;
+  const { sourceKey, documentId, pageIndexes, limit = EXIT_BOSS_COUNT, excludeRowIds } = opts;
   if (pageIndexes.length === 0) return [];
 
-  const seen = new Set<string>();
-  const pool: McQuestionPick[] = [];
+  // Collect a larger candidate pool so we have enough to split fresh vs stale.
+  const candidateLimit = Math.max(limit * 4, 16);
+
+  const dedupeSeen = new Set<string>();
+  const freshPool: McQuestionPick[] = [];
+  const stalePool: McQuestionPick[] = [];
+
+  function route(pick: McQuestionPick) {
+    if (excludeRowIds?.has(pick.bankRowId)) {
+      stalePool.push(pick);
+    } else {
+      freshPool.push(pick);
+    }
+  }
+
   const exactFilter = { exact: pageIndexes };
 
-  if (sourceKey) {
-    await collectVelocityMc(sourceKey, exactFilter, seen, pool, limit);
-  }
-  if (documentId) {
-    await collectQuizMc(documentId, exactFilter, seen, pool, limit);
-  }
+  // --- Pass 1: exact visited pages ---
+  const exactAll: McQuestionPick[] = [];
+  if (sourceKey) await collectVelocityMc(sourceKey, exactFilter, dedupeSeen, exactAll, candidateLimit);
+  if (documentId) await collectQuizMc(documentId, exactFilter, dedupeSeen, exactAll, candidateLimit);
+  exactAll.forEach(route);
 
-  if (pool.length < limit) {
+  // --- Pass 2: widen to pages ≤ max visited (skips if already have enough fresh) ---
+  if (freshPool.length < limit) {
     const maxVisited = Math.max(...pageIndexes);
     const upToFilter = { upTo: maxVisited };
-    if (sourceKey) {
-      await collectVelocityMc(sourceKey, upToFilter, seen, pool, limit);
-    }
-    if (documentId) {
-      await collectQuizMc(documentId, upToFilter, seen, pool, limit);
-    }
+    const widerAll: McQuestionPick[] = [];
+    if (sourceKey) await collectVelocityMc(sourceKey, upToFilter, dedupeSeen, widerAll, candidateLimit);
+    if (documentId) await collectQuizMc(documentId, upToFilter, dedupeSeen, widerAll, candidateLimit);
+    widerAll.forEach(route);
   }
 
-  shuffleInPlace(pool);
-  return pool.slice(0, limit);
+  // Fresh questions first; pad with already-seen only if bank is exhausted.
+  shuffleInPlace(freshPool);
+  shuffleInPlace(stalePool);
+  const result = freshPool.slice(0, limit);
+  if (result.length < limit) {
+    result.push(...stalePool.slice(0, limit - result.length));
+  }
+  return result;
 }
 
 export function parseVisitedPagesList(
