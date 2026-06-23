@@ -22,6 +22,19 @@ interface ExitBossFightProps {
   sessionId: string;
 }
 
+/** Distribute 100 HP into `hits` random chunks, each at least 10. */
+function randomDamageChunks(hits: number): number[] {
+  const MIN = 10;
+  const pool = 100 - MIN * hits;
+  const raw = Array.from({ length: hits }, () => Math.random());
+  const sum = raw.reduce((a, b) => a + b, 0);
+  const damages = raw.map((v) => MIN + Math.round((v / sum) * pool));
+  // Fix rounding drift so they sum to exactly 100
+  const diff = 100 - damages.reduce((a, b) => a + b, 0);
+  damages[damages.length - 1] += diff;
+  return damages;
+}
+
 export function ExitBossFight({
   hitQuestions,
   onDefeated,
@@ -31,23 +44,28 @@ export function ExitBossFight({
 }: ExitBossFightProps) {
   const [hitIndex, setHitIndex] = useState(0);
   const [hitsLanded, setHitsLanded] = useState(0);
+  const [hpPercent, setHpPercent] = useState(100);
   const [attempts, setAttempts] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackType, setFeedbackType] = useState<"success" | "error">("error");
   const [bossShake, setBossShake] = useState(false);
   const [playerShake, setPlayerShake] = useState(false);
+  const [playerAttack, setPlayerAttack] = useState(false);
   const [hpFlash, setHpFlash] = useState(false);
   const [grading, setGrading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [transitioning, setTransitioning] = useState(false);
 
-  // Randomly decide 2–4 hits for this fight; stable for the component's lifetime.
-  const activeQuestions = useMemo(() => {
+  // Randomly decide 2–4 hits and assign random damage per hit — stable for lifetime.
+  const { activeQuestions, damageChunks } = useMemo(() => {
     const n = Math.min(
       hitQuestions.length,
       2 + Math.floor(Math.random() * 3) // 2, 3, or 4
     );
-    return hitQuestions.slice(0, n);
+    return {
+      activeQuestions: hitQuestions.slice(0, n),
+      damageChunks: randomDamageChunks(n),
+    };
   }, [hitQuestions]);
 
   const totalHits = activeQuestions.length;
@@ -56,9 +74,8 @@ export function ExitBossFight({
   const boss = activeQuestions[0];
   const currentQ = activeQuestions[Math.min(hitIndex, totalHits - 1)];
 
-  const hpPercent = Math.round(((totalHits - hitsLanded) / totalHits) * 100);
   const hpColor =
-    hpPercent > 60 ? "bg-green-400" : hpPercent > 30 ? "bg-yellow-400" : "bg-red-500";
+    hpPercent > 55 ? "bg-green-400" : hpPercent > 25 ? "bg-yellow-400" : "bg-red-500";
 
   async function attack(selectedIndex: number) {
     if (grading || transitioning) return;
@@ -79,24 +96,33 @@ export function ExitBossFight({
       if (data.correct) {
         const newHitsLanded = hitsLanded + 1;
         setHitsLanded(newHitsLanded);
-        setBossShake(true);
-        setHpFlash(true);
         setTransitioning(true);
 
-        setTimeout(() => setBossShake(false), 600);
+        // Animate player lunging forward
+        setPlayerAttack(true);
+        setTimeout(() => setPlayerAttack(false), 600);
+
+        // Delay boss reaction slightly so player reaches first
+        setTimeout(() => {
+          setBossShake(true);
+          setHpFlash(true);
+          const newHp = Math.max(0, hpPercent - damageChunks[hitIndex]);
+          setHpPercent(newHp);
+          setTimeout(() => setBossShake(false), 600);
+        }, 280);
 
         if (newHitsLanded >= totalHits) {
           setFeedbackType("success");
           setFeedback(
             data.explanation ? `⚡ ${data.explanation}` : "⚡ Final blow! Boss defeated!"
           );
-          setTimeout(() => onDefeated(), 1000);
+          setTimeout(() => onDefeated(), 1200);
         } else {
           setFeedbackType("success");
           setFeedback(
             data.explanation
-              ? `Hit ${newHitsLanded}/${totalHits}! ${data.explanation}`
-              : `⚔️ Hit ${newHitsLanded}/${totalHits}! Keep going!`
+              ? `⚔️ Hit! ${data.explanation}`
+              : "⚔️ Hit! Keep attacking!"
           );
           setTimeout(() => {
             setHitIndex((h) => h + 1);
@@ -140,62 +166,95 @@ export function ExitBossFight({
     <div className="space-y-4">
       {/* Boss arena */}
       <div
-        className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${boss.colorClass} p-5 text-white shadow-lg ${bossShake ? "animate-boss-shake" : ""}`}
+        className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${boss.colorClass} shadow-lg ${bossShake ? "animate-boss-shake" : ""}`}
+        style={{ minHeight: "11rem" }}
       >
         {/* Dark atmospheric overlay */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-black/25" />
+        <div className="pointer-events-none absolute inset-0 bg-black/30" />
 
-        <div className="relative z-10 text-center">
-          {/* Giant boss sprite */}
+        <div className="relative z-10 flex items-end justify-between px-5 pb-4 pt-5">
+          {/* ── Player sprite (left) ── */}
           <div
-            className="mb-2 inline-block transition-all duration-300"
-            style={{
-              fontSize: "5rem",
-              lineHeight: 1,
-              filter: bossShake
-                ? "brightness(2) drop-shadow(0 0 16px rgba(255,230,50,0.9))"
-                : "drop-shadow(0 4px 12px rgba(0,0,0,0.5))",
-            }}
+            className={`flex flex-col items-center gap-1 select-none ${playerAttack ? "animate-player-attack" : ""} ${playerShake ? "animate-player-shake" : ""}`}
           >
-            {boss.emoji}
-          </div>
-
-          <h3 className="text-xl font-extrabold tracking-wide drop-shadow">{boss.name}</h3>
-          <p className="mt-0.5 text-xs italic opacity-75">&ldquo;{boss.taunt}&rdquo;</p>
-
-          {/* HP bar */}
-          <div className="mt-4">
-            <div className="mb-1 flex justify-between text-xs font-bold opacity-90">
-              <span>HP</span>
-              <span className={hpFlash ? "animate-hp-flash" : ""}>{hpPercent}%</span>
-            </div>
-            <div className="h-3 overflow-hidden rounded-full bg-black/40">
+            {/* Pencil body */}
+            <div className="relative flex flex-col items-center" style={{ width: 28 }}>
+              {/* Eraser */}
+              <div className="w-5 h-3 rounded-t-sm bg-pink-300 border border-pink-400" />
+              {/* Metal band */}
+              <div className="w-5 h-1.5 bg-gray-300" />
+              {/* Yellow body */}
+              <div className="w-5 h-10 bg-yellow-300 border-x border-yellow-400 flex items-center justify-center">
+                {/* Face */}
+                <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                  <div className="flex gap-1">
+                    <div className="w-1 h-1 rounded-full bg-gray-700" />
+                    <div className="w-1 h-1 rounded-full bg-gray-700" />
+                  </div>
+                  <div className="w-2 h-0.5 rounded-full bg-gray-700 mt-0.5" />
+                </div>
+              </div>
+              {/* Tip */}
               <div
-                className={`h-full rounded-full transition-all duration-700 ${hpColor}`}
-                style={{ width: `${hpPercent}%` }}
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: "10px solid transparent",
+                  borderRight: "10px solid transparent",
+                  borderTop: "10px solid #854d0e",
+                }}
+              />
+              <div
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: "5px solid transparent",
+                  borderRight: "5px solid transparent",
+                  borderTop: "6px solid #1c1917",
+                }}
               />
             </div>
+            <span className="text-white/60 text-[9px] font-bold tracking-widest uppercase">You</span>
           </div>
 
-          {/* Hit segment dots */}
-          <div className="mt-3 flex justify-center gap-2">
-            {Array.from({ length: totalHits }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-2 w-8 rounded-full transition-all duration-500 ${
-                  i < hitsLanded ? "bg-white/25" : "bg-white/85 shadow-sm"
-                }`}
-              />
-            ))}
+          {/* ── Boss sprite (right) ── */}
+          <div className="flex flex-col items-center gap-0.5 text-white">
+            <div
+              style={{
+                fontSize: "4rem",
+                lineHeight: 1,
+                filter: bossShake
+                  ? "brightness(2) drop-shadow(0 0 18px rgba(255,230,50,1))"
+                  : "drop-shadow(0 4px 14px rgba(0,0,0,0.6))",
+                transition: "filter 0.2s",
+              }}
+            >
+              {boss.emoji}
+            </div>
+            <h3 className="text-base font-extrabold tracking-wide drop-shadow">{boss.name}</h3>
+            <p className="text-[10px] italic opacity-70 max-w-[140px] text-center leading-tight">
+              &ldquo;{boss.taunt}&rdquo;
+            </p>
           </div>
-          <p className="mt-1.5 text-xs font-semibold opacity-75">
-            Hit {Math.min(hitsLanded + 1, totalHits)} of {totalHits}
-          </p>
+        </div>
+
+        {/* HP bar — full-width at bottom of card */}
+        <div className="relative z-10 px-5 pb-4">
+          <div className="mb-1 flex justify-between text-[10px] font-bold text-white/80">
+            <span>BOSS HP</span>
+            <span className={hpFlash ? "animate-hp-flash" : ""}>{hpPercent}%</span>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-black/50">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${hpColor}`}
+              style={{ width: `${hpPercent}%` }}
+            />
+          </div>
         </div>
       </div>
 
       {/* Question + answers */}
-      <div className={playerShake ? "animate-player-shake" : ""}>
+      <div>
         <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
           {currentQ.question}
         </p>
