@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ExitMethod } from "@/lib/exit-bosses";
 import { EXIT_COOLDOWN_SEC } from "@/lib/exit-bosses";
 import { ExitBossFight, type BossFightData } from "@/components/focus/ExitBossFight";
@@ -38,13 +38,13 @@ export function ExitGateFlow({
   enabled,
   onConfirmEnd,
   locked = false,
-  sessionEndingRef,
+  sessionEndingRef: _sessionEndingRef,
   getVisitedPages,
   onSyncBeforeBosses,
 }: ExitGateFlowProps) {
   const [phase, setPhase] = useState<Phase>("closed");
-  const [bosses, setBosses] = useState<BossFightData[]>([]);
-  const [bossIndex, setBossIndex] = useState(0);
+  // All questions for the single boss fight (same persona, 3 sequential hit-questions)
+  const [hitQuestions, setHitQuestions] = useState<BossFightData[]>([]);
   const [phraseChallenge, setPhraseChallenge] = useState<PhraseChallenge | null>(null);
   const [pendingExitMethod, setPendingExitMethod] = useState<ExitMethod>("boss_cleared");
   const selfEndingRef = useRef(false);
@@ -83,8 +83,7 @@ export function ExitGateFlow({
       const data = await res.json();
       setPhraseChallenge(data.phraseChallenge ?? null);
       const list = (data.bosses ?? []) as BossFightData[];
-      setBosses(list);
-      setBossIndex(0);
+      setHitQuestions(list);
       if (list.length > 0) {
         setPhase("boss");
       } else {
@@ -103,32 +102,14 @@ export function ExitGateFlow({
       return;
     }
     setPhase("cooldown");
-    setBosses([]);
-    setBossIndex(0);
+    setHitQuestions([]);
     setPhraseChallenge(null);
     setPendingExitMethod("boss_cleared");
   }, [enabled]);
 
-  useEffect(() => {
-    if (!locked) return;
-
-    function onFullscreenChange() {
-      if (document.fullscreenElement) return;
-      if (selfEndingRef.current) return;
-      if (sessionEndingRef?.current) return;
-
-      if (!enabled) {
-        selfEndingRef.current = true;
-        onConfirmEnd("gate_off");
-        return;
-      }
-
-      openGate();
-    }
-
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, [locked, sessionEndingRef, enabled, onConfirmEnd, openGate]);
+  // NOTE: fullscreenchange is intentionally NOT wired to openGate.
+  // Only the manual "End Session" button should trigger the gate.
+  // Escaping fullscreen falls through to the existing tab-blur / inactivity screen.
 
   function cancel() {
     setPhase("closed");
@@ -136,13 +117,8 @@ export function ExitGateFlow({
   }
 
   function onBossDefeated() {
-    const next = bossIndex + 1;
-    if (next >= bosses.length) {
-      setPhase("victory");
-      setTimeout(() => finishExit("boss_cleared"), 1200);
-    } else {
-      setBossIndex(next);
-    }
+    setPhase("victory");
+    setTimeout(() => finishExit("boss_cleared"), 1200);
   }
 
   function onRequirePhrase() {
@@ -207,13 +183,11 @@ export function ExitGateFlow({
               </p>
             )}
 
-            {phase === "boss" && bosses[bossIndex] && (
+            {phase === "boss" && hitQuestions.length > 0 && (
               <>
-                <h2 className="text-base font-semibold mb-3">Clear the runway</h2>
+                <h2 className="text-base font-semibold mb-3">Boss Beacon</h2>
                 <ExitBossFight
-                  boss={bosses[bossIndex]}
-                  bossIndex={bossIndex}
-                  totalBosses={bosses.length}
+                  hitQuestions={hitQuestions}
                   onDefeated={onBossDefeated}
                   onRequirePhrase={onRequirePhrase}
                   onCancel={cancel}

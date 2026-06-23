@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getAppUser } from "@/lib/app-user";
 import { db } from "@/lib/db";
 import { pageVisits, studySessions } from "@/lib/db/schema";
-import { bossForIndex, EXIT_BOSS_COUNT } from "@/lib/exit-bosses";
+import { BOSS_ROSTER, EXIT_BOSS_COUNT } from "@/lib/exit-bosses";
 import {
   generateExitPhrase,
   signBossToken,
@@ -103,9 +103,10 @@ export async function GET(
     hint: "Type the phrase exactly to unlock the exit",
   };
 
-  const bosses = picks.map((pick, i) => {
+  // Pick one random persona for the whole fight — all hit-questions share the same boss.
+  const persona = BOSS_ROSTER[Math.floor(Math.random() * BOSS_ROSTER.length)];
+  const bosses = picks.map((pick) => {
     const shuffled = shuffleMcOptions(pick);
-    const persona = bossForIndex(i);
     return {
       bossId: signBossToken({
         sessionId,
