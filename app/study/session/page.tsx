@@ -1046,13 +1046,13 @@ function StudySessionInner() {
     return resolveSessionStartPage(selectedDoc, goalType, selectedChapters);
   }
 
-  function toggleChapter(ch: string) {
+  const toggleChapter = useCallback((ch: string) => {
     setSelectedChapters((prev) => {
       if (prev.includes(ch)) return prev.filter((c) => c !== ch);
       if (prev.length >= targetValue) return prev;
       return [...prev, ch].sort((a, b) => Number(a) - Number(b));
     });
-  }
+  }, [targetValue]);
 
   const hasChapterData = selectedDoc?.availableChapters && selectedDoc.availableChapters.length > 0;
 

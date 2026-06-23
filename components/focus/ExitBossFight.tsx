@@ -175,44 +175,34 @@ export function ExitBossFight({
         <div className="relative z-10 flex items-end justify-between px-5 pb-4 pt-5">
           {/* ── Player sprite (left) ── */}
           <div
-            className={`flex flex-col items-center gap-1 select-none ${playerAttack ? "animate-player-attack" : ""} ${playerShake ? "animate-player-shake" : ""}`}
+            className={`flex flex-col items-center gap-1 select-none ${playerAttack ? "animate-player-scribble" : ""} ${playerShake ? "animate-player-shake" : ""}`}
           >
-            {/* Pencil body */}
-            <div className="relative flex flex-col items-center" style={{ width: 28 }}>
-              {/* Eraser */}
-              <div className="w-5 h-3 rounded-t-sm bg-pink-300 border border-pink-400" />
-              {/* Metal band */}
-              <div className="w-5 h-1.5 bg-gray-300" />
-              {/* Yellow body */}
-              <div className="w-5 h-10 bg-yellow-300 border-x border-yellow-400 flex items-center justify-center">
-                {/* Face */}
-                <div className="flex flex-col items-center gap-0.5 mt-0.5">
-                  <div className="flex gap-1">
-                    <div className="w-1 h-1 rounded-full bg-gray-700" />
-                    <div className="w-1 h-1 rounded-full bg-gray-700" />
-                  </div>
-                  <div className="w-2 h-0.5 rounded-full bg-gray-700 mt-0.5" />
-                </div>
-              </div>
-              {/* Tip */}
-              <div
+            {/* Student character holding a pencil */}
+            <div className="relative" style={{ width: 48, height: 58 }}>
+              {/* Student body */}
+              <span
+                style={{ fontSize: "2.4rem", lineHeight: 1, display: "block", textAlign: "center" }}
+                role="img"
+                aria-label="student"
+              >
+                🧑‍🎓
+              </span>
+              {/* Pencil held at a writing angle */}
+              <span
                 style={{
-                  width: 0,
-                  height: 0,
-                  borderLeft: "10px solid transparent",
-                  borderRight: "10px solid transparent",
-                  borderTop: "10px solid #854d0e",
+                  fontSize: "1.1rem",
+                  position: "absolute",
+                  bottom: 0,
+                  right: -2,
+                  transform: "rotate(-40deg)",
+                  display: "block",
+                  lineHeight: 1,
                 }}
-              />
-              <div
-                style={{
-                  width: 0,
-                  height: 0,
-                  borderLeft: "5px solid transparent",
-                  borderRight: "5px solid transparent",
-                  borderTop: "6px solid #1c1917",
-                }}
-              />
+                role="img"
+                aria-label="pencil"
+              >
+                ✏️
+              </span>
             </div>
             <span className="text-white/60 text-[9px] font-bold tracking-widest uppercase">You</span>
           </div>

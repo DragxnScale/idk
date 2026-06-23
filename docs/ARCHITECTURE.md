@@ -662,7 +662,7 @@ Global UI (`components/AppChrome.tsx`): **`ClientErrorReporter`** posts `window.
 
 - **`VisibilityGuard.tsx`** — `visibilitychange` → overlay; pauses timer.
 - **`ExitGateFlow.tsx`** — Boss Beacons exit gate (20s cooldown → single-boss multi-hit fight → typed phrase fallback); optional fullscreen lock. Replaces legacy exit-password modal. **Only the manual "End Session" button triggers the gate** — fullscreen escape is excluded and falls through to the existing tab-blur / inactivity screen.
-- **`ExitBossFight.tsx`** — JRPG-style single-boss fight component. The API returns up to 3 MC questions as "hit questions" for the same boss persona; `ExitBossFight` cycles through them internally showing an HP bar (100 → 67 → 33 → 0%), a hit counter ("Hit 1 of 3"), a large boss emoji, and shake/flash animations on each correct hit. Two wrong answers on the same hit question trigger the phrase fallback.
+- **`ExitBossFight.tsx`** — JRPG-style single-boss fight component. The API returns up to 3 MC questions as "hit questions" for the same boss persona; `ExitBossFight` cycles through them internally showing an HP bar (100 → 67 → 33 → 0%), a large boss emoji, and shake/flash/HP-flash animations on each correct hit. The **player sprite** is a `🧑‍🎓` student emoji with a `✏️` pencil overlay at a writing angle; correct answers trigger an `animate-player-scribble` rapid horizontal jitter (furious-writing motion, defined in `tailwind.config.ts`), wrong answers trigger `animate-player-shake`. Two wrong answers on the same hit question trigger the phrase fallback.
 - **`FullscreenTrigger.tsx`** — Toggle `requestFullscreen`.
 
 **Dashboard**
