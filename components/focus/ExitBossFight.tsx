@@ -29,8 +29,6 @@ export function ExitBossFight({
   onCancel,
   sessionId,
 }: ExitBossFightProps) {
-  const totalHits = activeQuestions.length;
-
   const [hitIndex, setHitIndex] = useState(0);
   const [hitsLanded, setHitsLanded] = useState(0);
   const [attempts, setAttempts] = useState(0);
@@ -52,9 +50,11 @@ export function ExitBossFight({
     return hitQuestions.slice(0, n);
   }, [hitQuestions]);
 
+  const totalHits = activeQuestions.length;
+
   // Boss persona always comes from the first question (all share the same persona)
   const boss = activeQuestions[0];
-  const currentQ = activeQuestions[Math.min(hitIndex, activeQuestions.length - 1)];
+  const currentQ = activeQuestions[Math.min(hitIndex, totalHits - 1)];
 
   const hpPercent = Math.round(((totalHits - hitsLanded) / totalHits) * 100);
   const hpColor =
