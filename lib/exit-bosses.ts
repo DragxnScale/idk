@@ -49,6 +49,43 @@ export function bossForIndex(index: number): BossPersona {
   return BOSS_ROSTER[index % BOSS_ROSTER.length];
 }
 
+/** Themed counter-attack when the player answers wrong during the exit fight. */
+export interface BossCounterAttack {
+  name: string;
+  /** Shown when the boss lands a hit on the player. */
+  message: string;
+}
+
+export const BOSS_COUNTER_ATTACKS: Record<string, BossCounterAttack[]> = {
+  tab_wraith: [
+    { name: "Phantom Peek", message: "A ghostly tab pulls your eyes away…" },
+    { name: "Alt-Tab Curse", message: "Something else might be more interesting…" },
+  ],
+  scroll_serpent: [
+    { name: "Infinite Scroll", message: "Just one more swipe — you deserve a break." },
+    { name: "Feed Trance", message: "The serpent coils around your focus." },
+  ],
+  phone_goblin: [
+    { name: "Notification Blast", message: "Buzz! Someone needs you right now." },
+    { name: "Doom Scroll", message: "Your feed knows you better than this chapter." },
+  ],
+  snooze_slime: [
+    { name: "Nap Wave", message: "You've earned a rest… close the book." },
+    { name: "Heavy Eyelids", message: "The slime whispers: five more minutes." },
+  ],
+};
+
+export function randomBossCounterAttack(bossKey: string): BossCounterAttack {
+  const list = BOSS_COUNTER_ATTACKS[bossKey] ?? BOSS_COUNTER_ATTACKS.tab_wraith;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+export const PLAYER_MAX_HP = 100;
+/** HP lost per wrong answer (randomized slightly for variance). */
+export function randomPlayerDamage(): number {
+  return 28 + Math.floor(Math.random() * 13); // 28–40
+}
+
 export type ExitMethod =
   | "goal_reached"
   | "boss_cleared"

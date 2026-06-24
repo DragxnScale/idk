@@ -50,6 +50,8 @@ export function ExitGateFlow({
   const [pendingExitMethod, setPendingExitMethod] = useState<ExitMethod>("boss_cleared");
   /** True when phrase gate is shown because no boss questions were available (not because of a failed fight). */
   const [phraseNoQuestions, setPhraseNoQuestions] = useState(false);
+  /** True when phrase gate follows player HP depletion in the boss fight. */
+  const [phraseFromDefeat, setPhraseFromDefeat] = useState(false);
   const selfEndingRef = useRef(false);
   /** All bossId tokens shown in this session — sent back so the server can serve fresh questions. */
   const seenBossIdsRef = useRef<string[]>([]);
@@ -120,6 +122,7 @@ export function ExitGateFlow({
     setPhase("cooldown");
     setHitQuestions([]);
     setPhraseChallenge(null);
+    setPhraseFromDefeat(false);
     setPendingExitMethod("boss_cleared");
   }, [enabled]);
 
@@ -137,9 +140,10 @@ export function ExitGateFlow({
     setTimeout(() => finishExit("boss_cleared"), 1200);
   }
 
-  function onRequirePhrase() {
+  function onRequirePhrase(opts?: { defeated?: boolean }) {
     setPendingExitMethod("phrase_fallback");
     setPhraseNoQuestions(false);
+    setPhraseFromDefeat(!!opts?.defeated);
     setPhase("phrase");
   }
 
@@ -222,13 +226,25 @@ export function ExitGateFlow({
             {phase === "phrase" && phraseChallenge && (
               <>
                 <h2 className="text-base font-semibold mb-1">
-                  {phraseNoQuestions ? (
+                  {phraseFromDefeat ? (
+                    <SuiText page="exit-boss" k="defeat.heading" def="Distraction wins" as="span" />
+                  ) : phraseNoQuestions ? (
                     <SuiText page="exit-boss" k="boss.heading" def="Boss Beacon" as="span" />
                   ) : (
                     <SuiText page="exit-boss" k="phrase.heading" def="Unlock the exit" as="span" />
                   )}
                 </h2>
-                {phraseNoQuestions && (
+                {phraseFromDefeat && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mb-3">
+                    <SuiText
+                      page="exit-boss"
+                      k="defeat.subtitle"
+                      def="Your focus HP hit zero. Type the phrase to unlock the exit."
+                      as="span"
+                    />
+                  </p>
+                )}
+                {phraseNoQuestions && !phraseFromDefeat && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                     <SuiText page="exit-boss" k="phrase.no-questions" def="No content challenges available — type the phrase to exit." as="span" />
                   </p>

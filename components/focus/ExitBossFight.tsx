@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import {
+  PLAYER_MAX_HP,
+  randomBossCounterAttack,
+  randomPlayerDamage,
+} from "@/lib/exit-bosses";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 
 export interface BossFightData {
@@ -18,12 +23,12 @@ interface ExitBossFightProps {
   /** All hit-questions for this boss (same persona, sequential questions). */
   hitQuestions: BossFightData[];
   onDefeated: () => void;
-  onRequirePhrase: () => void;
+  onRequirePhrase: (opts?: { defeated?: boolean }) => void;
   onCancel: () => void;
   sessionId: string;
 }
 
-type AttackPhase = "idle" | "raising" | "firing" | "blocked";
+type AttackPhase = "idle" | "raising" | "firing" | "blocked" | "bossCounter";
 type AttackStyle = "scribble" | "ink" | "eraser";
 
 /** Distribute 100 HP into `hits` random chunks, each at least 10. */
@@ -337,6 +342,69 @@ function EraserSmash() {
   );
 }
 
+/** Boss-themed projectile flying toward the player (right → left). */
+function BossCounterProjectile({ bossKey }: { bossKey: string }) {
+  if (bossKey === "scroll_serpent") {
+    return (
+      <div
+        style={{
+          width: 48,
+          height: 12,
+          borderRadius: 6,
+          background: "linear-gradient(to left, #34d399, #059669)",
+          boxShadow: "0 0 12px rgba(52,211,153,0.7)",
+        }}
+      />
+    );
+  }
+  if (bossKey === "phone_goblin") {
+    return (
+      <div
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, #fdba74, #ea580c)",
+          boxShadow: "0 0 14px rgba(249,115,22,0.8)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 14,
+        }}
+      >
+        🔔
+      </div>
+    );
+  }
+  if (bossKey === "snooze_slime") {
+    return (
+      <div
+        style={{
+          fontSize: "1.25rem",
+          letterSpacing: 2,
+          filter: "drop-shadow(0 0 6px #38bdf8)",
+        }}
+      >
+        💤💤
+      </div>
+    );
+  }
+  // tab_wraith default
+  return (
+    <div
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle at 35% 35%, #ddd6fe, #7c3aed 70%, #4c1d95)",
+        boxShadow: "0 0 16px rgba(139,92,246,0.85)",
+        opacity: 0.95,
+      }}
+    />
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function ExitBossFight({
   hitQuestions,
@@ -347,17 +415,20 @@ export function ExitBossFight({
 }: ExitBossFightProps) {
   const [hitIndex, setHitIndex] = useState(0);
   const [hitsLanded, setHitsLanded] = useState(0);
-  const [hpPercent, setHpPercent] = useState(100);
+  const [bossHpPercent, setBossHpPercent] = useState(100);
+  const [playerHpPercent, setPlayerHpPercent] = useState(PLAYER_MAX_HP);
   const [attempts, setAttempts] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackType, setFeedbackType] = useState<"success" | "error">("error");
+  const [feedbackType, setFeedbackType] = useState<"success" | "error" | "defeat">("error");
   const [bossShake, setBossShake] = useState(false);
   const [playerShake, setPlayerShake] = useState(false);
   const [attackPhase, setAttackPhase] = useState<AttackPhase>("idle");
-  const [hpFlash, setHpFlash] = useState(false);
+  const [bossHpFlash, setBossHpFlash] = useState(false);
+  const [playerHpFlash, setPlayerHpFlash] = useState(false);
   const [grading, setGrading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [transitioning, setTransitioning] = useState(false);
+  const [playerDefeated, setPlayerDefeated] = useState(false);
 
   // Randomly decide 2–4 hits, assign random damage, and pick attack style —
   // all stable for the lifetime of this fight.
@@ -381,13 +452,15 @@ export function ExitBossFight({
   const boss = activeQuestions[0];
   const currentQ = activeQuestions[Math.min(hitIndex, totalHits - 1)];
 
-  const hpColor =
-    hpPercent > 55 ? "bg-green-400" : hpPercent > 25 ? "bg-yellow-400" : "bg-red-500";
+  const bossHpColor =
+    bossHpPercent > 55 ? "bg-green-400" : bossHpPercent > 25 ? "bg-yellow-400" : "bg-red-500";
+  const playerHpColor =
+    playerHpPercent > 55 ? "bg-sky-400" : playerHpPercent > 25 ? "bg-amber-400" : "bg-red-500";
 
   const wandRaised = attackPhase !== "idle";
 
   async function attack(selectedIndex: number) {
-    if (grading || transitioning || attackPhase !== "idle") return;
+    if (grading || transitioning || attackPhase !== "idle" || playerDefeated) return;
     setGrading(true);
     setSelected(selectedIndex);
     setFeedback(null);
@@ -417,9 +490,9 @@ export function ExitBossFight({
         // Boss takes the hit
         setTimeout(() => {
           setBossShake(true);
-          setHpFlash(true);
-          const newHp = Math.max(0, hpPercent - damageChunks[hitIndex]);
-          setHpPercent(newHp);
+          setBossHpFlash(true);
+          const newHp = Math.max(0, bossHpPercent - damageChunks[hitIndex]);
+          setBossHpPercent(newHp);
           setTimeout(() => setBossShake(false), 600);
         }, 560);
 
@@ -444,7 +517,8 @@ export function ExitBossFight({
             setAttempts(0);
             setFeedback(null);
             setSelected(null);
-            setHpFlash(false);
+            setSelected(null);
+            setBossHpFlash(false);
             setTransitioning(false);
           }, 1200);
         }
@@ -452,30 +526,69 @@ export function ExitBossFight({
         const nextAttempts = attempts + 1;
         setAttempts(nextAttempts);
 
-        // Launch the blocked bolt — flies right then bounces back
+        // Player bolt blocked
         setTimeout(() => setAttackPhase("blocked"), 220);
 
-        // Player recoil shake after bolt returns
+        // Boss counter-attack after the blocked bolt returns
         setTimeout(() => {
-          setAttackPhase("idle");
+          setAttackPhase("bossCounter");
+          const counter = randomBossCounterAttack(boss.bossKey);
+          const dmg = randomPlayerDamage();
+          const newPlayerHp = Math.max(0, playerHpPercent - dmg);
+          setPlayerHpPercent(newPlayerHp);
+          setPlayerHpFlash(true);
           setPlayerShake(true);
-          setTimeout(() => setPlayerShake(false), 500);
-        }, 980);
+          setFeedbackType("error");
+          setFeedback(`${counter.name}! ${counter.message}`);
 
-        if (nextAttempts >= 2) {
-          setFeedbackType("error");
-          setFeedback("The boss shields the exit. Type the unlock phrase instead.");
-          setTransitioning(true);
-          setTimeout(() => onRequirePhrase(), 1300);
-        } else {
-          setFeedbackType("error");
-          setFeedback(
-            data.explanation
-              ? `Blocked! ${data.explanation} — try once more.`
-              : "Blocked! Try once more."
-          );
-          setSelected(null);
-        }
+          setTimeout(() => {
+            setPlayerShake(false);
+            setPlayerHpFlash(false);
+            setAttackPhase("idle");
+
+            if (newPlayerHp <= 0) {
+              setPlayerDefeated(true);
+              setTransitioning(true);
+              setFeedbackType("defeat");
+              setFeedback("You succumbed to distraction. Type the phrase to unlock the exit.");
+              setTimeout(() => onRequirePhrase({ defeated: true }), 2200);
+              return;
+            }
+
+            if (nextAttempts >= 2) {
+              const hasNext = hitIndex + 1 < totalHits;
+              setTransitioning(true);
+              if (hasNext) {
+                setFeedback(
+                  data.explanation
+                    ? `Answer: ${data.explanation} — next challenge…`
+                    : "Moving to the next challenge…"
+                );
+                setTimeout(() => {
+                  setHitIndex((h) => h + 1);
+                  setAttempts(0);
+                  setFeedback(null);
+                  setSelected(null);
+                  setTransitioning(false);
+                }, 1400);
+              } else {
+                setFeedback(
+                  data.explanation
+                    ? `Answer: ${data.explanation} — the boss shields the exit.`
+                    : "The boss shields the exit."
+                );
+                setTimeout(() => onRequirePhrase(), 1600);
+              }
+            } else {
+              setFeedback(
+                data.explanation
+                  ? `Blocked! ${data.explanation} — try once more.`
+                  : "Blocked! Try once more."
+              );
+              setSelected(null);
+            }
+          }, 650);
+        }, 900);
       }
     } catch {
       setAttackPhase("idle");
@@ -506,7 +619,7 @@ export function ExitBossFight({
         {/* Dark atmospheric overlay */}
         <div className="pointer-events-none absolute inset-0 bg-black/30" />
 
-        {/* ── Projectile ── */}
+        {/* ── Player projectile (right) ── */}
         {(attackPhase === "firing" || attackPhase === "blocked") && (
           <div
             className={projectileAnimClass}
@@ -523,6 +636,21 @@ export function ExitBossFight({
           </div>
         )}
 
+        {/* ── Boss counter-attack (flies left toward player) ── */}
+        {attackPhase === "bossCounter" && (
+          <div
+            className="animate-boss-counter-fly"
+            style={{
+              position: "absolute",
+              right: 72,
+              top: "30%",
+              zIndex: 20,
+            }}
+          >
+            <BossCounterProjectile bossKey={boss.bossKey} />
+          </div>
+        )}
+
         <div className="relative z-10 flex items-end justify-between px-5 pb-4 pt-5">
           {/* ── Player sprite (left) ── */}
           <div className="flex flex-col items-center gap-1 select-none">
@@ -530,6 +658,21 @@ export function ExitBossFight({
             <span className="text-white/60 text-[9px] font-bold tracking-widest uppercase">
               You
             </span>
+            {/* Player HP */}
+            <div className="w-[72px] mt-1">
+              <div className="mb-0.5 flex justify-between text-[8px] font-bold text-white/70">
+                <span>YOU</span>
+                <span className={playerHpFlash ? "animate-hp-flash" : ""}>
+                  {playerHpPercent}%
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-black/50">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${playerHpColor}`}
+                  style={{ width: `${playerHpPercent}%` }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* ── Boss sprite (right) ── */}
@@ -553,22 +696,33 @@ export function ExitBossFight({
           </div>
         </div>
 
-        {/* HP bar — full-width at bottom of card */}
+        {/* Boss HP bar — full-width at bottom of card */}
         <div className="relative z-10 px-5 pb-4">
           <div className="mb-1 flex justify-between text-[10px] font-bold text-white/80">
             <span><SuiText page="exit-boss" k="boss.hp-label" def="BOSS HP" as="span" /></span>
-            <span className={hpFlash ? "animate-hp-flash" : ""}>{hpPercent}%</span>
+            <span className={bossHpFlash ? "animate-hp-flash" : ""}>{bossHpPercent}%</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-black/50">
             <div
-              className={`h-full rounded-full transition-all duration-700 ${hpColor}`}
-              style={{ width: `${hpPercent}%` }}
+              className={`h-full rounded-full transition-all duration-700 ${bossHpColor}`}
+              style={{ width: `${bossHpPercent}%` }}
             />
           </div>
         </div>
       </div>
 
-      {/* Question + answers */}
+      {playerDefeated ? (
+        <div className="rounded-xl border border-red-500/40 bg-red-950/30 px-4 py-6 text-center">
+          <p className="text-3xl mb-2">💀</p>
+          <h3 className="text-base font-bold text-red-500 dark:text-red-400">
+            Distraction wins!
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+            Your focus HP hit zero. Unlocking the phrase gate…
+          </p>
+        </div>
+      ) : (
+      <>
       <div>
         <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
           {currentQ.question}
@@ -600,6 +754,8 @@ export function ExitBossFight({
           className={`text-center text-xs font-medium ${
             feedbackType === "success"
               ? "text-green-600 dark:text-green-400"
+              : feedbackType === "defeat"
+              ? "text-red-600 dark:text-red-400"
               : "text-amber-600 dark:text-amber-400"
           }`}
         >
@@ -610,10 +766,13 @@ export function ExitBossFight({
       <button
         type="button"
         onClick={onCancel}
-        className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-500 dark:border-gray-600 dark:text-gray-400"
+        disabled={playerDefeated}
+        className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-500 dark:border-gray-600 dark:text-gray-400 disabled:opacity-40"
       >
         <SuiText page="exit-boss" k="btn.keep-studying" def="Keep studying" as="span" />
       </button>
+      </>
+      )}
     </div>
   );
 }

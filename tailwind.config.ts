@@ -77,6 +77,11 @@ const config: Config = {
           "52%":  { transform: "translateX(90px) scale(0.75)", opacity: "1" },
           "100%": { transform: "translateX(-15px) scale(0.5)", opacity: "0" },
         },
+        "boss-counter-fly": {
+          "0%":   { transform: "translateX(0)", opacity: "1" },
+          "70%":  { opacity: "1" },
+          "100%": { transform: "translateX(-220px)", opacity: "0" },
+        },
         "fade-up": {
           "0%":   { opacity: "0", transform: "translateY(24px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
@@ -93,6 +98,7 @@ const config: Config = {
         "ink-fly":        "ink-fly 0.55s ease-in-out forwards",
         "eraser-bounce":  "eraser-bounce 0.55s ease-in-out forwards",
         "bolt-blocked":   "bolt-blocked 0.65s linear forwards",
+        "boss-counter-fly": "boss-counter-fly 0.55s ease-in forwards",
         // ── landing page ──
         "orbit-slow":     "spin 12s linear infinite",
         "orbit-slow-rev": "spin 12s linear infinite reverse",
