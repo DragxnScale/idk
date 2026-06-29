@@ -11,15 +11,6 @@ cp .env.example .env.local
 npm run db:push
 npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-## Sign in (Phase 1)
-
-Use the Credentials provider: any email + password `dev` (e.g. `you@example.com` / `dev`).
-
-## Features (Phases 1 + 2)
-
 - **Goal setup**: choose "time" (minutes) or "chapter" (number) goal
 - **Timer**: countdown for time goals, count-up for chapter goals
 - **Visibility guard**: detects tab switches, pauses timer, shows overlay
