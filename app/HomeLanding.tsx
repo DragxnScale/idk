@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { SuiText } from "@/components/ui-copy/UiCopyProvider";
 import { SuiImage } from "@/components/ui-copy/SuiImage";
+import BookFlipCanvas from "@/components/landing/BookFlipCanvas";
 
 /**
  * Marketing landing page for unauthenticated visitors. The server-side
@@ -199,10 +200,9 @@ export default function HomeLanding() {
       </header>
 
       {/* ── hero ── */}
-      <section className="relative z-10 mx-auto max-w-5xl px-6 py-20 md:py-28">
-        <div className="grid md:grid-cols-2 items-center gap-12">
-          {/* text col */}
-          <div>
+      <section className="relative z-10 mx-auto max-w-6xl px-6 py-20 lg:py-28">
+        <div className="grid lg:grid-cols-[minmax(0,28rem)_1fr] items-center gap-10 lg:gap-16">
+          <div className="relative z-10 min-w-0">
             <div
               ref={heroH1Ref}
               style={{ opacity: heroH1P, transform: `translateY(${(1 - heroH1P) * 24}px)`, willChange: "opacity, transform" }}
@@ -242,12 +242,12 @@ export default function HomeLanding() {
 
             <div
               ref={heroCtaRef}
-              className="mt-8 flex flex-wrap gap-3"
+              className="mt-8 flex flex-wrap items-center gap-4"
               style={{ opacity: heroCtaP, transform: `translateY(${(1 - heroCtaP) * 32}px)`, willChange: "opacity, transform" }}
             >
               <Link
                 href="/auth/signup"
-                className="btn-primary btn-primary-glow rounded-lg px-6 py-3 text-sm font-semibold transition"
+                className="btn-primary btn-primary-glow relative z-0 rounded-lg px-6 py-3 text-sm font-semibold transition"
               >
                 <SuiText
                   page="home"
@@ -258,7 +258,7 @@ export default function HomeLanding() {
               </Link>
               <Link
                 href="/dashboard"
-                className="rounded-lg border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/10 hover:border-white/35 active:scale-95"
+                className="relative z-10 rounded-lg border border-white/20 bg-zinc-950 px-6 py-3 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:bg-zinc-900 hover:border-white/35 active:scale-95"
               >
                 <SuiText
                   page="home"
@@ -284,9 +284,15 @@ export default function HomeLanding() {
             </div>
           </div>
 
-          {/* orbital visual — desktop only */}
-          <div className="hidden md:flex items-center justify-center">
-            <OrbitalVisual />
+          {/* hero visual — sits in the page's fixed purple/blue glow (no extra local halo) */}
+          <div className="hidden lg:flex justify-end items-center min-w-0 translate-y-2">
+            <div
+              className="relative shrink-0 select-none"
+              style={{ width: 572, height: 429 }}
+              aria-hidden
+            >
+              <BookFlipCanvas scale={1.3} />
+            </div>
           </div>
         </div>
       </section>
@@ -426,66 +432,6 @@ export default function HomeLanding() {
         </div>
       </footer>
     </main>
-  );
-}
-
-// ── sub-components ────────────────────────────────────────────────────────────
-
-function OrbitalVisual() {
-  return (
-    <div className="relative w-72 h-72 flex items-center justify-center select-none">
-      {/* background glow */}
-      <div
-        className="absolute inset-0 rounded-full blur-3xl"
-        style={{ background: "color-mix(in srgb, var(--landing-purple) 10%, transparent)" }}
-      />
-
-      {/* outermost ring — slow clockwise */}
-      <div
-        className="absolute w-64 h-64 rounded-full border border-dashed animate-orbit-slow"
-        style={{ borderColor: "color-mix(in srgb, var(--theme-accent) 30%, transparent)" }}
-      />
-      {/* mid ring — counterclockwise */}
-      <div
-        className="absolute w-48 h-48 rounded-full border animate-orbit-med-rev"
-        style={{ borderColor: "color-mix(in srgb, var(--landing-purple) 50%, transparent)" }}
-      />
-      {/* inner ring */}
-      <div
-        className="absolute w-32 h-32 rounded-full border"
-        style={{ borderColor: "color-mix(in srgb, var(--theme-accent) 70%, transparent)" }}
-      />
-
-      {/* orbiting dot on mid ring */}
-      <div className="absolute w-48 h-48 animate-orbit-med">
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-          style={{
-            background: "var(--landing-purple)",
-            boxShadow: "0 0 12px var(--landing-purple), 0 0 24px color-mix(in srgb, var(--landing-purple) 50%, transparent)",
-          }}
-        />
-      </div>
-      {/* orbiting dot on outer ring */}
-      <div className="absolute w-64 h-64 animate-orbit-slow-rev">
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
-          style={{
-            background: "var(--theme-accent)",
-            boxShadow: "0 0 10px var(--theme-accent), 0 0 20px color-mix(in srgb, var(--theme-accent) 50%, transparent)",
-          }}
-        />
-      </div>
-
-      {/* center orb */}
-      <div
-        className="relative w-20 h-20 rounded-full"
-        style={{
-          background: "linear-gradient(to bottom right, var(--theme-accent), var(--landing-purple))",
-          boxShadow: "0 0 50px color-mix(in srgb, var(--landing-purple) 80%, transparent), 0 0 100px color-mix(in srgb, var(--theme-accent) 40%, transparent)",
-        }}
-      />
-    </div>
   );
 }
 

@@ -303,47 +303,58 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-4xl px-6 py-10">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold">
-              <SuiText page="dashboard" k="title" def="Dashboard" as="span" />
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              <SuiText page="dashboard" k="subtitle" def="Your study progress at a glance" as="span" />
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {stats.isAdmin && (
-              <Link
-                href="/admin"
-                className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-900/40 transition"
-              >
-                <SuiText page="dashboard" k="btn.dev" def="Developer Mode" as="span" />
-              </Link>
-            )}
-            <Link
-              href="/settings"
-              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-600"
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold">
+            <SuiText page="dashboard" k="title" def="Dashboard" as="span" />
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <SuiText page="dashboard" k="subtitle" def="Your study progress at a glance" as="span" />
+          </p>
+          {/* Scrollable button row with fade masks at both edges */}
+          <div className="relative mt-4 min-w-0">
+            <div
+              className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1"
+              style={{
+                maskImage: "linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%)",
+                WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%)",
+              }}
             >
-              <SuiText page="dashboard" k="btn.settings" def="Settings" as="span" />
-            </Link>
-            <Link
-              href="/review"
-              className="relative rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-            >
-              <SuiText page="dashboard" k="btn.review" def="Review" as="span" />
-              {srsStats && srsStats.dueNow > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
-                  {srsStats.dueNow > 99 ? "99+" : srsStats.dueNow}
-                </span>
+              {/* spacer so first button clears the left fade */}
+              <span className="shrink-0 w-2" aria-hidden />
+              {stats.isAdmin && (
+                <Link
+                  href="/admin"
+                  className="shrink-0 whitespace-nowrap rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-900/40 transition"
+                >
+                  <SuiText page="dashboard" k="btn.dev" def="Developer Mode" as="span" />
+                </Link>
               )}
-            </Link>
-            <Link
-              href="/study/session"
-              className="btn-primary rounded-lg px-5 py-2.5 text-sm font-medium"
-            >
-              <SuiText page="dashboard" k="btn.newSession" def="New session" as="span" />
-            </Link>
+              <Link
+                href="/settings"
+                className="shrink-0 whitespace-nowrap rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-600"
+              >
+                <SuiText page="dashboard" k="btn.settings" def="Settings" as="span" />
+              </Link>
+              <Link
+                href="/review"
+                className="relative shrink-0 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+              >
+                <SuiText page="dashboard" k="btn.review" def="Review" as="span" />
+                {srsStats && srsStats.dueNow > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                    {srsStats.dueNow > 99 ? "99+" : srsStats.dueNow}
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/study/session"
+                className="shrink-0 whitespace-nowrap btn-primary rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium dark:border-gray-600"
+              >
+                <SuiText page="dashboard" k="btn.newSession" def="New session" as="span" />
+              </Link>
+              {/* spacer so last button clears the right fade */}
+              <span className="shrink-0 w-2" aria-hidden />
+            </div>
           </div>
         </div>
 

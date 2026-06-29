@@ -69,7 +69,7 @@ High-level map (only meaningful directories and notable files).
 ├── app/                          # Next.js App Router
 │   ├── layout.tsx                # Root layout: theme script, service worker registration
 │   ├── page.tsx                  # Server shell: redirects to `/dashboard` if a session cookie is present, else renders `HomeLanding`
-│   ├── HomeLanding.tsx           # Marketing / landing — sci-fi dark theme (black bg, blue #1a00ff / purple #8d00ff glow accents, glassmorphism cards, orbital hero visual, scroll-triggered fade-in, PWA install hints)
+│   ├── HomeLanding.tsx           # Marketing / landing — sci-fi dark theme (black bg, blue #1a00ff / purple #8d00ff glow accents, glassmorphism cards, canvas open-book hero (`BookFlipCanvas` — dark indigo cover, muted grey pages, CSS circular halo), scroll-triggered fade-in, PWA install hints)
 │   ├── globals.css               # Tailwind base + themed CSS variables (`--background`, `--foreground`, `--surface`, `--surface-border`, `--text-muted`, `--theme-primary/fg`, `--theme-accent`) and utility classes (`.btn-primary`, `.bg-accent`, `.text-accent`, `.border-accent`, `.bg-surface`, `.border-surface`, `.text-muted`)
 │   ├── manifest.ts               # Web app manifest
 │   ├── icon-192/route.tsx        # Dynamic icon routes
@@ -648,6 +648,10 @@ Global UI (`components/AppChrome.tsx`): **`SplashScreen`** — full-screen overl
 
 ### 7.2 Key components
 
+**Landing (`components/landing/`)**
+
+- **`BookFlipCanvas.tsx`** — Canvas `requestAnimationFrame` open-book hero: flat page-stack geometry, single forward-turning sheet (trapezoid foreshorten with outward fore-edge fan). Static spread always drawn; turning sheet paints on top. ~1.25 s loop with brief rest. Transparent canvas; dark indigo cover gradient; muted blue-grey pages (`#c4c9d6`); mirrored spine gutter shadow on static pages; turning sheet gets a fixed hinge-side crease (fades toward fore-edge only).; circular CSS halo. Used on `HomeLanding` (desktop hero, `scale={1.3}`) and `/book-flip-preview`. **`prefers-reduced-motion`:** static open book, no loop.
+
 **Study (`components/study/`)**
 
 - **`Timer.tsx`** — `goalType` time vs chapter; `setInterval` tick; `onTick` / `onGoalReached`; optional **`initialElapsedSeconds`** for resume (parent remounts via `key`).
@@ -713,6 +717,7 @@ The panel reads `isDeveloper` from `GET /api/user/session-context` (real JWT ide
 - **`components/ui-copy/UiCopyProvider.tsx`** + **`UiImagesProvider`** (wrapped in **`app/layout.tsx`**) — Fetch public UI copy/images once; **`SuiText`** / **`SuiImage`** on Home, Dashboard, Session start, Settings, active session, and Boss Beacons flow. Pure helpers: **`lib/ui-copy-shared.ts`**, **`lib/ui-images-shared.ts`**.
 - **`UI_PAGE_IDS`** (`lib/ui-copy-shared.ts`) — `["home", "dashboard", "session", "settings", "session-active", "exit-boss"]`. The `session-active` page covers the live session header, offline banner, sidebar labels, and unfinished-session gate. The `exit-boss` page covers all Boss Beacon phases: trigger button, confirm modal, cooldown, loading, boss fight (HP bar), phrase gate, and victory screen.
 - **Preview components** — `components/ui-edit/previews/SessionActivePreview.tsx` and `BossFlowPreview.tsx` render static mock UIs (no API calls) for the two new editor tabs so every `SuiText` node is reachable by right-click.
+- **`ScrollReveal`** — scroll-driven fade/slide on Dashboard, Home, Settings, etc. Animation is **disabled inside `/admin/ui-edit`** so all sections stay visible for right-click editing; scroll listeners also attach to nested scroll containers (the edit shell uses `overflow-y-auto`, not window scroll).
 
 ### 7.6 Client-only and dynamic imports
 
